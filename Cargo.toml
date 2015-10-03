@@ -2,3 +2,10 @@
 name = "rustabelle"
 version = "0.1.0"
 authors = ["Sebastian Ullrich <sebasti@nullri.ch>"]
+
+[lib]
+name = "rustabelle"
+plugin = true
+
+[dependencies]
+itertools = "0.4.0"
