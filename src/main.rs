@@ -18,6 +18,7 @@ use itertools::Itertools;
 
 use syntax::ast;
 use rustc_front::hir::*;
+use rustc_front::util;
 use rustc_front::print::pprust;
 use rustc::middle::ty::ctxt;
 
@@ -64,6 +65,51 @@ fn transpile_tyref(ty: &Ty) -> String {
     }
 }
 
+fn transpile_expr(expr: &Expr) -> String {
+    match expr.node {
+        Expr_::ExprLit(ref lit) => match lit.node {
+            ast::Lit_::LitInt(i, _) =>
+                format!("(λcont _ s. cont {} s)", i.to_string()),
+            _ => panic!("unimplemented: expr {:?}", expr),
+        },
+        Expr_::ExprPath(None, ref path) => transpile_path(path),
+        Expr_::ExprBinary(ref op, ref e1, ref e2) =>
+            format!("(lift2 (op {}) {} {})",
+                    util::binop_to_string(op.node),
+                    transpile_expr(e1), transpile_expr(e2)),
+        _ => panic!("unimplemented: expr {:?}", expr)
+    }
+}
+
+fn transpile_local(local: &Local) -> String {
+    match local.init {
+        None => "id".to_string(),
+        Some(ref expr) => match local.pat.node {
+            Pat_::PatIdent(_, ref ident, _) =>
+                format!("(λcont _ s. cont () s(''{}'' |-> {})))",
+                    ident.node.name, transpile_expr(expr)),
+            _ => panic!("unimplemented: pattern let ({:?})", local)
+        }
+    }
+}
+
+fn transpile_stmt(stmt: &Stmt) -> String {
+    match stmt.node {
+        Stmt_::StmtDecl(ref decl, _) => match decl.node {
+            Decl_::DeclItem(_) => panic!("unimplemented: local item ({:?})", decl),
+            Decl_::DeclLocal(ref local) => transpile_local(&**local),
+        },
+        Stmt_::StmtExpr(ref expr, _) | Stmt_::StmtSemi(ref expr, _) =>
+            transpile_expr(&**expr)
+    }
+}
+
+fn transpile_block(block: &Block) -> String {
+    let stmts = block.stmts.iter().map(|stmt| transpile_stmt(&**stmt));
+    let expr = block.expr.as_ref().map(|expr| transpile_expr(&*expr));
+    format!("({})", stmts.chain(expr).join(" "))
+}
+
 fn transpile_fn(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt, block: &Block)
         -> io::Result<()> {
     let (param_names, param_types): (Vec<_>, Vec<_>) = decl.inputs.iter().map(|param| {
@@ -81,14 +127,14 @@ fn transpile_fn(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt, bloc
         FunctionRetTy::NoReturn(_) => panic!("should skip: no-return fn"),
     };
     try!(write!(f, "definition {name} :: \"{param_types} => {return_ty}\" where
-\"{name} {param_names} = {block} id [{init_state}]\"
+\"{name} {param_names} = {block} (λret _. ret) () [{init_state}]\"
 
 ",
                 name=name,
                 param_types=param_types.iter().map(|ty| transpile_tyref(*ty)).join(" => "),
                 return_ty=return_ty,
                 param_names=param_names.iter().join(" "),
-                block="undefined",
+                block=transpile_block(block),
                 init_state=param_names.iter().map(|name| format!("''{n}'' |-> {n}", n=name))
                                .join(", ")
     ));
