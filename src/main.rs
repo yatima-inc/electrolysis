@@ -1,4 +1,5 @@
 #![feature(rustc_private)]
+#![feature(slice_patterns)]
 
 extern crate itertools;
 
@@ -112,36 +113,51 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             ).join(", "))
     }
 
+    fn transpile_pat(&self, pat: &Pat, expr: &Expr) -> String {
+        match pat.node {
+            Pat_::PatIdent(_, _, _) =>
+                format!("(λcont s. {} (λs r. cont {} ()) s)",
+                    self.transpile_expr(expr),
+                    self.set_local(&self.tcx.map.local_def_id(pat.id), "r")),
+            _ => panic!("unimplemented: pattern ({:?})", pat)
+        }
+    }
+
     fn transpile_expr(&self, expr: &Expr) -> String {
         match expr.node {
             Expr_::ExprLit(ref lit) => match lit.node {
                 ast::Lit_::LitInt(i, _) =>
-                    format!("(λcont s _. cont s {})", i.to_string()),
+                    format!("(λcont s. cont s {})", i.to_string()),
                 _ => panic!("unimplemented: expr {:?}", expr),
             },
             Expr_::ExprPath(None, _) =>
                 match local_get_def_id(self.tcx, expr.id) {
-                    Some(id) => format!("(λcont s _. cont s {})", self.get_local(&id)),
+                    Some(id) => format!("(λcont s. cont s {})", self.get_local(&id)),
                     None => panic!("unimplemented: expr {:?}", expr),
                 },
             Expr_::ExprBinary(ref op, ref e1, ref e2) =>
                 format!("(lift2 (op {}) {} {})",
                         util::binop_to_string(op.node),
                         self.transpile_expr(e1), self.transpile_expr(e2)),
-            _ => panic!("unimplemented: expr {:?}", expr)
+            Expr_::ExprMatch(ref expr, ref arms, _) => {
+                if let [ref arm] = &arms[..] {
+                    if let [ref pat] = &arm.pats[..] {
+                        return format!("({}; {})",
+                            self.transpile_pat(&*pat, expr),
+                            self.transpile_expr(&*arm.body));
+                    }
+                }
+                panic!("unimplemented: {:?}", expr)
+            },
+            Expr_::ExprBlock(ref block) => self.transpile_block(&**block),
+            _ => panic!("unimplemented: expr {:?}", expr),
         }
     }
 
     fn transpile_local(&self, local: &Local) -> String {
         match local.init {
             None => "id".to_string(),
-            Some(ref expr) => match local.pat.node {
-                Pat_::PatIdent(_, ref ident, _) =>
-                    format!("(λcont s _. {} (λs r. cont {} ()) s ())",
-                        self.transpile_expr(expr),
-                        self.set_local(&self.tcx.map.local_def_id(local.pat.id), "r")),
-                _ => panic!("unimplemented: pattern let ({:?})", local)
-            }
+            Some(ref expr) => self.transpile_pat(&*local.pat, expr)
         }
     }
 
@@ -159,7 +175,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn transpile_block(&self, block: &Block) -> String {
         let stmts = block.stmts.iter().map(|stmt| self.transpile_stmt(&**stmt));
         let expr = block.expr.as_ref().map(|expr| self.transpile_expr(&*expr));
-        format!("({})", stmts.chain(expr).join(" ∘ "))
+        format!("({})", stmts.chain(expr).join("; "))
     }
 }
 
@@ -202,7 +218,7 @@ fn transpile_fn(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt, bloc
         local_idx: HashMap::from_iter(state.enumerate().map(|(n, id)| (id, n)))
     };
     try!(write!(f, "definition {name} :: \"{param_types} => {return_ty}\" where
-\"{name} {param_names} = {block} (λ_ ret. ret) ({init_state}) ()\"
+\"{name} {param_names} = {block} (λ_ ret. ret) ({init_state})\"
 
 ",
                 name=name,
