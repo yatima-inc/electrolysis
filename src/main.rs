@@ -7,26 +7,28 @@ extern crate itertools;
 extern crate rustc;
 extern crate rustc_driver;
 extern crate rustc_front;
+extern crate rustc_mir;
 extern crate syntax;
 
-use std::collections::HashMap;
 use std::env;
 use std::io;
 use std::io::prelude::*;
 use std::iter;
-use std::iter::FromIterator;
 use std::fs::File;
 use std::path;
 
 use itertools::Itertools;
 
 use syntax::ast;
-use rustc_front::hir::*;
-use rustc_front::util;
+use rustc_front::hir;
+use rustc_front::hir::{Crate, Path, FnDecl, Pat_, BindingMode, FunctionRetTy, Item, Item_, Ty_};
 use rustc_front::print::pprust;
-use rustc::middle::def;
-use rustc::middle::def_id::DefId;
+use rustc_mir::mir_map::build_mir_for_crate;
+use rustc_mir::repr::*;
+use rustc::middle::const_eval::ConstVal;
 use rustc::middle::ty::ctxt;
+use rustc::middle::ty::Ty;
+use rustc::middle::ty::TypeVariants;
 
 use rustc_driver::driver;
 use syntax::diagnostics;
@@ -64,35 +66,55 @@ fn transpile_path(path: &Path) -> String {
     pprust::path_to_string(path).replace("::", "_")
 }
 
-fn transpile_tyref(ty: &Ty) -> String {
+fn transpile_hir_ty(ty: &hir::Ty) -> String {
     match ty.node {
         Ty_::TyPath(None, ref path) => transpile_path(path),
         _ => panic!("unimplemented: type {:?}", ty),
     }
 }
 
-fn local_get_def_id(tcx: &ctxt, node_id: ast::NodeId) -> Option<DefId> {
-    match tcx.def_map.borrow().get(&node_id) {
-        Some(&def::PathResolution { base_def: def::DefLocal(id, _), ..}) =>
-            Some(id),
-        _ => None
+fn binop_to_string(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Rem => "%",
+        BinOp::BitXor => "^",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::Eq => "==",
+        BinOp::Lt => "<",
+        BinOp::Le => "<=",
+        BinOp::Ne => "!=",
+        BinOp::Ge => ">=",
+        BinOp::Gt => ">",
     }
 }
 
 struct FnTranspiler<'a, 'tcx: 'a> {
-    local_idx: HashMap<DefId, usize>,
     tcx: &'a ctxt<'tcx>,
+    mir: &'a Mir<'tcx>,
+    param_names: &'a Vec<String>,
+    return_ty: String,
 }
 
 impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
-    // C[e] :: Cont -> Cont
-    // Cont = State -> RIn -> ROut
-    // State = Maybe l0 * Maybe l1 * ...
+    // State = Maybe v0 * Maybe v1 * ... * Maybe t0 * ...
 
-    fn num_locals(&self) -> usize { self.local_idx.len() }
+    fn get_locals_types(&self) -> Vec<String> {
+        self.mir.var_decls.iter().map(|v| v.ty)
+            .chain(self.mir.temp_decls.iter().map(|t| t.ty))
+            .map(|ty| self.transpile_ty(ty))
+            .chain(iter::once(self.return_ty.clone()))
+            .collect()
+    }
 
-    fn get_local(&self, id: &DefId) -> String {
-        let idx = *self.local_idx.get(id).unwrap();
+    fn num_locals(&self) -> usize { self.get_locals_types().len() }
+
+    fn get_local(&self, idx: usize) -> String {
         format!("(let ({}) = s in the x)",
             iter::repeat("_").take(idx)
                 .chain(iter::once("x"))
@@ -100,106 +122,117 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 .join(", "))
     }
 
-    fn set_local(&self, id: &DefId, val: &str) -> String {
+    fn get_lvalue(&self, lv: &Lvalue) -> String {
+        match *lv {
+            Lvalue::Var(idx) => self.get_local(idx as usize),
+            Lvalue::Temp(idx) => self.get_local(self.mir.var_decls.len() + idx as usize),
+            Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
+            _ => panic!("unimplemented: loading {:?}", lv)
+        }
+    }
+
+    fn set_local(&self, idx: usize, val: Option<&str>) -> String {
         fn mk_name(idx: usize) -> String {
             format!("s{}", idx)
         }
-        let idx = *self.local_idx.get(id).unwrap();
         format!("(let ({}) = s in ({}))",
             (0..self.num_locals()).map(mk_name).join(", "),
-            (0..self.num_locals()).map(
-                |i| if i == idx { format!("Some({})", val.to_string()) }
-                else { mk_name(i) }
-            ).join(", "))
-    }
-
-    fn transpile_pat(&self, pat: &Pat, expr: &Expr) -> String {
-        match pat.node {
-            Pat_::PatIdent(_, _, _) =>
-                format!("(λcont s. {} (λs r. cont {} ()) s)",
-                    self.transpile_expr(expr),
-                    self.set_local(&self.tcx.map.local_def_id(pat.id), "r")),
-            _ => panic!("unimplemented: pattern ({:?})", pat)
-        }
-    }
-
-    fn transpile_expr(&self, expr: &Expr) -> String {
-        match expr.node {
-            Expr_::ExprLit(ref lit) => match lit.node {
-                ast::Lit_::LitInt(i, _) =>
-                    format!("(λcont s. cont s {})", i.to_string()),
-                _ => panic!("unimplemented: expr {:?}", expr),
-            },
-            Expr_::ExprPath(None, _) =>
-                match local_get_def_id(self.tcx, expr.id) {
-                    Some(id) => format!("(λcont s. cont s {})", self.get_local(&id)),
-                    None => panic!("unimplemented: expr {:?}", expr),
-                },
-            Expr_::ExprBinary(ref op, ref e1, ref e2) =>
-                format!("(lift2 (op {}) {} {})",
-                        util::binop_to_string(op.node),
-                        self.transpile_expr(e1), self.transpile_expr(e2)),
-            Expr_::ExprMatch(ref expr, ref arms, _) => {
-                if let [ref arm] = &arms[..] {
-                    if let [ref pat] = &arm.pats[..] {
-                        return format!("({}; {})",
-                            self.transpile_pat(&*pat, expr),
-                            self.transpile_expr(&*arm.body));
+            (0..self.num_locals()).map(|i| {
+                if i == idx {
+                    match val {
+                        Some(val) => format!("Some {}", val),
+                        None => format!("None")
                     }
                 }
-                panic!("unimplemented: {:?}", expr)
+                else {
+                    mk_name(i)
+                }
+            }).join(", "))
+    }
+
+    fn set_lvalue(&self, lv: &Lvalue, val: Option<&str>) -> String {
+        match *lv {
+            Lvalue::Var(idx) => self.set_local(idx as usize, val),
+            Lvalue::Temp(idx) => self.set_local(self.mir.var_decls.len() + idx as usize, val),
+            Lvalue::ReturnPointer => self.set_local(self.num_locals() - 1, val),
+            _ => panic!("unimplemented: storing {:?}", lv)
+        }
+    }
+
+    fn transpile_ty(&self, ty: Ty) -> String {
+        match ty.sty {
+            TypeVariants::TyUint(ast::UintTy::TyU32) => "u32".to_string(),
+            TypeVariants::TyTuple(ref tys) => match &tys[..] {
+                [] => "unit".to_string(),
+                _ => format!("({})", tys.iter().map(|ty| self.transpile_ty(ty)).join(", ")),
             },
-            Expr_::ExprBlock(ref block) => self.transpile_block(&**block),
-            _ => panic!("unimplemented: expr {:?}", expr),
+            _ => match ty.ty_to_def_id() {
+                Some(did) => self.tcx.item_path_str(did),
+                None => panic!("unimplemented: {:?}", ty),
+            }
         }
     }
 
-    fn transpile_local(&self, local: &Local) -> String {
-        match local.init {
-            None => "id".to_string(),
-            Some(ref expr) => self.transpile_pat(&*local.pat, expr)
+    fn get_operand(&self, op: &Operand) -> String {
+        match *op {
+            Operand::Consume(ref lv) => self.get_lvalue(lv),
+            Operand::Constant(ref c) => match c.literal {
+                Literal::Value { value: ConstVal::Uint(i) } => i.to_string(),
+                Literal::Value { .. } => panic!("unimplemented: {:?}", op),
+                Literal::Item { def_id, substs }  => {
+                    assert!(substs.types.iter().len() == 0);
+                    self.tcx.item_path_str(def_id)
+                }
+            }
         }
     }
 
-    fn transpile_stmt(&self, stmt: &Stmt) -> String {
-        match stmt.node {
-            Stmt_::StmtDecl(ref decl, _) => match decl.node {
-                Decl_::DeclItem(_) => panic!("unimplemented: local item ({:?})", decl),
-                Decl_::DeclLocal(ref local) => self.transpile_local(&**local),
-            },
-            Stmt_::StmtExpr(ref expr, _) | Stmt_::StmtSemi(ref expr, _) =>
-                self.transpile_expr(&**expr)
+    fn transpile_rvalue(&self, rv: &Rvalue) -> String {
+        match *rv {
+            Rvalue::Use(ref op) => self.get_operand(op),
+            Rvalue::BinaryOp(op, ref o1, ref o2) =>
+                format!("({} {} {})", self.get_operand(o1), binop_to_string(op),
+                        self.get_operand(o2)),
+            _ => panic!("unimplemented: {:?}", rv),
         }
     }
 
-    fn transpile_block(&self, block: &Block) -> String {
-        let stmts = block.stmts.iter().map(|stmt| self.transpile_stmt(&**stmt));
-        let expr = block.expr.as_ref().map(|expr| self.transpile_expr(&*expr));
-        format!("({})", stmts.chain(expr).join("; "))
+    fn transpile_statement(&self, stmt: &Statement) -> String {
+        match stmt.kind {
+            StatementKind::Assign(ref lv, ref rv) => {
+                let val = self.transpile_rvalue(rv);
+                format!("(λcont s. cont {})", self.set_lvalue(lv, Some(&val)))
+            }
+            StatementKind::Drop(DropKind::Deep, ref lv) =>
+                format!("(λcont s. cont {})", self.set_lvalue(lv, None)),
+            _ => panic!("unimplemented: {:?}", stmt),
+        }
+    }
+
+    fn transpile_basic_block(&self, bb: BasicBlock) -> String {
+        let data = self.mir.basic_block_data(bb);
+        let stmts = data.statements.iter().map(|s| self.transpile_statement(s));
+        let terminator = match data.terminator {
+            Terminator::Goto { target } =>
+                self.transpile_basic_block(target),
+            Terminator::Panic { .. } => format!("panic"),
+            Terminator::If { ref cond, ref targets } =>
+                format!("(ite {} {} {})", self.get_operand(cond),
+                self.transpile_basic_block(targets[0]),
+                self.transpile_basic_block(targets[1])),
+                Terminator::Return => format!("id"),
+                _ => panic!("unimplemented: {:?}", data),
+        };
+        stmts.chain(iter::once(terminator)).join(";\n")
     }
 }
 
-fn get_locals(block: &Block, tcx: &ctxt) -> Vec<DefId> {
-    struct Visitor<'a, 'tcx: 'a> {
-        res: Vec<DefId>,
-        tcx: &'a ctxt<'tcx>
-    }
-    impl<'a, 'tcx> rustc_front::visit::Visitor<'a> for Visitor<'a, 'tcx> {
-        fn visit_local(&mut self, l: &Local) {
-            self.res.push(self.tcx.map.local_def_id(l.pat.id));
-        }
-    }
-    let mut v = Visitor { res: Vec::new(), tcx: tcx };
-    rustc_front::visit::walk_block(&mut v, block);
-    v.res
-}
-
-fn transpile_fn(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt, block: &Block)
+fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt<'tcx>, mir: &Mir<'tcx>)
         -> io::Result<()> {
     let (param_names, param_types): (Vec<_>, Vec<_>) = decl.inputs.iter().map(|param| {
         match param.pat.node {
-            Pat_::PatIdent(BindingMode::BindByRef(Mutability::MutMutable), _, _) =>
-                panic!("unimplemented: &mut param ({:?})", param),
+            Pat_::PatIdent(BindingMode::BindByRef(hir::Mutability::MutMutable), _, _) =>
+               panic!("unimplemented: &mut param ({:?})", param),
             Pat_::PatIdent(_, ref ident, _) =>
                 (ident.node.name.as_str().to_string(), &param.ty),
             _ => panic!("unimplemented: param pattern ({:?})", param),
@@ -207,28 +240,25 @@ fn transpile_fn(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt, bloc
     }).unzip();
     let return_ty = match decl.output {
         FunctionRetTy::DefaultReturn(_) => "()".to_string(),
-        FunctionRetTy::Return(ref ty) => transpile_tyref(ty),
+        FunctionRetTy::Return(ref ty) => transpile_hir_ty(ty),
         FunctionRetTy::NoReturn(_) => panic!("should skip: no-return fn"),
     };
-    let locals = get_locals(block, tcx);
-    let state = decl.inputs.iter().map(
-        |param| tcx.map.local_def_id(param.pat.id)
-    ).chain(locals.iter().map(DefId::clone));
-    let transpiler = FnTranspiler { tcx: tcx,
-        local_idx: HashMap::from_iter(state.enumerate().map(|(n, id)| (id, n)))
-    };
+
+    let transpiler = FnTranspiler { tcx: tcx, mir: mir, param_names: &param_names,
+        return_ty: return_ty.clone() };
+
     try!(write!(f, "definition {name} :: \"{param_types} => {return_ty}\" where
-\"{name} {param_names} = {block} (λ_ ret. ret) ({init_state})\"
+\"{name} {param_names} = ({block}) (λs. {get_retval}) ({init_state})\"
 
 ",
                 name=name,
-                param_types=param_types.iter().map(|ty| transpile_tyref(*ty)).join(" => "),
+                param_types=param_types.iter().map(|ty| transpile_hir_ty(*ty)).join(" => "),
                 return_ty=return_ty,
                 param_names=param_names.iter().join(" "),
-                block=transpiler.transpile_block(block),
-                init_state=param_names.iter().map(|name| format!("Some({})", name))
-                    .chain(locals.iter().map(|&id| format!("None::{} option", tcx.node_id_to_type(tcx.map.as_local_node_id(id).unwrap()))))
-                    .take(transpiler.num_locals())
+                block=transpiler.transpile_basic_block(START_BLOCK),
+                get_retval=transpiler.get_local(transpiler.num_locals() - 1),
+                init_state=transpiler.get_locals_types()
+                    .iter().map(|ty| format!("None::{} option", ty))
                     .join(", ")
     ));
     return Ok(());
@@ -241,12 +271,13 @@ imports Rustabelle
 begin
 
 "));
+    let mir_map = build_mir_for_crate(tcx);
     for item in krate.module.items.iter() {
         if let Item {
-            ref name,
-            node: Item_::ItemFn(ref decl, _, _, _, ref generics, ref block), ..
+            id, ref name,
+            node: Item_::ItemFn(ref decl, _, _, _, ref generics, _), ..
         } = **item {
-            try!(transpile_fn(&mut f, name, decl, tcx, block));
+            try!(transpile_fn(&mut f, name, decl, tcx, mir_map.get(&id).unwrap()));
         };
     }
     try!(write!(f, "end\n"));
