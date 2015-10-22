@@ -330,7 +330,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return format!("(λcont. cont_{})", bb.index());
+            return format!("cont_{}", bb.index());
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self.mir, bb, l, true);
@@ -339,16 +339,15 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             let name = format!("{}_{}", self.fn_name, bb.index());
             comp.prelude = format!("{}
 
-function {name} where \"{name} {conts} s = ({body}) ({name} {conts}) s\"
-by auto",
+definition {name} where \"{name} {conts} s = ({body}) (λs. (s, None)) s\"",
                                    comp.prelude,
                                    name=name,
                                    conts=l_comp.exits.iter().map(|bb| format!("cont_{}", bb.index())).join(" "),
                                    body=body);
-            return format!("(λcont. {} {})",
+            return format!("(loop ({} ({})))",
                            name,
                            l_comp.exits.iter().map(|&e| {
-                               format!("(({}) cont)", rec!(e))
+                               rec!(e)
                            }).join(" "));
         }
 
