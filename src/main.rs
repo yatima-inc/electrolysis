@@ -11,8 +11,10 @@ extern crate rustc_driver;
 extern crate rustc_front;
 extern crate rustc_mir;
 extern crate syntax;
+extern crate rustc_trans;
 
 mod mir_graph;
+mod traits;
 
 use std::collections::HashMap;
 use std::env;
@@ -32,11 +34,7 @@ use rustc_mir::mir_map::build_mir_for_crate;
 use rustc_mir::repr::*;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
-use rustc::middle::ty::ctxt;
-use rustc::middle::ty::FnOutput;
-use rustc::middle::ty::Ty;
-use rustc::middle::ty::TypeAndMut;
-use rustc::middle::ty::TypeVariants;
+use rustc::middle::ty;
 
 use rustc_driver::driver;
 use syntax::diagnostics;
@@ -105,7 +103,7 @@ fn binop_to_string(op: BinOp) -> &'static str {
 
 struct FnTranspiler<'a, 'tcx: 'a> {
     fn_name: String,
-    tcx: &'a ctxt<'tcx>,
+    tcx: &'a ty::ctxt<'tcx>,
     mir: &'a Mir<'tcx>,
     param_names: &'a Vec<String>,
     return_ty: String,
@@ -140,7 +138,7 @@ fn selector(idx: usize, len: usize) -> Vec<&'static str> {
 }
 
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
-    // State = Maybe v0 * Maybe v1 * ... * Maybe t0 * ...
+    // State = nat -> Option (Any t)
 
     fn get_locals_types(&self) -> Vec<String> {
         self.mir.var_decls.iter().map(|v| v.ty)
@@ -150,10 +148,30 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             .collect()
     }
 
+    fn mk_any_type(&self) -> String {
+        format!("datatype Any =\n{}", self.get_locals_types().iter().enumerate().map(|(idx, ty)| {
+            format!("Any_{} \"{}\"", idx, ty)
+        }).join("\n| "))
+    }
+
     fn num_locals(&self) -> usize { self.get_locals_types().len() }
 
     fn get_local(&self, idx: usize) -> String {
-        format!("(let ({}) = s in the x)", selector(idx, self.num_locals()).join(", "))
+        format!("(case s {idx} of Some (Any_{idx} x) => x)", idx=idx)
+    }
+
+    fn set_local(&self, idx: usize, val: Option<&str>) -> String {
+        format!("(s({} {}))", idx, match val {
+            Some(val) => format!("↦ Any_{} {}", idx, val),
+            None => format!(":= None")
+        })
+    }
+
+    fn set_locals(&self, indices: &Vec<usize>, val: &str) -> String {
+        format!("(let ({}) = {} in s({}))",
+                indices.iter().map(|idx| format!("t{}", idx)).join(", "),
+                val,
+                indices.iter().map(|idx| format!("{idx} ↦ Any_{idx} t{idx}", idx=idx)).join(", "))
     }
 
     fn get_lvalue(&self, lv: &Lvalue) -> String {
@@ -180,7 +198,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn get_lvalue_ty(&self, lv: &Lvalue) -> &Ty {
+    fn get_lvalue_ty(&self, lv: &Lvalue) -> &ty::Ty {
         match *lv {
             Lvalue::Var(idx) => &self.mir.var_decls[idx as usize].ty,
             Lvalue::Temp(idx) => &self.mir.temp_decls[idx as usize].ty,
@@ -189,66 +207,60 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn set_local(&self, idx: usize, val: Option<&str>) -> String {
-        fn mk_name(idx: usize) -> String {
-            format!("s{}", idx)
-        }
-        format!("(let ({}) = s in ({}))",
-            (0..self.num_locals()).map(mk_name).join(", "),
-            (0..self.num_locals()).map(|i| {
-                if i == idx {
-                    match val {
-                        Some(val) => format!("Some {}", val),
-                        None => format!("None")
-                    }
-                }
-                else {
-                    mk_name(i)
-                }
-            }).join(", "))
-    }
-
-    fn set_lvalue(&self, lv: &Lvalue, val: Option<&str>) -> String {
+    fn lvalue_idx(&self, lv: &Lvalue) -> usize {
         match *lv {
-            Lvalue::Var(idx) => self.set_local(idx as usize, val),
-            Lvalue::Temp(idx) => self.set_local(self.mir.var_decls.len() + idx as usize, val),
-            Lvalue::ReturnPointer => self.set_local(self.num_locals() - 1, val),
+            Lvalue::Var(idx) => idx as usize,
+            Lvalue::Temp(idx) => self.mir.var_decls.len() + idx as usize,
+            Lvalue::ReturnPointer => self.num_locals() - 1,
             _ => panic!("unimplemented: storing {:?}", lv)
         }
     }
 
-    fn transpile_def_id(&self, did: DefId) -> String {
-        // what could ever go wrong
-        self.tcx.item_path_str(did).replace("::", "_")
+    fn set_lvalue(&self, lv: &Lvalue, val: Option<&str>) -> String {
+        self.set_local(self.lvalue_idx(lv), val)
     }
 
-    fn transpile_ty(&self, ty: Ty) -> String {
+    fn set_lvalues<'b, It: Iterator<Item=&'b Lvalue<'tcx>>>(&self, lvs: It, val: &str) -> String
+        where 'tcx: 'b {
+        self.set_locals(&lvs.map(|lv| self.lvalue_idx(lv)).collect(), val)
+    }
+
+    fn transpile_def_id(&self, did: DefId) -> String {
+        // what could ever go wrong
+        self.tcx.item_path_str(did).replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
+    }
+
+    fn try_unwrap_mut_ref(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
         match ty.sty {
-            TypeVariants::TyUint(ast::UintTy::TyU32) => "u32".to_string(),
-            TypeVariants::TyTuple(ref tys) => match &tys[..] {
+            ty::TypeVariants::TyRef(_, ty::TypeAndMut { mutbl: hir::Mutability::MutMutable, ty }) =>
+                Some(ty),
+            _ => None
+        }
+    }
+
+    fn transpile_ty(&self, ty: ty::Ty) -> String {
+        match ty.sty {
+            ty::TypeVariants::TyUint(ast::UintTy::TyU32) => "u32".to_string(),
+            ty::TypeVariants::TyTuple(ref tys) => match &tys[..] {
                 [] => "unit".to_string(),
-                _ => format!("({})", tys.iter().map(|ty| self.transpile_ty(ty)).join(", ")),
+                _ => format!("({})", tys.iter().map(|ty| self.transpile_ty(ty)).join(" × ")),
             },
-            TypeVariants::TyBareFn(_, ref data) => {
+            ty::TypeVariants::TyBareFn(_, ref data) => {
                 let sig = data.sig.skip_binder();
-                let muts = sig.inputs.iter().filter_map(|ty| match ty.sty {
-                    TypeVariants::TyRef(_, TypeAndMut { mutbl: hir::Mutability::MutMutable, ref ty }) =>
-                        Some(ty),
-                    _ => None
-                });
+                let muts = sig.inputs.iter().filter_map(FnTranspiler::try_unwrap_mut_ref);
                 match sig.output {
-                    FnOutput::FnConverging(ref out_ty) => {
-                        let output = format!("({})", iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)).join(", "));
-                        sig.inputs.iter().map(|ty| self.transpile_ty(ty)).chain(iter::once(output)).join(" => ")
+                    ty::FnOutput::FnConverging(out_ty) => {
+                        format!("({} => {})", sig.inputs.iter().map(|ty| self.transpile_ty(ty)).join(" => "),
+                                iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)).join(" × "))
                     }
-                    FnOutput::FnDiverging => panic!("diverging function"),
+                    ty::FnOutput::FnDiverging => panic!("diverging function"),
                 }
             },
-            TypeVariants::TyStruct(ref adt_def, _) =>
+            ty::TypeVariants::TyStruct(ref adt_def, _) =>
                 self.transpile_def_id(adt_def.did),
-            TypeVariants::TyEnum(ref adt_def, _) =>
+            ty::TypeVariants::TyEnum(ref adt_def, _) =>
                 self.transpile_def_id(adt_def.did),
-            TypeVariants::TyRef(_, ref data) => self.transpile_ty(data.ty),
+            ty::TypeVariants::TyRef(_, ref data) => self.transpile_ty(data.ty),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
                 None => panic!("unimplemented: {:?}", ty),
@@ -256,20 +268,26 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn get_operand(&self, op: &Operand) -> String {
+    fn get_operand(&self, op: &Operand<'tcx>) -> String {
         match *op {
             Operand::Consume(ref lv) => self.get_lvalue(lv),
             Operand::Constant(ref c) => match c.literal {
                 Literal::Value { value: ConstVal::Uint(i) } => i.to_string(),
                 Literal::Value { .. } => panic!("unimplemented: {:?}", op),
-                Literal::Item { def_id, .. }  => {
-                    self.transpile_def_id(def_id)
+                Literal::Item { def_id, substs }  => {
+                    println!("item: {}", self.tcx.item_path_str(def_id));
+                    if let Some(method_did) = traits::lookup_trait_item_impl(self.tcx, def_id, substs) {
+                        println!("trait impl: {}", self.tcx.item_path_str(method_did));
+                        self.transpile_def_id(method_did)
+                    } else {
+                        self.transpile_def_id(def_id)
+                    }
                 }
             }
         }
     }
 
-    fn get_rvalue(&self, rv: &Rvalue) -> String {
+    fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> String {
         match *rv {
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::BinaryOp(op, ref o1, ref o2) =>
@@ -286,7 +304,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_statement(&self, stmt: &Statement) -> String {
+    fn transpile_statement(&self, stmt: &Statement<'tcx>) -> String {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 let val = self.get_rvalue(rv);
@@ -298,13 +316,9 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn get_loop_fun_name(&self, header: BasicBlock) -> String {
-        format!("{}_{}", self.fn_name, header.index())
-    }
-
     fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> String {
         if comp.header == Some(bb) {
-            format!("({} cont s)", self.get_loop_fun_name(bb))
+            "id".to_string()
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -316,19 +330,25 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return format!("(cont s)");
+            return format!("(λcont. cont_{})", bb.index());
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self.mir, bb, l, true);
             println!("LOOP: {:?}", l_comp.blocks);
-            comp.prelude = format!("{}\n\nfunction {name} where \"{name} cont s = {body}\"",
+            let body = self.transpile_basic_block(bb, &mut l_comp);
+            let name = format!("{}_{}", self.fn_name, bb.index());
+            comp.prelude = format!("{}
+
+function {name} where \"{name} {conts} s = ({body}) ({name} {conts}) s\"
+by auto",
                                    comp.prelude,
-                                   name=self.get_loop_fun_name(bb),
-                                   body=self.transpile_basic_block(bb, &mut l_comp));
+                                   name=name,
+                                   conts=l_comp.exits.iter().map(|bb| format!("cont_{}", bb.index())).join(" "),
+                                   body=body);
             return format!("(λcont. {} {})",
-                           self.get_loop_fun_name(bb),
+                           name,
                            l_comp.exits.iter().map(|&e| {
-                               format!("({} cont)", rec!(e))
+                               format!("(({}) cont)", rec!(e))
                            }).join(" "));
         }
 
@@ -346,15 +366,19 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             Terminator::Call { ref data, ref targets } => {
                 let call = format!("({} {})", self.get_lvalue(&data.func),
                                    data.args.iter().map(|lv| self.get_lvalue(lv)).join(" "));
+                let muts = data.args.iter().filter(|lv| {
+                    FnTranspiler::try_unwrap_mut_ref(self.get_lvalue_ty(lv)).is_some()
+                });
                 format!("(λcont s. cont {});\n{}",
-                        self.set_lvalue(&data.destination, Some(&call)),
+                        self.set_lvalues(iter::once(&data.destination).chain(muts), &call),
                         rec!(targets[0]))
             },
             Terminator::Switch { ref discr, ref targets } =>
-                if let TypeVariants::TyEnum(ref adt_def, _) = self.get_lvalue_ty(discr).sty {
-                    format!("(λcont s. cont (case {} of {}))", self.get_lvalue(discr),
+                if let ty::TypeVariants::TyEnum(ref adt_def, _) = self.get_lvalue_ty(discr).sty {
+                    format!("(λcont s. case {} of {})", self.get_lvalue(discr),
                         adt_def.variants.iter().zip(targets).map(|(var, &target)| {
-                            format!("{} _ => {}", self.transpile_def_id(var.did),
+                            format!("{} {} => ({}) cont s", self.transpile_def_id(var.did),
+                                    iter::repeat("_").take(var.fields.len()).join(" "),
                                     rec!(target))
                         }).join(" | "))
                 } else {
@@ -366,7 +390,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     }
 }
 
-fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt<'tcx>, mir: &Mir<'tcx>)
+fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ty::ctxt<'tcx>, mir: &Mir<'tcx>)
         -> io::Result<()> {
     let (param_names, param_types): (Vec<_>, Vec<_>) = decl.inputs.iter().map(|param| {
         match param.pat.node {
@@ -388,12 +412,17 @@ fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ctxt
     let mut comp = Component::new(mir, START_BLOCK, mir.all_basic_blocks(), false);
     let block = transpiler.transpile_basic_block(START_BLOCK, &mut comp);
 
-    try!(write!(f, "{prelude}
+    try!(write!(f, "{any_type}
+
+type_synonym state = \"nat ⇀ Any\"
+
+{prelude}
 
 definition {name} :: \"{param_types} => {return_ty}\" where
-\"{name} {param_names} = ({block}) (λs. {get_retval}) ({init_state})\"
+\"{name} {param_names} = ({block}) (λs. {get_retval}) Map.empty\"
 
 ",
+                any_type=transpiler.mk_any_type(),
                 prelude=comp.prelude,
                 name=name,
                 param_types=param_types.iter().map(|ty| transpile_hir_ty(*ty)).join(" => "),
@@ -401,25 +430,27 @@ definition {name} :: \"{param_types} => {return_ty}\" where
                 param_names=param_names.iter().join(" "),
                 block=block,
                 get_retval=transpiler.get_local(transpiler.num_locals() - 1),
-                init_state=transpiler.get_locals_types()
-                    .iter().map(|ty| format!("None::{} option", ty))
-                    .join(", ")
     ));
     return Ok(());
 }
 
-fn transpile_crate(krate: &Crate, tcx: &ctxt) -> io::Result<()> {
+fn transpile_crate(krate: &Crate, tcx: &ty::ctxt) -> io::Result<()> {
     let mut f = try!(File::create("Export.thy"));
     try!(write!(f, "theory Export
 imports Rustabelle
-begin"));
+begin
+
+"));
     let mir_map = build_mir_for_crate(tcx);
     for item in krate.module.items.iter() {
-        if let Item {
-            id, ref name,
-            node: Item_::ItemFn(ref decl, _, _, _, ref generics, _), ..
-        } = **item {
-            try!(transpile_fn(&mut f, name, decl, tcx, mir_map.get(&id).unwrap()));
+        match item.node {
+            Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
+                try!(transpile_fn(&mut f, &item.name, decl, tcx, mir_map.get(&item.id).unwrap())),
+            Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
+                for item in items {
+                    println!("{}", tcx.item_path_str(tcx.map.local_def_id(item.id)))
+                },
+            _ => println!("unimplemented: {:?}", item),
         };
     }
     try!(write!(f, "end\n"));
