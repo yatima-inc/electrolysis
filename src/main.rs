@@ -330,25 +330,21 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return format!("cont_{}", bb.index());
+            return format!("(λcont s. (s,False))");
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self.mir, bb, l, true);
             println!("LOOP: {:?}", l_comp.blocks);
             let body = self.transpile_basic_block(bb, &mut l_comp);
             let name = format!("{}_{}", self.fn_name, bb.index());
+            assert!(l_comp.exits.len() == 1);
             comp.prelude = format!("{}
 
-definition {name} where \"{name} {conts} s = ({body}) (λs. (s, None)) s\"",
+definition {name} where \"{name} s = ({body}) (λs. (s, True)) s\"",
                                    comp.prelude,
                                    name=name,
-                                   conts=l_comp.exits.iter().map(|bb| format!("cont_{}", bb.index())).join(" "),
                                    body=body);
-            return format!("(loop ({} ({})))",
-                           name,
-                           l_comp.exits.iter().map(|&e| {
-                               rec!(e)
-                           }).join(" "));
+            return format!("(λcont s. cont (loop {} s)); {}", name, rec!(l_comp.exits[0]));
         }
 
         let data = self.mir.basic_block_data(bb);
