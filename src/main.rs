@@ -110,12 +110,16 @@ struct FnTranspiler<'a, 'tcx: 'a> {
 }
 
 // A loop or the full function body
+#[derive(Default)]
 struct Component {
     prelude: String,
     header: Option<BasicBlock>,
     blocks: Vec<BasicBlock>,
     loops: Vec<Vec<BasicBlock>>,
     exits: Vec<BasicBlock>,
+    nonlocal_defs: Vec<String>,
+    nonlocal_uses: Vec<String>,
+    refs: HashMap<usize, String>
 }
 
 impl Component {
@@ -123,9 +127,9 @@ impl Component {
         let loops = mir_sccs(mir, start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         Component {
-            prelude: "".to_string(),
             header: if is_loop { Some(start) } else { None },
-            blocks: blocks, loops: loops, exits: Vec::new(),
+            blocks: blocks, loops: loops,
+            .. Default::default()
         }
     }
 }
@@ -138,47 +142,30 @@ fn selector(idx: usize, len: usize) -> Vec<&'static str> {
 }
 
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
-    // State = nat -> Option (Any t)
+    fn lvalue_name(&self, lv: &Lvalue) -> String {
+        match *lv {
+            Lvalue::Var(idx) => format!("{}", self.mir.var_decls[idx as usize].name),
+            Lvalue::Temp(idx) => format!("t_{}", idx),
+            Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
+            Lvalue::ReturnPointer => "ret".to_string(),
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
+                self.lvalue_name(base),
+            _ => panic!("unimplemented: naming {:?}", lv)
+        }
+    }
 
-    fn get_locals_types(&self) -> Vec<String> {
-        self.mir.var_decls.iter().map(|v| v.ty)
-            .chain(self.mir.temp_decls.iter().map(|t| t.ty))
-            .map(|ty| self.transpile_ty(ty))
-            .chain(iter::once(self.return_ty.clone()))
+    fn locals(&self) -> Vec<Lvalue> {
+        self.mir.var_decls.iter().enumerate().map(|(idx, _)| Lvalue::Var(idx as u32))
+            .chain(self.mir.temp_decls.iter().enumerate().map(|(idx, _)| Lvalue::Temp(idx as u32)))
+            .chain(iter::once(Lvalue::ReturnPointer))
             .collect()
     }
 
-    fn mk_any_type(&self) -> String {
-        format!("datatype Any =\n{}", self.get_locals_types().iter().enumerate().map(|(idx, ty)| {
-            format!("Any_{} \"{}\"", idx, ty)
-        }).join("\n| "))
-    }
-
-    fn num_locals(&self) -> usize { self.get_locals_types().len() }
-
-    fn get_local(&self, idx: usize) -> String {
-        format!("(case s {idx} of Some (Any_{idx} x) => x)", idx=idx)
-    }
-
-    fn set_local(&self, idx: usize, val: Option<&str>) -> String {
-        format!("(s({} {}))", idx, match val {
-            Some(val) => format!("↦ Any_{} {}", idx, val),
-            None => format!(":= None")
-        })
-    }
-
-    fn set_locals(&self, indices: &Vec<usize>, val: &str) -> String {
-        format!("(let ({}) = {} in s({}))",
-                indices.iter().map(|idx| format!("t{}", idx)).join(", "),
-                val,
-                indices.iter().map(|idx| format!("{idx} ↦ Any_{idx} t{idx}", idx=idx)).join(", "))
-    }
+    fn num_locals(&self) -> usize { self.locals().len() }
 
     fn get_lvalue(&self, lv: &Lvalue) -> String {
         match *lv {
-            Lvalue::Var(idx) => self.get_local(idx as usize),
-            Lvalue::Temp(idx) => self.get_local(self.mir.var_decls.len() + idx as usize),
-            Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
+            Lvalue::Var(_) | Lvalue::Temp(_) | Lvalue::Arg(_) => self.lvalue_name(lv),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 self.get_lvalue(base),
             Lvalue::Projection(box Projection {
@@ -212,17 +199,21 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             Lvalue::Var(idx) => idx as usize,
             Lvalue::Temp(idx) => self.mir.var_decls.len() + idx as usize,
             Lvalue::ReturnPointer => self.num_locals() - 1,
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
+                self.lvalue_idx(base),
             _ => panic!("unimplemented: storing {:?}", lv)
         }
     }
 
-    fn set_lvalue(&self, lv: &Lvalue, val: Option<&str>) -> String {
-        self.set_local(self.lvalue_idx(lv), val)
+    fn set_lvalue(&self, lv: &Lvalue, val: &str) -> String {
+        format!("let {} = {} in\n", self.lvalue_name(lv), val)
     }
 
     fn set_lvalues<'b, It: Iterator<Item=&'b Lvalue<'tcx>>>(&self, lvs: It, val: &str) -> String
         where 'tcx: 'b {
-        self.set_locals(&lvs.map(|lv| self.lvalue_idx(lv)).collect(), val)
+        format!("let ({}) = {} in\n",
+                lvs.map(|lv| self.lvalue_name(lv)).join(", "),
+                val)
     }
 
     fn transpile_def_id(&self, did: DefId) -> String {
@@ -304,21 +295,98 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_statement(&self, stmt: &Statement<'tcx>) -> String {
+    fn transpile_statement(&self, stmt: &Statement<'tcx>, comp: &mut Component) -> String {
         match stmt.kind {
+            StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref lsource)) => {
+                comp.refs.insert(self.lvalue_idx(lv), self.get_lvalue(lsource));
+                self.set_lvalue(lv, &self.get_lvalue(lsource))
+                //format!("let ({lv}, {lsource}) = ({lsource}, undefined) in\n", lv=self.get_lvalue(lv), lsource=self.get_lvalue(lsource))
+            }
             StatementKind::Assign(ref lv, ref rv) => {
                 let val = self.get_rvalue(rv);
-                format!("(λcont s. cont {})", self.set_lvalue(lv, Some(&val)))
+                self.set_lvalue(lv, &val)
             }
-            StatementKind::Drop(DropKind::Deep, ref lv) =>
-                format!("(λcont s. cont {})", self.set_lvalue(lv, None)),
+            StatementKind::Drop(DropKind::Deep, ref lv) => {
+                //match comp.refs.get(&self.lvalue_idx(lv)) {
+                //    Some(lsource) => format!("let ({lsource}, {lv}) = ({lv}, undefined) in\n", lsource=lsource, lv=self.get_lvalue(lv)),
+                //    None => self.set_lvalue(lv, "undefined")
+                //}
+                match comp.refs.get(&self.lvalue_idx(lv)) {
+                    Some(lsource) => format!("let {} = {} in\n", lsource, self.get_lvalue(lv)),
+                    None => "".to_string()
+                }
+            }
             _ => panic!("unimplemented: {:?}", stmt),
         }
     }
 
+    fn find_nonlocals(&self, comp: &mut Component) {
+        fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
+            match *op {
+                Operand::Consume(ref lv) => uses.push(lv),
+                Operand::Constant(_) => ()
+            }
+        }
+
+        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
+            match *rv {
+                Rvalue::Use(ref op) => operand(op, uses),
+                Rvalue::BinaryOp(op, ref o1, ref o2) => {
+                    operand(o1, uses);
+                    operand(o2, uses);
+                }
+                Rvalue::Ref(_, _, ref lv) => uses.push(lv),
+                Rvalue::Aggregate(_, ref ops) => {
+                    for op in ops {
+                        operand(op, uses);
+                    }
+                }
+                _ => panic!("unimplemented: {:?}", rv),
+            }
+        }
+
+        let mut defs = Vec::new();
+        let mut uses = Vec::new();
+        let mut drops = Vec::new();
+
+        for &bb in &comp.blocks {
+            for stmt in &self.mir.basic_block_data(bb).statements {
+                match stmt.kind {
+                    StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
+                        defs.push(lv);
+                        defs.push(ldest);
+                    }
+                    StatementKind::Assign(ref lv, ref rv) => {
+                        defs.push(lv);
+                        rvalue(rv, &mut uses);
+                    }
+                    StatementKind::Drop(DropKind::Deep, ref lv) => drops.push(lv),
+                    _ => panic!("unimplemented: {:?}", stmt),
+                }
+            }
+            match self.mir.basic_block_data(bb).terminator {
+                Terminator::Call { ref data, ref targets } => {
+                    uses.push(&data.func);
+                    for arg in &data.args {
+                        uses.push(arg);
+                    }
+                    let muts = data.args.iter().filter(|lv| {
+                        FnTranspiler::try_unwrap_mut_ref(self.get_lvalue_ty(lv)).is_some()
+                    });
+                    defs.extend(iter::once(&data.destination).chain(muts));
+                },
+                _ => (),
+            }
+        }
+
+        let ret = Lvalue::ReturnPointer;
+        comp.nonlocal_defs = self.locals().iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| self.lvalue_name(lv)).collect_vec();
+        comp.nonlocal_uses = self.locals().iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| self.lvalue_name(lv)).collect_vec();
+    }
+
     fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> String {
         if comp.header == Some(bb) {
-            "id".to_string()
+            format!("(({}), True)", comp.nonlocal_defs.iter().join(", "))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -330,49 +398,52 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return format!("(λcont s. (s,False))");
+            return format!("(({}), False)", comp.nonlocal_defs.iter().join(", "));
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self.mir, bb, l, true);
-            println!("LOOP: {:?}", l_comp.blocks);
+            self.find_nonlocals(&mut l_comp);
+            println!("LOOP: {:?}, {:?}", l_comp.blocks, l_comp.nonlocal_defs);
             let body = self.transpile_basic_block(bb, &mut l_comp);
             let name = format!("{}_{}", self.fn_name, bb.index());
             assert!(l_comp.exits.len() == 1);
             comp.prelude = format!("{}
 
-definition {name} where \"{name} s = ({body}) (λs. (s, True)) s\"",
+definition {name} where \"{name} {uses} = (λ({defs}). {body})\"",
                                    comp.prelude,
                                    name=name,
+                                   uses=l_comp.nonlocal_uses.iter().join(" "),
+                                   defs=l_comp.nonlocal_defs.iter().join(", "),
                                    body=body);
-            return format!("(λcont s. cont (loop {} s)); {}", name, rec!(l_comp.exits[0]));
+            return format!("let ({muts}) = loop ({name} {immuts}) ({muts}) in\n{cont}", muts=l_comp.nonlocal_defs.iter().join(", "),
+                           name=name, immuts=l_comp.nonlocal_uses.iter().join(" "), cont=rec!(l_comp.exits[0]));
         }
 
         let data = self.mir.basic_block_data(bb);
-        let stmts = data.statements.iter().map(|s| self.transpile_statement(s)).collect_vec();
+        let stmts = data.statements.iter().map(|s| self.transpile_statement(s, comp)).collect_vec();
         let terminator = match data.terminator {
             Terminator::Goto { target } =>
                 rec!(target),
             Terminator::Panic { .. } => format!("panic"),
             Terminator::If { ref cond, ref targets } =>
-                format!("(ite {} {} {})", self.get_operand(cond),
+                format!("if {} then {} else {}", self.get_operand(cond),
                 rec!(targets[0]),
                 rec!(targets[1])),
-            Terminator::Return => format!("id"),
+            Terminator::Return => format!("ret"),
             Terminator::Call { ref data, ref targets } => {
                 let call = format!("({} {})", self.get_lvalue(&data.func),
                                    data.args.iter().map(|lv| self.get_lvalue(lv)).join(" "));
                 let muts = data.args.iter().filter(|lv| {
                     FnTranspiler::try_unwrap_mut_ref(self.get_lvalue_ty(lv)).is_some()
                 });
-                format!("(λcont s. cont {});\n{}",
-                        self.set_lvalues(iter::once(&data.destination).chain(muts), &call),
-                        rec!(targets[0]))
+                self.set_lvalues(iter::once(&data.destination).chain(muts), &call) +
+                        &rec!(targets[0])
             },
             Terminator::Switch { ref discr, ref targets } =>
                 if let ty::TypeVariants::TyEnum(ref adt_def, _) = self.get_lvalue_ty(discr).sty {
-                    format!("(λcont s. case {} of {})", self.get_lvalue(discr),
+                    format!("case {} of {}", self.get_lvalue(discr),
                         adt_def.variants.iter().zip(targets).map(|(var, &target)| {
-                            format!("{} {} => ({}) cont s", self.transpile_def_id(var.did),
+                            format!("{} {} => {}", self.transpile_def_id(var.did),
                                     iter::repeat("_").take(var.fields.len()).join(" "),
                                     rec!(target))
                         }).join(" | "))
@@ -381,7 +452,7 @@ definition {name} where \"{name} s = ({body}) (λs. (s, True)) s\"",
                 },
             _ => panic!("unimplemented: {:?}", data),
         };
-        stmts.into_iter().chain(iter::once(terminator)).join(";\n")
+        stmts.into_iter().chain(iter::once(terminator)).join("")
     }
 }
 
@@ -405,26 +476,20 @@ fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ty::
     let transpiler = FnTranspiler { fn_name: format!("{}", name), tcx: tcx, mir: mir, param_names: &param_names,
         return_ty: return_ty.clone() };
     let mut comp = Component::new(mir, START_BLOCK, mir.all_basic_blocks(), false);
-    let block = transpiler.transpile_basic_block(START_BLOCK, &mut comp);
+    let body = transpiler.transpile_basic_block(START_BLOCK, &mut comp);
 
-    try!(write!(f, "{any_type}
-
-type_synonym state = \"nat ⇀ Any\"
-
-{prelude}
+    try!(write!(f, "{prelude}
 
 definition {name} :: \"{param_types} => {return_ty}\" where
-\"{name} {param_names} = ({block}) (λs. {get_retval}) Map.empty\"
+\"{name} {param_names} = ({body})\"
 
 ",
-                any_type=transpiler.mk_any_type(),
                 prelude=comp.prelude,
                 name=name,
                 param_types=param_types.iter().map(|ty| transpile_hir_ty(*ty)).join(" => "),
                 return_ty=return_ty,
                 param_names=param_names.iter().join(" "),
-                block=block,
-                get_retval=transpiler.get_local(transpiler.num_locals() - 1),
+                body=body,
     ));
     return Ok(());
 }

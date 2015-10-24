@@ -53,7 +53,7 @@ type_synonym u32 = nat
 abbreviation "core_iter_I_IntoIterator_into_iter \<equiv> id"
 
 datatype core_ops_Range = core_ops_Range u32 u32
-abbreviation "core_iter_ops_Range_A__Iterator_next r \<equiv> case r of core_ops_Range l r \<Rightarrow> (if l < r then Some (l+1) else None, core_ops_Range (l+1) r)"
+abbreviation "core_iter_ops_Range_A__Iterator_next r \<equiv> case r of core_ops_Range l r \<Rightarrow> (if l < r then Some l else None, core_ops_Range (l+1) r)"
 
 type_synonym core_option_Option = "u32 option"
 abbreviation "core_option_Option_None \<equiv> None"
