@@ -185,7 +185,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn get_lvalue_ty(&self, lv: &Lvalue) -> &ty::Ty {
+    fn lvalue_ty(&self, lv: &Lvalue) -> &ty::Ty {
         match *lv {
             Lvalue::Var(idx) => &self.mir.var_decls[idx as usize].ty,
             Lvalue::Temp(idx) => &self.mir.temp_decls[idx as usize].ty,
@@ -303,8 +303,12 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                 //format!("let ({lv}, {lsource}) = ({lsource}, undefined) in\n", lv=self.get_lvalue(lv), lsource=self.get_lvalue(lsource))
             }
             StatementKind::Assign(ref lv, ref rv) => {
-                let val = self.get_rvalue(rv);
-                self.set_lvalue(lv, &val)
+                if *lv != Lvalue::ReturnPointer && self.lvalue_ty(lv).is_nil() {
+                    // optimization/rustc_mir workaround: don't save '()'
+                    "".to_string()
+                } else {
+                    self.set_lvalue(lv, &self.get_rvalue(rv))
+                }
             }
             StatementKind::Drop(DropKind::Deep, ref lv) => {
                 //match comp.refs.get(&self.lvalue_idx(lv)) {
@@ -371,7 +375,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                         uses.push(arg);
                     }
                     let muts = data.args.iter().filter(|lv| {
-                        FnTranspiler::try_unwrap_mut_ref(self.get_lvalue_ty(lv)).is_some()
+                        FnTranspiler::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some()
                     });
                     defs.extend(iter::once(&data.destination).chain(muts));
                 },
@@ -434,13 +438,13 @@ definition {name} where \"{name} {uses} = (λ({defs}). {body})\"",
                 let call = format!("({} {})", self.get_lvalue(&data.func),
                                    data.args.iter().map(|lv| self.get_lvalue(lv)).join(" "));
                 let muts = data.args.iter().filter(|lv| {
-                    FnTranspiler::try_unwrap_mut_ref(self.get_lvalue_ty(lv)).is_some()
+                    FnTranspiler::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some()
                 });
                 self.set_lvalues(iter::once(&data.destination).chain(muts), &call) +
                         &rec!(targets[0])
             },
             Terminator::Switch { ref discr, ref targets } =>
-                if let ty::TypeVariants::TyEnum(ref adt_def, _) = self.get_lvalue_ty(discr).sty {
+                if let ty::TypeVariants::TyEnum(ref adt_def, _) = self.lvalue_ty(discr).sty {
                     format!("case {} of {}", self.get_lvalue(discr),
                         adt_def.variants.iter().zip(targets).map(|(var, &target)| {
                             format!("{} {} => {}", self.transpile_def_id(var.did),
