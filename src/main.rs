@@ -13,6 +13,7 @@ extern crate rustc_mir;
 extern crate syntax;
 extern crate rustc_trans;
 
+mod component;
 mod mir_graph;
 mod traits;
 
@@ -40,7 +41,10 @@ use rustc_driver::driver;
 use syntax::diagnostics;
 use rustc::session;
 
+use component::Component;
 use mir_graph::mir_sccs;
+
+type TransResult = Result<String, String>;
 
 fn main() {
     let krate = env::args().nth(1).unwrap();
@@ -48,6 +52,7 @@ fn main() {
         session::config::Options {
             crate_types: vec![session::config::CrateType::CrateTypeRlib],
             maybe_sysroot: Some(path::PathBuf::from("/usr/local")),
+            unstable_features: syntax::feature_gate::UnstableFeatures::Allow,
             .. session::config::basic_options()
         },
         Some(path::PathBuf::from(&krate)),
@@ -101,37 +106,11 @@ fn binop_to_string(op: BinOp) -> &'static str {
     }
 }
 
-struct FnTranspiler<'a, 'tcx: 'a> {
+pub struct FnTranspiler<'a, 'tcx: 'a> {
     fn_name: String,
     tcx: &'a ty::ctxt<'tcx>,
     mir: &'a Mir<'tcx>,
     param_names: &'a Vec<String>,
-    return_ty: String,
-}
-
-// A loop or the full function body
-#[derive(Default)]
-struct Component {
-    prelude: String,
-    header: Option<BasicBlock>,
-    blocks: Vec<BasicBlock>,
-    loops: Vec<Vec<BasicBlock>>,
-    exits: Vec<BasicBlock>,
-    nonlocal_defs: Vec<String>,
-    nonlocal_uses: Vec<String>,
-    refs: HashMap<usize, String>
-}
-
-impl Component {
-    fn new(mir: &Mir, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Component {
-        let loops = mir_sccs(mir, start, &blocks);
-        let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
-        Component {
-            header: if is_loop { Some(start) } else { None },
-            blocks: blocks, loops: loops,
-            .. Default::default()
-        }
-    }
 }
 
 fn selector(idx: usize, len: usize) -> Vec<&'static str> {
@@ -139,6 +118,11 @@ fn selector(idx: usize, len: usize) -> Vec<&'static str> {
         .chain(iter::once("x"))
         .chain(iter::repeat("_").take(len - idx - 1))
         .collect()
+}
+
+fn transpile_def_id(did: DefId, tcx: &ty::ctxt) -> String {
+    // what could ever go wrong
+    tcx.item_path_str(did).replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
 }
 
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
@@ -217,8 +201,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     }
 
     fn transpile_def_id(&self, did: DefId) -> String {
-        // what could ever go wrong
-        self.tcx.item_path_str(did).replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
+        transpile_def_id(did, self.tcx)
     }
 
     fn try_unwrap_mut_ref(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
@@ -266,9 +249,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                 Literal::Value { value: ConstVal::Uint(i) } => i.to_string(),
                 Literal::Value { .. } => panic!("unimplemented: {:?}", op),
                 Literal::Item { def_id, substs }  => {
-                    println!("item: {}", self.tcx.item_path_str(def_id));
                     if let Some(method_did) = traits::lookup_trait_item_impl(self.tcx, def_id, substs) {
-                        println!("trait impl: {}", self.tcx.item_path_str(method_did));
                         self.transpile_def_id(method_did)
                     } else {
                         self.transpile_def_id(def_id)
@@ -324,70 +305,6 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn find_nonlocals(&self, comp: &mut Component) {
-        fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
-            match *op {
-                Operand::Consume(ref lv) => uses.push(lv),
-                Operand::Constant(_) => ()
-            }
-        }
-
-        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
-            match *rv {
-                Rvalue::Use(ref op) => operand(op, uses),
-                Rvalue::BinaryOp(op, ref o1, ref o2) => {
-                    operand(o1, uses);
-                    operand(o2, uses);
-                }
-                Rvalue::Ref(_, _, ref lv) => uses.push(lv),
-                Rvalue::Aggregate(_, ref ops) => {
-                    for op in ops {
-                        operand(op, uses);
-                    }
-                }
-                _ => panic!("unimplemented: {:?}", rv),
-            }
-        }
-
-        let mut defs = Vec::new();
-        let mut uses = Vec::new();
-        let mut drops = Vec::new();
-
-        for &bb in &comp.blocks {
-            for stmt in &self.mir.basic_block_data(bb).statements {
-                match stmt.kind {
-                    StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
-                        defs.push(lv);
-                        defs.push(ldest);
-                    }
-                    StatementKind::Assign(ref lv, ref rv) => {
-                        defs.push(lv);
-                        rvalue(rv, &mut uses);
-                    }
-                    StatementKind::Drop(DropKind::Deep, ref lv) => drops.push(lv),
-                    _ => panic!("unimplemented: {:?}", stmt),
-                }
-            }
-            match self.mir.basic_block_data(bb).terminator {
-                Terminator::Call { ref data, ref targets } => {
-                    uses.push(&data.func);
-                    for arg in &data.args {
-                        uses.push(arg);
-                    }
-                    let muts = data.args.iter().filter(|lv| {
-                        FnTranspiler::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some()
-                    });
-                    defs.extend(iter::once(&data.destination).chain(muts));
-                },
-                _ => (),
-            }
-        }
-
-        let ret = Lvalue::ReturnPointer;
-        comp.nonlocal_defs = self.locals().iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| self.lvalue_name(lv)).collect_vec();
-        comp.nonlocal_uses = self.locals().iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| self.lvalue_name(lv)).collect_vec();
-    }
-
     fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> String {
         if comp.header == Some(bb) {
             format!("(({}), True)", comp.nonlocal_defs.iter().join(", "))
@@ -397,7 +314,6 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     }
 
     fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component) -> String {
-        println!("{:?}, header {:?}", bb, comp.header);
         macro_rules! rec { ($bb:expr) => { self.transpile_basic_block_rec($bb, comp) } }
 
         if !comp.blocks.contains(&bb) {
@@ -405,9 +321,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             return format!("(({}), False)", comp.nonlocal_defs.iter().join(", "));
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
-            let mut l_comp = Component::new(self.mir, bb, l, true);
-            self.find_nonlocals(&mut l_comp);
-            println!("LOOP: {:?}, {:?}", l_comp.blocks, l_comp.nonlocal_defs);
+            let mut l_comp = Component::new(self, bb, l, true);
             let body = self.transpile_basic_block(bb, &mut l_comp);
             let name = format!("{}_{}", self.fn_name, bb.index());
             assert!(l_comp.exits.len() == 1);
@@ -477,10 +391,9 @@ fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ty::
         FunctionRetTy::NoReturn(_) => panic!("should skip: no-return fn"),
     };
 
-    let transpiler = FnTranspiler { fn_name: format!("{}", name), tcx: tcx, mir: mir, param_names: &param_names,
-        return_ty: return_ty.clone() };
-    let mut comp = Component::new(mir, START_BLOCK, mir.all_basic_blocks(), false);
-    let body = transpiler.transpile_basic_block(START_BLOCK, &mut comp);
+    let trans = FnTranspiler { fn_name: format!("{}", name), tcx: tcx, mir: mir, param_names: &param_names };
+    let mut comp = Component::new(&trans, START_BLOCK, mir.all_basic_blocks(), false);
+    let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
 
     try!(write!(f, "{prelude}
 
@@ -495,7 +408,30 @@ definition {name} :: \"{param_types} => {return_ty}\" where
                 param_names=param_names.iter().join(" "),
                 body=body,
     ));
-    return Ok(());
+    Ok(())
+}
+
+fn transpile_module<'tcx>(module: &hir::Mod, tcx: &ty::ctxt<'tcx>, mir_map: &rustc_mir::mir_map::MirMap<'tcx>, f: &mut File) -> io::Result<()> {
+    for item in module.items.iter() {
+        match item.node {
+            Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
+                try!(transpile_fn(f, &item.name, decl, tcx, &mir_map[&item.id])),
+            Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
+                for item in items {
+                    match item.node {
+                        hir::ImplItem_::MethodImplItem(ref sig, _) =>
+                            try!(transpile_fn(f, &item.name, &sig.decl, tcx, &mir_map[&item.id])),
+                        _ => println!("unimplemented: {:?}", item),
+                    }
+                },
+            Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
+            Item_::ItemMod(ref module) => try!(transpile_module(module, tcx, mir_map, f)),
+            Item_::ItemTy(ref ty, ref generics) =>
+                try!(write!(f, "typedef {} = {}\n\n", 1, 2)),
+            _ => println!("unimplemented: {:?}", item),
+        };
+    }
+    Ok(())
 }
 
 fn transpile_crate(krate: &Crate, tcx: &ty::ctxt) -> io::Result<()> {
@@ -506,17 +442,7 @@ begin
 
 "));
     let mir_map = build_mir_for_crate(tcx);
-    for item in krate.module.items.iter() {
-        match item.node {
-            Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
-                try!(transpile_fn(&mut f, &item.name, decl, tcx, mir_map.get(&item.id).unwrap())),
-            Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
-                for item in items {
-                    println!("{}", tcx.item_path_str(tcx.map.local_def_id(item.id)))
-                },
-            _ => println!("unimplemented: {:?}", item),
-        };
-    }
+    transpile_module(&krate.module, tcx, &mir_map, &mut f);
     try!(write!(f, "end\n"));
     return Ok(());
 }

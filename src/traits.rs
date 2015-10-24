@@ -8,7 +8,7 @@ use rustc::middle::def_id::DefId;
 //use rustc_trans::trans::monomorphize;
 
 // copied from trans::meth
-fn combine_impl_and_methods_tps<'tcx>(tcx: &ctxt<'tcx>,
+fn combine_impl_and_methods_tps<'tcx>(//tcx: &ctxt<'tcx>,
                                       node_substs: subst::Substs<'tcx>,
                                       rcvr_substs: subst::Substs<'tcx>)
                                       -> subst::Substs<'tcx>
@@ -63,13 +63,9 @@ pub fn lookup_trait_item_impl<'tcx>(tcx: &ctxt<'tcx>, item_did: DefId, substs: &
                     MethodTraitItem(method) => method.name,
                     _ => unreachable!(),
                 };
-                //println!("substs: {:?}, trait_substs: {:?}, vtable: {:?}", substs, trait_substs, data.substs);
-                let callee_substs = combine_impl_and_methods_tps(tcx, substs.clone(), data.substs);
-                //println!("callee_substs: {:?}", callee_substs);
-                //println!("impl_did: {:?}", tcx.def_path(impl_did));
+                let callee_substs = combine_impl_and_methods_tps(/*tcx, */substs.clone(), data.substs);
 
                 let mth = tcx.get_impl_method(impl_did, callee_substs, mname);
-                //println!("lookup: {:?}", mth);
                 mth.method.def_id
             },
             _ => panic!("unimplementd: {:?}", trait_ref),
