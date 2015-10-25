@@ -1,6 +1,7 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(slice_patterns)]
+#![feature(path_relative_from)]
 
 extern crate itertools;
 extern crate petgraph;
@@ -17,7 +18,6 @@ mod component;
 mod mir_graph;
 mod traits;
 
-use std::collections::HashMap;
 use std::env;
 use std::io;
 use std::io::prelude::*;
@@ -29,7 +29,7 @@ use itertools::Itertools;
 
 use syntax::ast;
 use rustc_front::hir;
-use rustc_front::hir::{Crate, Path, FnDecl, Pat_, BindingMode, FunctionRetTy, Item, Item_, Ty_};
+use rustc_front::hir::{Path, FnDecl, Pat_, BindingMode, FunctionRetTy, Item, Item_, Ty_};
 use rustc_front::print::pprust;
 use rustc_mir::mir_map::build_mir_for_crate;
 use rustc_mir::repr::*;
@@ -42,14 +42,15 @@ use syntax::diagnostics;
 use rustc::session;
 
 use component::Component;
-use mir_graph::mir_sccs;
 
 type TransResult = Result<String, String>;
 
 fn main() {
     let krate = env::args().nth(1).unwrap();
+    let crate_name = env::args().nth(2).unwrap();
     let sess = session::build_session(
         session::config::Options {
+            crate_name: Some(crate_name),
             crate_types: vec![session::config::CrateType::CrateTypeRlib],
             maybe_sysroot: Some(path::PathBuf::from("/usr/local")),
             unstable_features: syntax::feature_gate::UnstableFeatures::Allow,
@@ -64,9 +65,7 @@ fn main() {
         &None, &None, None, driver::CompileController {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
-                callback: Box::new(|state| {
-                    transpile_crate(state.hir_crate.unwrap(), state.tcx.unwrap()).unwrap();
-                }),
+                callback: Box::new(|state| transpile_crate(&state).unwrap()),
             },
             .. driver::CompileController::basic()
         }
@@ -107,6 +106,7 @@ fn binop_to_string(op: BinOp) -> &'static str {
 }
 
 pub struct FnTranspiler<'a, 'tcx: 'a> {
+    crate_name: &'a str,
     fn_name: String,
     tcx: &'a ty::ctxt<'tcx>,
     mir: &'a Mir<'tcx>,
@@ -120,9 +120,13 @@ fn selector(idx: usize, len: usize) -> Vec<&'static str> {
         .collect()
 }
 
-fn transpile_def_id(did: DefId, tcx: &ty::ctxt) -> String {
+fn transpile_def_id(did: DefId, tcx: &ty::ctxt, crate_name: &str) -> String {
     // what could ever go wrong
-    tcx.item_path_str(did).replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
+    let mut path = tcx.item_path_str(did);
+    if did.is_local() {
+        path = format!("{}::{}", crate_name, path);
+    }
+    path.replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
 }
 
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
@@ -201,7 +205,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     }
 
     fn transpile_def_id(&self, did: DefId) -> String {
-        transpile_def_id(did, self.tcx)
+        transpile_def_id(did, self.tcx, self.crate_name)
     }
 
     fn try_unwrap_mut_ref(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
@@ -374,75 +378,102 @@ definition {name} where \"{name} {uses} = (λ({defs}). {body})\"",
     }
 }
 
-fn transpile_fn<'tcx>(f: &mut Write, name: &ast::Name, decl: &FnDecl, tcx: &ty::ctxt<'tcx>, mir: &Mir<'tcx>)
-        -> io::Result<()> {
-    let (param_names, param_types): (Vec<_>, Vec<_>) = decl.inputs.iter().map(|param| {
-        match param.pat.node {
-            Pat_::PatIdent(BindingMode::BindByRef(hir::Mutability::MutMutable), _, _) =>
-               panic!("unimplemented: &mut param ({:?})", param),
-            Pat_::PatIdent(_, ref ident, _) =>
-                (ident.node.name.as_str().to_string(), &param.ty),
-            _ => panic!("unimplemented: param pattern ({:?})", param),
-        }
-    }).unzip();
-    let return_ty = match decl.output {
-        FunctionRetTy::DefaultReturn(_) => "()".to_string(),
-        FunctionRetTy::Return(ref ty) => transpile_hir_ty(ty),
-        FunctionRetTy::NoReturn(_) => panic!("should skip: no-return fn"),
-    };
+struct ModuleTranspiler<'a, 'tcx: 'a> {
+    input: &'a path::Path,
+    crate_name: &'a str,
+    tcx: &'a ty::ctxt<'tcx>,
+    mir_map: &'a rustc_mir::mir_map::MirMap<'tcx>,
+}
 
-    let trans = FnTranspiler { fn_name: format!("{}", name), tcx: tcx, mir: mir, param_names: &param_names };
-    let mut comp = Component::new(&trans, START_BLOCK, mir.all_basic_blocks(), false);
-    let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
+impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
+    fn transpile_fn(&self, f: &mut Write, id: ast::NodeId, decl: &FnDecl) -> io::Result<()> {
+        let (param_names, param_types): (Vec<_>, Vec<_>) = decl.inputs.iter().map(|param| {
+            match param.pat.node {
+                Pat_::PatIdent(BindingMode::BindByRef(hir::Mutability::MutMutable), _, _) =>
+                   panic!("unimplemented: &mut param ({:?})", param),
+                Pat_::PatIdent(_, ref ident, _) =>
+                    (ident.node.name.as_str().to_string(), &param.ty),
+                _ => panic!("unimplemented: param pattern ({:?})", param),
+            }
+        }).unzip();
+        let return_ty = match decl.output {
+            FunctionRetTy::DefaultReturn(_) => "()".to_string(),
+            FunctionRetTy::Return(ref ty) => transpile_hir_ty(ty),
+            FunctionRetTy::NoReturn(_) => panic!("should skip: no-return fn"),
+        };
 
-    try!(write!(f, "{prelude}
+        let name = transpile_def_id(self.tcx.map.local_def_id(id), self.tcx, self.crate_name);
+        let mir = &self.mir_map[&id];
+        let trans = FnTranspiler {
+            crate_name: self.crate_name, fn_name: format!("{}", name),
+            tcx: self.tcx, mir: mir, param_names: &param_names
+        };
+        let mut comp = Component::new(&trans, START_BLOCK, mir.all_basic_blocks(), false);
+        let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
+
+        try!(write!(f, "{prelude}
 
 definition {name} :: \"{param_types} => {return_ty}\" where
 \"{name} {param_names} = ({body})\"
 
 ",
-                prelude=comp.prelude,
-                name=name,
-                param_types=param_types.iter().map(|ty| transpile_hir_ty(*ty)).join(" => "),
-                return_ty=return_ty,
-                param_names=param_names.iter().join(" "),
-                body=body,
-    ));
-    Ok(())
-}
-
-fn transpile_module<'tcx>(module: &hir::Mod, tcx: &ty::ctxt<'tcx>, mir_map: &rustc_mir::mir_map::MirMap<'tcx>, f: &mut File) -> io::Result<()> {
-    for item in module.items.iter() {
-        match item.node {
-            Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
-                try!(transpile_fn(f, &item.name, decl, tcx, &mir_map[&item.id])),
-            Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
-                for item in items {
-                    match item.node {
-                        hir::ImplItem_::MethodImplItem(ref sig, _) =>
-                            try!(transpile_fn(f, &item.name, &sig.decl, tcx, &mir_map[&item.id])),
-                        _ => println!("unimplemented: {:?}", item),
-                    }
-                },
-            Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
-            Item_::ItemMod(ref module) => try!(transpile_module(module, tcx, mir_map, f)),
-            Item_::ItemTy(ref ty, ref generics) =>
-                try!(write!(f, "typedef {} = {}\n\n", 1, 2)),
-            _ => println!("unimplemented: {:?}", item),
-        };
+                    prelude=comp.prelude,
+                    name=name,
+                    param_types=param_types.iter().map(|ty| transpile_hir_ty(*ty)).join(" => "),
+                    return_ty=return_ty,
+                    param_names=param_names.iter().join(" "),
+                    body=body,
+        ));
+        Ok(())
     }
-    Ok(())
-}
 
-fn transpile_crate(krate: &Crate, tcx: &ty::ctxt) -> io::Result<()> {
-    let mut f = try!(File::create("Export.thy"));
-    try!(write!(f, "theory Export
-imports Rustabelle
+    fn transpile_module(&self, module: &hir::Mod) -> io::Result<()> {
+        let p = &self.tcx.sess.codemap().span_to_filename(module.inner);
+        let p = path::Path::new(p);
+        let base = self.input.parent().unwrap();
+        let p = path::Path::new("export").join(self.crate_name).join(p.relative_from(base).unwrap()).with_extension("thy");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let mut f = try!(File::create(&p));
+        try!(write!(f, "theory {}
+imports \"../../Rustabelle\"
 begin
 
-"));
-    let mir_map = build_mir_for_crate(tcx);
-    transpile_module(&krate.module, tcx, &mir_map, &mut f);
-    try!(write!(f, "end\n"));
-    return Ok(());
+", p.file_stem().unwrap().to_str().unwrap()));
+
+        for item in module.items.iter() {
+            match item.node {
+                Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
+                    try!(self.transpile_fn(&mut f, item.id, decl)),
+                Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
+                    for item in items {
+                        match item.node {
+                            hir::ImplItem_::MethodImplItem(ref sig, _) =>
+                                try!(self.transpile_fn(&mut f, item.id, &sig.decl)),
+                            _ => println!("unimplemented: {:?}", item),
+                        }
+                    },
+                Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
+                Item_::ItemMod(ref module) => try!(self.transpile_module(module)),
+                Item_::ItemTy(ref ty, ref generics) =>
+                    try!(write!(f, "typedef {} = {}\n\n", 1, 2)),
+                _ => println!("unimplemented: {:?}", item),
+            };
+        }
+        try!(write!(f, "end\n"));
+        Ok(())
+    }
+}
+
+fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
+    let tcx = state.tcx.unwrap();
+    let trans = ModuleTranspiler {
+        input: match *state.input {
+            session::config::Input::File(ref p) => p,
+            _ => panic!("A file would be nice."),
+        },
+        crate_name: state.crate_name.unwrap(),
+        tcx: tcx,
+        mir_map: &build_mir_for_crate(tcx),
+    };
+    trans.transpile_module(&state.hir_crate.unwrap().module)
 }
