@@ -1,0 +1,3 @@
+[submodule "librustc_mir"]
+	path = librustc_mir
+	url = https://github.com/Kha/rust.git
