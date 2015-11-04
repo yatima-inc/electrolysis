@@ -4,7 +4,7 @@ begin
 
 
 
-definition examples_fac_16 where "examples_fac_16 res = (λ(res, iter). let t_8 = core_iter_ops_Range_A__Iterator_next in
+definition examples_fac_16 where "examples_fac_16 res = (\<lambda>(res, iter). let t_8 = core_iter_ops_Range_A__Iterator_next in
 let t_10 = iter in
 let t_9 = t_10 in
 let (t_7, t_9) = (t_8 t_9) in

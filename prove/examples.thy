@@ -1,6 +1,6 @@
 theory examples
 imports "../export/examples/lib" Binomial
-begin
+begin       
 
 lemma fac: "examples_fac (n::u32) = fact n"
 proof-

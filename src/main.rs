@@ -331,7 +331,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             assert!(l_comp.exits.len() == 1);
             comp.prelude = format!("{}
 
-definition {name} where \"{name} {uses} = (λ({defs}). {body})\"",
+definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
                                    comp.prelude,
                                    name=name,
                                    uses=l_comp.nonlocal_uses.iter().join(" "),

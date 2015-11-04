@@ -1,5 +1,5 @@
 session "rustabelle" = "HOL" +
-  options [document = pdf, document_output = "output", quick_and_dirty = true]
+  options [document = pdf, document_output = "output"]
   theories [document = false]
     "~~/src/HOL/Library/While_Combinator"
   theories
