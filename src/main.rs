@@ -71,6 +71,7 @@ fn main() {
         diagnostics::registry::Registry::new(&rustc::DIAGNOSTICS)
     );
     let cfg = session::config::build_configuration(&sess);
+    println!("Compiling up to MIR...");
     driver::compile_input(sess, cfg,
         &session::config::Input::File(path::PathBuf::from(&krate)),
         &None, &None, None, driver::CompileController {
@@ -265,7 +266,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                 Literal::Value { .. } => throw!("unimplemented: {:?}", op),
                 Literal::Item { def_id, substs }  => {
                     if let Some(method_did) = traits::lookup_trait_item_impl(self.tcx, def_id, substs) {
-                        self.transpile_def_id(method_did)
+                        self.transpile_def_id(try!(method_did))
                     } else {
                         self.transpile_def_id(def_id)
                     }
@@ -349,7 +350,9 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             let mut l_comp = try!(Component::new(self, bb, l, true));
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
             let name = format!("{}_{}", self.fn_name, bb.index());
-            assert!(l_comp.exits.len() == 1);
+            if l_comp.exits.len() != 1 {
+                throw!("Oops, multiple loop exits");
+            }
             comp.prelude = format!("{}
 
 definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
@@ -404,6 +407,18 @@ struct ModuleTranspiler<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
     fn try_transpile_fn(&self, id: ast::NodeId, decl: &FnDecl, name: &String) -> TransResult {
+    fn transpile_generics(&self, generics: &hir::Generics) -> TransResult {
+        let mut bounds = generics.where_clause.predicates.iter().filter_map(|p| match p {
+            &hir::WherePredicate::BoundPredicate(ref pred) => Some(&pred.bounds),
+            _ => None,
+        }).chain(generics.ty_params.iter().map(|p| &p.bounds)).flat_map(|bounds| bounds);
+        if bounds.next().is_some() {
+            throw!("ty param bounds");
+        }
+        Ok(format!("({})", generics.ty_params.iter().map(|p| format!("'{}", p.name)).join(", ")))
+    }
+
+    fn transpile_fn(&self, id: ast::NodeId, decl: &FnDecl, name: &str) -> TransResult {
         let params = try!(decl.inputs.iter().map(|param| {
             match param.pat.node {
                 Pat_::PatIdent(BindingMode::BindByRef(hir::Mutability::MutMutable), _, _) =>
@@ -423,7 +438,7 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
 
         let mir = &self.mir_map[&id];
         let trans = FnTranspiler {
-            crate_name: self.crate_name, fn_name: name.clone(),
+            crate_name: self.crate_name, fn_name: name.to_string(),
             tcx: self.tcx, mir: mir, param_names: &param_names
         };
         let mut comp = try!(Component::new(&trans, START_BLOCK, mir.all_basic_blocks(), false));
@@ -432,9 +447,7 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         Ok(format!("{prelude}
 
 definition {name} :: \"{param_types} => {return_ty}\" where
-\"{name} {param_names} = ({body})\"
-
-",
+\"{name} {param_names} = ({body})\"",
                     prelude=comp.prelude,
                     name=name,
                     param_types=try!(param_types.iter().map(|ty| transpile_hir_ty(*ty)).join_results(" => ")),
@@ -444,11 +457,56 @@ definition {name} :: \"{param_types} => {return_ty}\" where
         ))
     }
 
-    fn transpile_fn(&self, f: &mut Write, id: ast::NodeId, decl: &FnDecl) -> io::Result<()> {
-        let name = format!("{}", transpile_def_id(self.tcx.map.local_def_id(id), self.tcx, self.crate_name));
-        match self.try_transpile_fn(id, decl, &name) {
-            Ok(trans) => try!(write!(f, "{}", trans)),
-            Err(err) => try!(write!(f, "(* {}: {} *)", name, err)),
+    fn transpile_struct(&self, name: &str, data: &hir::VariantData, generics: &hir::Generics) -> TransResult {
+        match *data {
+            hir::VariantData::Struct(ref fields, _) => {
+                let fields: TransResult = fields.iter().map(|f| {
+                    Ok(format!("\"{}\" :: {}", f.node.name().unwrap(),
+                               try!(transpile_hir_ty(&*f.node.ty))))
+                }).join_results("\n");
+                Ok(format!("record {} {} =\n{}",
+                           try!(self.transpile_generics(generics)), name, try!(fields)))
+            }
+            _ => throw!("{:?}", data)
+        }
+    }
+
+    fn transpile_item(&self, item: &hir::Item, path: &path::Path, f: &mut File) -> io::Result<()> {
+        fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
+            match res {
+                Ok(trans) => try!(write!(f, "{}\n\n", trans)),
+                Err(err) => try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *"))),
+            };
+            Ok(())
+        }
+
+        let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
+        match item.node {
+            Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
+                try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name))),
+            Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
+                for item in items {
+                    match item.node {
+                        hir::ImplItem_::MethodImplItem(ref sig, _) =>
+                            try!(try_write(f, &name, self.transpile_fn(item.id, &sig.decl, &name))),
+                        _ => try!(write!(f, "(* unimplemented: {:?} *)\n\n", name)),
+                    }
+                },
+            Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
+            Item_::ItemMod(ref module) => {
+                let mod_path = &self.tcx.sess.codemap().span_to_filename(module.inner);
+                let mod_path = path::Path::new(mod_path);
+                if mod_path == path {
+                    for item in module.items.iter() {
+                        try!(self.transpile_item(item, path, f));
+                    }
+                } else {
+                    try!(self.transpile_module(module));
+                }
+            },
+            Item_::ItemStruct(ref data, ref generics) =>
+                try!(try_write(f, &name, self.transpile_struct(&name, data, generics))),
+            _ => try!(write!(f, "(* unimplemented: {:?} *)\n\n", name)),
         };
         Ok(())
     }
@@ -457,9 +515,9 @@ definition {name} :: \"{param_types} => {return_ty}\" where
         let p = &self.tcx.sess.codemap().span_to_filename(module.inner);
         let p = path::Path::new(p);
         let base = self.input.parent().unwrap();
-        let p = path::Path::new("export").join(self.crate_name).join(p.relative_from(base).unwrap()).with_extension("thy");
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        let mut f = try!(File::create(&p));
+        let new_path = path::Path::new("export").join(self.crate_name).join(p.relative_from(base).unwrap()).with_extension("thy");
+        std::fs::create_dir_all(new_path.parent().unwrap()).unwrap();
+        let mut f = try!(File::create(&new_path));
         try!(write!(f, "theory {}
 imports \"../../Rustabelle\"
 begin
@@ -467,24 +525,9 @@ begin
 ", p.file_stem().unwrap().to_str().unwrap()));
 
         for item in module.items.iter() {
-            match item.node {
-                Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
-                    try!(self.transpile_fn(&mut f, item.id, decl)),
-                Item_::ItemImpl(_, _, ref generics, _, _, ref items) =>
-                    for item in items {
-                        match item.node {
-                            hir::ImplItem_::MethodImplItem(ref sig, _) =>
-                                try!(self.transpile_fn(&mut f, item.id, &sig.decl)),
-                            _ => println!("unimplemented: {:?}", item),
-                        }
-                    },
-                Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
-                Item_::ItemMod(ref module) => try!(self.transpile_module(module)),
-                Item_::ItemTy(ref ty, ref generics) =>
-                    try!(write!(f, "typedef {} = {}\n\n", 1, 2)),
-                _ => println!("unimplemented: {:?}", item),
-            };
+            try!(self.transpile_item(item, &p, &mut f));
         }
+
         try!(write!(f, "end\n"));
         Ok(())
     }
@@ -492,6 +535,7 @@ begin
 
 fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
+    println!("Building MIR...");
     let trans = ModuleTranspiler {
         input: match *state.input {
             session::config::Input::File(ref p) => p,
@@ -501,5 +545,6 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
         tcx: tcx,
         mir_map: &build_mir_for_crate(tcx),
     };
+    println!("Transpiling...");
     trans.transpile_module(&state.hir_crate.unwrap().module)
 }
