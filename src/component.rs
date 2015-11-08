@@ -9,7 +9,7 @@ use super::FnTranspiler;
 use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Component {
     pub prelude: String,
     pub header: Option<BasicBlock>,
@@ -45,6 +45,7 @@ impl Component {
         fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) -> Result<(), String> {
             match *rv {
                 Rvalue::Use(ref op) => operand(op, uses),
+                Rvalue::UnaryOp(_, ref op) => operand(op, uses),
                 Rvalue::BinaryOp(_, ref o1, ref o2) => {
                     operand(o1, uses);
                     operand(o2, uses);
@@ -55,7 +56,7 @@ impl Component {
                         operand(op, uses);
                     }
                 }
-                _ => throw!("unimplemented: {:?}", rv),
+                _ => throw!("unimplemented: find_nonlocals rvalue {:?}", rv),
             }
             Ok(())
         }
@@ -76,7 +77,7 @@ impl Component {
                         try!(rvalue(rv, &mut uses));
                     }
                     StatementKind::Drop(DropKind::Deep, ref lv) => drops.push(lv),
-                    _ => throw!("unimplemented: {:?}", stmt),
+                    _ => throw!("unimplemented: find_nonlocals statement {:?}", stmt),
                 }
             }
             match trans.mir.basic_block_data(bb).terminator {

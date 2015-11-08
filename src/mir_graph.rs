@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use petgraph::Graph;
-use petgraph::algo::scc;
+use petgraph::algo::*;
 
 use rustc_mir::repr::*;
 

@@ -30,7 +30,7 @@ fn combine_impl_and_methods_tps<'tcx>(//tcx: &ctxt<'tcx>,
 
 // copied from trans::common
 fn fulfill_obligation<'tcx>(tcx: &ctxt<'tcx>, trait_ref: PolyTraitRef<'tcx>)
-    -> traits::Vtable<'tcx, ()>
+    -> Result<traits::Vtable<'tcx, ()>, String>
 {
     let span = syntax::codemap::DUMMY_SP;
     let infcx = infer::normalizing_infer_ctxt(tcx, &tcx.tables);
@@ -38,38 +38,37 @@ fn fulfill_obligation<'tcx>(tcx: &ctxt<'tcx>, trait_ref: PolyTraitRef<'tcx>)
     let obligation =
         traits::Obligation::new(traits::ObligationCause::misc(span, ast::DUMMY_NODE_ID),
         trait_ref.to_poly_trait_predicate());
-    let selection = selcx.select(&obligation).unwrap().unwrap();
+    let selection = match selcx.select(&obligation) {
+        Ok(x) => x.unwrap(),
+        Err(err) => throw!("obligation select: {:?}", err),
+    };
     let mut fulfill_cx = infcx.fulfillment_cx.borrow_mut();
     let vtable = selection.map(|predicate| {
         fulfill_cx.register_predicate_obligation(&infcx, predicate);
     });
-    infer::drain_fulfillment_cx_or_panic(
-        span, &infcx, &mut fulfill_cx, &vtable
-    )
+    infer::drain_fulfillment_cx(&infcx, &mut fulfill_cx, &vtable).map_err(|e| format!("obligation drain: {:?}", e))
 }
 
-pub fn lookup_trait_item_impl<'tcx>(tcx: &ctxt<'tcx>, item_did: DefId, substs: &subst::Substs<'tcx>) -> Option<DefId> {
-    tcx.trait_of_item(item_did).map(|trait_did| {
-        // from trans::meth::trans_method_callee
-        let trait_substs = substs.clone().method_to_trait();
-        let trait_substs = tcx.mk_substs(trait_substs);
-        let trait_ref = TraitRef::new(trait_did, trait_substs);
-        let trait_ref = Binder(trait_ref);
-        match fulfill_obligation(tcx, trait_ref) {
-            traits::Vtable::VtableImpl(data) => {
-                // from trans::meth::trans_monomorphized_callee
-                let impl_did = data.impl_def_id;
-                let mname = match tcx.impl_or_trait_item(item_did) {
-                    MethodTraitItem(method) => method.name,
-                    _ => unreachable!(),
-                };
-                let callee_substs = combine_impl_and_methods_tps(/*tcx, */substs.clone(), data.substs);
+pub fn lookup_trait_item_impl<'tcx>(tcx: &ctxt<'tcx>, item_did: DefId, substs: &subst::Substs<'tcx>) -> Result<DefId, String> {
+    // from trans::meth::trans_method_callee
+    let trait_did = tcx.trait_of_item(item_did).unwrap();
+    let trait_substs = substs.clone().method_to_trait();
+    let trait_substs = tcx.mk_substs(trait_substs);
+    let trait_ref = TraitRef::new(trait_did, trait_substs);
+    let trait_ref = Binder(trait_ref);
+    match try!(fulfill_obligation(tcx, trait_ref)) {
+        traits::Vtable::VtableImpl(data) => {
+            // from trans::meth::trans_monomorphized_callee
+            let impl_did = data.impl_def_id;
+            let mname = match tcx.impl_or_trait_item(item_did) {
+                MethodTraitItem(method) => method.name,
+                _ => unreachable!(),
+            };
+            let callee_substs = combine_impl_and_methods_tps(/*tcx, */substs.clone(), data.substs);
 
-                let mth = tcx.get_impl_method(impl_did, callee_substs, mname);
-                mth.method.def_id
-            },
-            _ => panic!("unimplementd: {:?}", trait_ref),
-        }
-    })
+            let mth = tcx.get_impl_method(impl_did, callee_substs, mname);
+            Ok(mth.method.def_id)
+        },
+        vtable => throw!("unimplemented: vtable {:?}", vtable),
+    }
 }
-
