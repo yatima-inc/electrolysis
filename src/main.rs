@@ -20,6 +20,7 @@ mod component;
 mod mir_graph;
 mod traits;
 
+use std::collections::HashMap;
 use std::env;
 use std::io;
 use std::io::prelude::*;
@@ -31,8 +32,7 @@ use itertools::Itertools;
 
 use syntax::ast;
 use rustc_front::hir;
-use rustc_front::hir::{Path, FnDecl, Pat_, BindingMode, FunctionRetTy, Item, Item_, Ty_};
-use rustc_front::print::pprust;
+use rustc_front::hir::{Path, FnDecl, Pat_, BindingMode, FunctionRetTy, Item, Item_};
 use rustc_mir::mir_map::build_mir_for_crate;
 use rustc_mir::repr::*;
 use rustc::middle::const_eval::ConstVal;
@@ -131,16 +131,33 @@ fn transpile_def_id(did: DefId, tcx: &ty::ctxt, crate_name: &str) -> String {
     path.replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
 }
 
+fn unwrap_refs<'tcx>(ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
+    match ty.sty {
+        ty::TypeVariants::TyRef(_, ty::TypeAndMut { ty, .. }) => unwrap_refs(ty),
+        _ => ty
+    }
+}
+
+fn try_unwrap_mut_ref<'tcx>(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
+    match ty.sty {
+        ty::TypeVariants::TyRef(_, ty::TypeAndMut { mutbl: hir::Mutability::MutMutable, ty }) =>
+            Some(ty),
+        _ => None
+    }
+}
+
+
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
-    fn lvalue_name(&self, lv: &Lvalue) -> TransResult {
-        Ok(match *lv {
+    fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
+        Some(match *lv {
             Lvalue::Var(idx) => format!("{}", self.mir.var_decls[idx as usize].name),
             Lvalue::Temp(idx) => format!("t_{}", idx),
             Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
+            Lvalue::Static(did) => self.transpile_def_id(did),
             Lvalue::ReturnPointer => "ret".to_string(),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
-                try!(self.lvalue_name(base)),
-            _ => throw!("unimplemented: naming {:?}", lv),
+                return self.lvalue_name(base),
+            Lvalue::Projection(_) => return None,
         })
     }
 
@@ -154,12 +171,18 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     fn num_locals(&self) -> usize { self.locals().len() }
 
     fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> TransResult {
+        if let Some(name) = self.lvalue_name(lv) {
+            return Ok(name)
+        }
         match *lv {
-            Lvalue::Var(_) | Lvalue::Temp(_) | Lvalue::Arg(_) => self.lvalue_name(lv),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 self.get_lvalue(base),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(Field::Named(ref name)) }) =>
-                Ok(format!("({}.{} {})", try!(self.lvalue_ty(base)), name, try!(self.get_lvalue(base)))),
+                match unwrap_refs(try!(self.lvalue_ty(base))).sty {
+                    ty::TypeVariants::TyStruct(ref adt_def, _) =>
+                        Ok(format!("({}.{} {})", self.transpile_def_id(adt_def.did), name, try!(self.get_lvalue(base)))),
+                    ref ty => throw!("unimplemented: accessing field of {:?}", ty),
+                },
             Lvalue::Projection(box Projection {
                 elem: ProjectionElem::Field(Field::Indexed(idx)),
                 base: Lvalue::Projection(box Projection {
@@ -207,27 +230,34 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         })
     }
 
-    fn set_lvalue(&self, lv: &Lvalue, val: &str) -> TransResult {
-        Ok(format!("let {} = {} in\n", try!(self.lvalue_name(lv)), val))
+    fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
+        if let Some(name) = self.lvalue_name(lv) {
+            return Ok(format!("let {} = {} in\n", name, val));
+        }
+        match *lv {
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
+                self.set_lvalue(base, val),
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(Field::Named(ref name)) }) => {
+                let base_name = try!(self.lvalue_name(base).ok_or_else(|| format!("ugh, nested fields assignments? {:?}", lv)));
+                match unwrap_refs(try!(self.lvalue_ty(base))).sty {
+                    ty::TypeVariants::TyStruct(ref adt_def, _) =>
+                        Ok(format!("let {} = {} \\<lparr> {}.{} := {} \\<rparr> in\n", base_name, base_name, self.transpile_def_id(adt_def.did), name, val)),
+                    ref ty => throw!("unimplemented: setting field of {:?}", ty),
+                }
+            }
+            _ => throw!("unimplemented: setting lvalue {:?}", lv),
+        }
     }
 
     fn set_lvalues<'b, It: Iterator<Item=&'b Lvalue<'tcx>>>(&self, lvs: It, val: &str) -> TransResult
         where 'tcx: 'b {
         Ok(format!("let ({}) = {} in\n",
-                   try!(lvs.map(|lv| self.lvalue_name(lv)).join_results(", ")),
+                   try!(lvs.map(|lv| self.lvalue_name(lv).ok_or("unimplemented: non-trivial set_lvalues")).join_results(", ")),
                    val))
     }
 
     fn transpile_def_id(&self, did: DefId) -> String {
         transpile_def_id(did, self.tcx, self.crate_name)
-    }
-
-    fn try_unwrap_mut_ref(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
-        match ty.sty {
-            ty::TypeVariants::TyRef(_, ty::TypeAndMut { mutbl: hir::Mutability::MutMutable, ty }) =>
-                Some(ty),
-            _ => None
-        }
     }
 
     fn get_operand(&self, op: &Operand<'tcx>) -> TransResult {
@@ -238,13 +268,9 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                 Literal::Value { .. } => throw!("unimplemented: literal {:?}", op),
                 Literal::Item { def_id, substs }  => {
                     match self.tcx.trait_of_item(def_id) {
-                        Some(trait_did) =>
-                            if substs.has_param_types() {
-                                format!("{:?}_{}", substs, self.transpile_def_id(trait_did))
-                            } else {
-                                self.transpile_def_id(try!(traits::lookup_trait_item_impl(self.tcx, def_id, substs)))
-                            },
-                        None => self.transpile_def_id(def_id),
+                        Some(trait_did) if !substs.has_param_types() =>
+                            self.transpile_def_id(try!(traits::lookup_trait_item_impl(self.tcx, def_id, substs))),
+                        _ => self.transpile_def_id(def_id),
                     }
                 }
             }
@@ -270,10 +296,10 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_statement(&self, stmt: &Statement<'tcx>, comp: &mut Component) -> TransResult {
+    fn transpile_statement(&self, stmt: &'a Statement<'tcx>, comp: &mut Component<'a, 'tcx>) -> TransResult {
         match stmt.kind {
             StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref lsource)) => {
-                comp.refs.insert(try!(self.lvalue_idx(lv)), try!(self.get_lvalue(lsource)));
+                comp.refs.insert(try!(self.lvalue_idx(lv)), lsource);
                 self.set_lvalue(lv, &&try!(self.get_lvalue(lsource)))
                 //format!("let ({lv}, {lsource}) = ({lsource}, undefined) in\n", lv=self.get_lvalue(lv), lsource=self.get_lvalue(lsource))
             }
@@ -291,15 +317,15 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                 //    None => self.set_lvalue(lv, "undefined")
                 //}
                 Ok(match comp.refs.get(&&try!(self.lvalue_idx(lv))) {
-                    Some(lsource) => format!("let {} = {} in\n", lsource, try!(self.get_lvalue(lv))),
+                    Some(lsource) => try!(self.set_lvalue(lsource, &&try!(self.get_lvalue(lv)))),
                     None => "".to_string()
                 })
             }
-            _ => Err(format!("unimplemented: statement {:?}", stmt)),
+            _ => throw!("unimplemented: statement {:?}", stmt),
         }
     }
 
-    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
+    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
         if comp.header == Some(bb) {
             Ok(format!("(({}), True)", comp.nonlocal_defs.iter().join(", ")))
         } else {
@@ -312,12 +338,12 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             self.lvalue_ty(lv).map(|ty| (lv, ty))
         }).collect::<Result<Vec<_>, _>>());
         let muts = args_with_tys.into_iter().filter(|&(_, ty)| {
-            FnTranspiler::try_unwrap_mut_ref(&ty).is_some()
+            try_unwrap_mut_ref(&ty).is_some()
         }).map(|(lv, _)| lv);
         Ok(iter::once(&call.destination).chain(muts).collect())
     }
 
-    fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
+    fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
         if !comp.blocks.contains(&bb) {
@@ -377,6 +403,14 @@ definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
     }
 }
 
+fn format_generic_ty(generics: &[String], ty: &str) -> String {
+    match generics {
+        [] => ty.to_string(),
+        [ref ty_arg] => format!("{} {}", ty_arg, ty),
+        _ => format!("({}) {}", generics.iter().join(", "), ty),
+    }
+}
+
 struct ModuleTranspiler<'a, 'tcx: 'a> {
     input: &'a path::Path,
     crate_name: &'a str,
@@ -384,43 +418,79 @@ struct ModuleTranspiler<'a, 'tcx: 'a> {
     mir_map: &'a rustc_mir::mir_map::MirMap<'tcx>,
 }
 
+type TraitBounds = HashMap<String, Vec<String>>;
+
 impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
     fn transpile_def_id(&self, did: DefId) -> String {
         transpile_def_id(did, self.tcx, self.crate_name)
     }
 
-    fn transpile_ty(&self, ty: ty::Ty) -> TransResult {
+    fn transpile_generics(&self, generics: &hir::Generics, ty: &str) -> TransResult {
+        Ok(format!("({}) {}", generics.ty_params.iter().map(|p| format!("'{}", p.name)).join(", "), ty))
+    }
+
+    fn bounds_from_param_bounds(&self, bounds: &mut TraitBounds, name: String, param_bounds: &[hir::TyParamBound]) {
+        for bound in param_bounds {
+            match *bound {
+                hir::TyParamBound::TraitTyParamBound(ref poly_trait_ref, hir::TraitBoundModifier::None) => {
+                    let trait_ref = self.transpile_def_id(self.tcx.trait_ref_to_def_id(&poly_trait_ref.trait_ref));
+                    bounds.entry(name.clone()).or_insert_with(|| Vec::new()).push(trait_ref)
+                }
+                _ => ()
+            }
+        }
+    }
+
+    fn bounds_from_generics(&self, bounds: &mut TraitBounds, generics: &hir::Generics) {
+
+        for p in &generics.where_clause.predicates {
+            match p {
+                &hir::WherePredicate::BoundPredicate(ref pred) => match unwrap_refs(self.hir_ty_to_ty(&pred.bounded_ty)).sty {
+                    ty::TypeVariants::TyParam(ref param) => self.bounds_from_param_bounds(bounds, param.name.to_string(), &pred.bounds),
+                    _ => println!("unimplemented: non-atomic type bound {:?}", pred)
+                },
+                _ => (),
+            }
+        }
+        for param in &generics.ty_params {
+            self.bounds_from_param_bounds(bounds, param.name.to_string(), &param.bounds);
+        }
+    }
+
+    fn transpile_ty(&self, ty: ty::Ty<'tcx>, bounds: &TraitBounds) -> TransResult {
         Ok(match ty.sty {
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
             ty::TypeVariants::TyTuple(ref tys) => match &tys[..] {
                 [] => "unit".to_string(),
-                _ => format!("({})", try!(tys.iter().map(|ty| self.transpile_ty(ty)).join_results(" × "))),
+                _ => format!("({})", try!(tys.iter().map(|ty| self.transpile_ty(ty, bounds)).join_results(" × "))),
             },
             ty::TypeVariants::TyBareFn(_, ref data) => {
                 let sig = data.sig.skip_binder();
-                let muts = sig.inputs.iter().filter_map(FnTranspiler::try_unwrap_mut_ref);
-                let inputs = try!(sig.inputs.iter().map(|ty| self.transpile_ty(ty)).join_results(" => "));
+                let muts = sig.inputs.iter().filter_map(try_unwrap_mut_ref);
+                let inputs = try!(sig.inputs.iter().map(|ty| self.transpile_ty(ty, bounds)).join_results(" => "));
                 match sig.output {
                     ty::FnOutput::FnConverging(out_ty) => {
                         format!("({} => {})", if inputs.is_empty() { "()".to_string() } else { inputs },
-                                try!(iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)).join_results(" × ")))
+                                try!(iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty, bounds)).join_results(" × ")))
                     }
                     ty::FnOutput::FnDiverging => panic!("diverging function"),
                 }
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
-            ty::TypeVariants::TyEnum(ref adt_def, ref substs) => {
-                let ty = self.transpile_def_id(adt_def.did);
-                match substs.types.get_slice(ParamSpace::TypeSpace) {
-                    [] => ty,
-                    [ty_arg] => format!("{} {}", try!(self.transpile_ty(ty_arg)), ty),
-                    ty_args => format!("({}) {}", try!(ty_args.iter().map(|ty| self.transpile_ty(ty)).join_results(", ")), ty),
+            ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format_generic_ty(
+                &try!(substs.types.get_slice(ParamSpace::TypeSpace).iter().map(|ty| self.transpile_ty(ty, bounds)).collect::<Result<Vec<_>, _>>()),
+                &self.transpile_def_id(adt_def.did)
+            ),
+            ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty, bounds)),
+            ty::TypeVariants::TyParam(ref param) => {
+                match &bounds.get(&param.name.to_string()).into_iter().flat_map(|v| v.iter()).collect::<Vec<_>>()[..] {
+                    [] => format!("'{}", param.name),
+                    [ref bound] => format!("'{}::{}", param.name, bound),
+                    bounds => format!("'{}::{{{}}}", param.name, bounds.iter().join(",")),
                 }
             }
-            ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
-            ty::TypeVariants::TyParam(ref param) => format!("'{}", param.name),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
                 None => throw!("unimplemented: ty {:?}", ty),
@@ -428,25 +498,15 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         })
     }
 
-    fn transpile_hir_ty(&self, ty: &hir::Ty) -> TransResult {
-        match self.tcx.ast_ty_to_ty_cache.borrow().get(&ty.id) {
-            Some(ty) => self.transpile_ty(ty),
-            None => panic!("Uncached ast ty? {:?}", ty),
-        }
+    fn hir_ty_to_ty(&self, ty: &hir::Ty) -> ty::Ty<'tcx> {
+        self.tcx.ast_ty_to_ty_cache.borrow()[&ty.id]
     }
 
-    fn transpile_generics(&self, generics: &hir::Generics) -> TransResult {
-        let mut bounds = generics.where_clause.predicates.iter().filter_map(|p| match p {
-            &hir::WherePredicate::BoundPredicate(ref pred) => Some(&pred.bounds),
-            _ => None,
-        }).chain(generics.ty_params.iter().map(|p| &p.bounds)).flat_map(|bounds| bounds);
-        if bounds.next().is_some() {
-            throw!("uniplemented: ty param bounds");
-        }
-        Ok(format!("({})", generics.ty_params.iter().map(|p| format!("'{}", p.name)).join(", ")))
+    fn transpile_hir_ty(&self, ty: &hir::Ty, bounds: &TraitBounds) -> TransResult {
+        self.transpile_ty(self.hir_ty_to_ty(ty), bounds)
     }
 
-    fn transpile_fn(&self, id: ast::NodeId, decl: &FnDecl, name: &str, self_ty: Option<&hir::Ty>) -> TransResult {
+    fn transpile_fn(&self, id: ast::NodeId, decl: &FnDecl, name: &str, bounds: &TraitBounds, self_ty: Option<&hir::Ty>) -> TransResult {
         let params = try!(decl.inputs.iter().map(|param| {
             let ty = match param.ty.node {
                 hir::Ty_::TyInfer => self_ty.unwrap(),
@@ -464,17 +524,17 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
 
         let return_ty = match decl.output {
             FunctionRetTy::DefaultReturn(_) => "()".to_string(),
-            FunctionRetTy::Return(ref ty) => try!(self.transpile_hir_ty(&**ty)),
+            FunctionRetTy::Return(ref ty) => try!(self.transpile_hir_ty(&**ty, bounds)),
             FunctionRetTy::NoReturn(_) => throw!("no-return fn"),
         };
-
         let mir = &self.mir_map[&id];
         let trans = FnTranspiler {
             crate_name: self.crate_name, fn_name: name.to_string(),
-            tcx: self.tcx, mir: mir, param_names: &param_names
+            tcx: self.tcx, mir: mir, param_names: &param_names,
         };
         let mut comp = try!(Component::new(&trans, START_BLOCK, mir.all_basic_blocks(), false));
         let body = try!(trans.transpile_basic_block(START_BLOCK, &mut comp));
+
 
         Ok(format!("{prelude}
 
@@ -482,7 +542,7 @@ definition {name} :: \"{param_types} => {return_ty}\" where
 \"{name} {param_names} = ({body})\"",
                     prelude=comp.prelude,
                     name=name,
-                    param_types=try!(param_types.iter().map(|ty| self.transpile_hir_ty(ty)).join_results(" => ")),
+                    param_types=try!(param_types.iter().map(|ty| self.transpile_hir_ty(ty, bounds)).join_results(" => ")),
                     return_ty=return_ty,
                     param_names=param_names.iter().join(" "),
                     body=body,
@@ -494,13 +554,33 @@ definition {name} :: \"{param_types} => {return_ty}\" where
             hir::VariantData::Struct(ref fields, _) => {
                 let fields: TransResult = fields.iter().map(|f| {
                     Ok(format!("  \"{}\" :: {}", f.node.name().unwrap(),
-                               try!(self.transpile_hir_ty(&*f.node.ty))))
+                               try!(self.transpile_hir_ty(&*f.node.ty, &HashMap::new()))))
                 }).join_results("\n");
-                Ok(format!("record {} {} =\n{}",
-                           try!(self.transpile_generics(generics)), name, try!(fields)))
+                Ok(format!("record {} =\n{}",
+                           try!(self.transpile_generics(generics, name)), try!(fields)))
             }
             _ => throw!("unimplemented: struct {:?}", data)
         }
+    }
+
+    fn transpile_trait(&self, name: &str, bounds: &TraitBounds, items: &[syntax::ptr::P<hir::TraitItem>]) -> TransResult {
+        //let self_bounds = match &bounds.keys().collect::<Vec<_>>()[..] {
+        //    &[] => vec![],
+        //    &[param] | param.to_string == "Self" => bounds[param].clone(),
+        //    _ => throw!("unimplemented: parameterized trait"),
+        //};
+        //let mut bounds = TraitBounds::new();
+        //bounds.insert(
+        Ok(format!("class {} =\n{}\n\n", name, try!(items.into_iter().map(|item| {
+            match item.node {
+                hir::TraitItem_::MethodTraitItem(_, None) => {
+                    let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id), bounds));
+                    let ty = ty.replace("'Self", "'a"); // oh well
+                    Ok(format!("fixes {} :: \"{}\"", item.name, ty))
+                }
+                _ => throw!("unimplemented: trait item {:?}", item),
+            }
+        }).join_results("\n"))))
     }
 
     fn transpile_item(&self, item: &hir::Item, path: &path::Path, f: &mut File) -> io::Result<()> {
@@ -513,19 +593,27 @@ definition {name} :: \"{param_types} => {return_ty}\" where
         }
 
         let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
+        let mut bounds = TraitBounds::new();
         match item.node {
-            Item_::ItemFn(ref decl, _, _, _, ref generics, _) =>
-                try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name, None))),
+            Item_::ItemFn(ref decl, _, _, _, ref generics, _) => {
+                self.bounds_from_generics(&mut bounds, generics);
+                try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name, &bounds, None)))
+            }
             Item_::ItemImpl(_, _, ref generics, _, ref self_ty, ref items) =>
                 for item in items {
+                    bounds.clear();
+                    self.bounds_from_generics(&mut bounds, generics);
                     let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
+
                     match item.node {
                         hir::ImplItem_::MethodImplItem(ref sig, _) => {
+                            self.bounds_from_generics(&mut bounds, &sig.generics);
+
                             let self_ty = match sig.explicit_self.node {
                                 hir::ExplicitSelf_::SelfStatic => None,
                                 _ => Some(&**self_ty),
                             };
-                            try!(try_write(f, &name, self.transpile_fn(item.id, &sig.decl, &name,
+                            try!(try_write(f, &name, self.transpile_fn(item.id, &sig.decl, &name, &bounds,
                                                                        self_ty)))
                         }
                         _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
@@ -545,6 +633,12 @@ definition {name} :: \"{param_types} => {return_ty}\" where
             },
             Item_::ItemStruct(ref data, ref generics) =>
                 try!(try_write(f, &name, self.transpile_struct(&name, data, generics))),
+            Item_::ItemTrait(_, ref generics, ref param_bounds, ref items) => {
+                let mut bounds = TraitBounds::new();
+                self.bounds_from_generics(&mut bounds, generics);
+                self.bounds_from_param_bounds(&mut bounds, "Self".to_string(), param_bounds);
+                try!(try_write(f, &name, self.transpile_trait(&name, &bounds, items)))
+            }
             _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
         };
         Ok(())

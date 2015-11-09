@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-use std::iter;
-
-use itertools::Itertools;
 
 use rustc_mir::repr::*;
 
@@ -10,7 +7,7 @@ use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
 #[derive(Default, Debug)]
-pub struct Component {
+pub struct Component<'a, 'tcx: 'a> {
     pub prelude: String,
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
@@ -18,11 +15,11 @@ pub struct Component {
     pub exits: Vec<BasicBlock>,
     pub nonlocal_defs: Vec<String>,
     pub nonlocal_uses: Vec<String>,
-    pub refs: HashMap<usize, String>
+    pub refs: HashMap<usize, &'a Lvalue<'tcx>>
 }
 
-impl Component {
-    pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component, String> {
+impl<'a, 'tcx> Component<'a, 'tcx> {
+    pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component<'a, 'tcx>, String> {
         let loops = mir_sccs(trans.mir, start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         let mut comp = Component {
@@ -93,8 +90,8 @@ impl Component {
         }
 
         let ret = Lvalue::ReturnPointer;
-        self.nonlocal_defs = try!(trans.locals().iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv)).collect());
-        self.nonlocal_uses = try!(trans.locals().iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv)).collect());
+        self.nonlocal_defs = trans.locals().iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
+        self.nonlocal_uses = trans.locals().iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
         Ok(())
     }
 }
