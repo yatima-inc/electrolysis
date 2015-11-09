@@ -23,17 +23,32 @@ qed
 type_synonym u32 = nat
 type_synonym usize = nat
 
+definition "core_num_u32_checked_add x y= Some (x+y)"
+
 type_synonym 'a core_option_Option = "'a option"
 abbreviation "core_option_Option_Some \<equiv> Some"
 abbreviation "core_option_Option_None \<equiv> None"
 
-class core_marker_Size
+class core_marker_Sized
 class core_num_One = one
 class core_ops_Add = plus
 class core_cmp_PartialOrd = ord
 definition (in core_num_One) "core_num_One_one \<equiv> 1"
 definition (in core_ops_Add) "core_ops_Add_add \<equiv> op +"
 definition (in core_cmp_PartialOrd) "core_cmp_PartialOrd_lt \<equiv> op <"
+
+instantiation nat :: core_num_One
+begin
+  instance ..
+end
+instantiation nat :: core_ops_Add
+begin
+  instance ..
+end
+instantiation nat :: core_cmp_PartialOrd
+begin
+  instance ..
+end
 
 abbreviation core_mem_swap :: "'T \<Rightarrow> 'T \<Rightarrow> unit \<times> 'T \<times> 'T" where
   "core_mem_swap x y \<equiv> ((),y,x)"

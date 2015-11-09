@@ -181,7 +181,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(Field::Named(ref name)) }) =>
                 match unwrap_refs(try!(self.lvalue_ty(base))).sty {
                     ty::TypeVariants::TyStruct(ref adt_def, _) =>
-                        Ok(format!("({}.{} {})", self.transpile_def_id(adt_def.did), name, try!(self.get_lvalue(base)))),
+                        Ok(format!("({}_{} {})", self.transpile_def_id(adt_def.did), name, try!(self.get_lvalue(base)))),
                     ref ty => throw!("unimplemented: accessing field of {:?}", ty),
                 },
             Lvalue::Projection(box Projection {
@@ -242,7 +242,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                 let base_name = try!(self.lvalue_name(base).ok_or_else(|| format!("ugh, nested fields assignments? {:?}", lv)));
                 match unwrap_refs(try!(self.lvalue_ty(base))).sty {
                     ty::TypeVariants::TyStruct(ref adt_def, _) =>
-                        Ok(format!("let {} = {} \\<lparr> {}.{} := {} \\<rparr> in\n", base_name, base_name, self.transpile_def_id(adt_def.did), name, val)),
+                        Ok(format!("let {} = {} \\<lparr> {}_{} := {} \\<rparr> in\n", base_name, base_name, self.transpile_def_id(adt_def.did), name, val)),
                     ref ty => throw!("unimplemented: setting field of {:?}", ty),
                 }
             }
@@ -291,7 +291,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _), ref ops) => {
                 let variant = &adt_def.variants[variant_idx];
                 let ops = try!(ops.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
-                Ok(format!("({} {})", self.transpile_def_id(variant.did), ops.iter().join(" ")))
+                Ok(format!("({}.make {})", self.transpile_def_id(variant.did), ops.iter().join(" ")))
             }
             _ => Err(format!("unimplemented: rvalue {:?}", rv)),
         }
@@ -424,7 +424,7 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
     }
 
     fn transpile_generics(&self, generics: &hir::Generics, ty: &str) -> TransResult {
-        Ok(format!("({}) {}", generics.ty_params.iter().map(|p| format!("'{}", p.name)).join(", "), ty))
+        Ok(format_generic_ty(&generics.ty_params.iter().map(|p| format!("'{}", p.name)).collect_vec()[..], ty))
     }
 
     fn bounds_from_param_bounds(&self, bounds: &mut TraitBounds, name: String, param_bounds: &[hir::TyParamBound]) {
@@ -504,25 +504,33 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         self.transpile_ty(self.hir_ty_to_ty(ty), bounds)
     }
 
-    fn transpile_fn(&self, id: ast::NodeId, decl: &FnDecl, name: &str, bounds: &TraitBounds) -> TransResult {
+    fn transpile_fn(&self, id: ast::NodeId, decl: &FnDecl, name: &str, bounds: &TraitBounds, self_ty: Option<&hir::ExplicitSelf_>) -> TransResult {
         let param_names = try!(decl.inputs.iter().map(|param| {
             match param.pat.node {
                 Pat_::PatIdent(BindingMode::BindByRef(hir::Mutability::MutMutable), _, _) =>
-                   throw!("unimplemented: mut param ({:?})", param),
+                   throw!("unimplemented: &mut param ({:?})", param),
                 Pat_::PatIdent(_, ref ident, _) =>
                     Ok(ident.node.name.to_string()),
                 _ => throw!("unimplemented: param pattern ({:?})", param),
             }
         }).collect::<Result<Vec<_>, _>>());
-        let mut muts = decl.inputs.iter().zip(param_names.iter()).filter_map(|(param, name)| {
-            try_unwrap_mut_ref(&self.hir_ty_to_ty(&*param.ty)).map(|_| name)
+        let muts = decl.inputs.iter().zip(param_names.iter()).filter_map(|(param, name)| {
+            if name == "self" {
+                match *self_ty.unwrap() {
+                    hir::ExplicitSelf_::SelfRegion(_, hir::Mutability::MutMutable, _) => Some(name.clone()),
+                    hir::ExplicitSelf_::SelfExplicit(..) => panic!("unimplemented: explicit self"),
+                    _ => None,
+                }
+            } else {
+                try_unwrap_mut_ref(&self.hir_ty_to_ty(&param.ty)).map(|_| name.clone())
+            }
         });
 
         let mir = &self.mir_map[&id];
         let trans = FnTranspiler {
             crate_name: self.crate_name, fn_name: name.to_string(),
             tcx: self.tcx, mir: mir, param_names: &param_names,
-            return_expr: format!("(ret, {})", muts.join(", ")),
+            return_expr: format!("({})", iter::once("ret".to_string()).chain(muts).join(", ")),
         };
         let mut comp = try!(Component::new(&trans, START_BLOCK, mir.all_basic_blocks(), false));
         let body = try!(trans.transpile_basic_block(START_BLOCK, &mut comp));
@@ -544,7 +552,7 @@ definition {name} :: \"{ty}\" where
         match *data {
             hir::VariantData::Struct(ref fields, _) => {
                 let fields: TransResult = fields.iter().map(|f| {
-                    Ok(format!("  \"{}\" :: {}", f.node.name().unwrap(),
+                    Ok(format!("  {}_{} :: \"{}\"", name, f.node.name().unwrap(),
                                try!(self.transpile_hir_ty(&*f.node.ty, &HashMap::new()))))
                 }).join_results("\n");
                 Ok(format!("record {} =\n{}",
@@ -588,7 +596,7 @@ definition {name} :: \"{ty}\" where
         match item.node {
             Item_::ItemFn(ref decl, _, _, _, ref generics, _) => {
                 self.bounds_from_generics(&mut bounds, generics);
-                try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name, &bounds)))
+                try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name, &bounds, None)))
             }
             Item_::ItemImpl(_, _, ref generics, _, ref self_ty, ref items) =>
                 for item in items {
@@ -599,7 +607,13 @@ definition {name} :: \"{ty}\" where
                     match item.node {
                         hir::ImplItem_::MethodImplItem(ref sig, _) => {
                             self.bounds_from_generics(&mut bounds, &sig.generics);
-                            try!(try_write(f, &name, self.transpile_fn(item.id, &sig.decl, &name, &bounds)))
+
+                            let self_ty = match sig.explicit_self.node {
+                                hir::ExplicitSelf_::SelfStatic => None,
+                                ref ty => Some(ty),
+                            };
+                            try!(try_write(f, &name, self.transpile_fn(item.id, &sig.decl, &name, &bounds,
+                                                                       self_ty)))
                         }
                         _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
                     }
