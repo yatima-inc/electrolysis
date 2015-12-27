@@ -439,13 +439,13 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         }
     }
 
-    fn bounds_from_generics(&self, bounds: &mut TraitBounds, generics: &hir::Generics) {
+    fn bounds_from_generics(&self, bounds: &mut TraitBounds, generics: &hir::Generics) -> Result<(), String> {
 
         for p in &generics.where_clause.predicates {
             match p {
                 &hir::WherePredicate::BoundPredicate(ref pred) => match unwrap_refs(self.hir_ty_to_ty(&pred.bounded_ty)).sty {
                     ty::TypeVariants::TyParam(ref param) => self.bounds_from_param_bounds(bounds, param.name.to_string(), &pred.bounds),
-                    _ => println!("unimplemented: non-atomic type bound {:?}", pred)
+                    _ => throw!("unimplemented: non-atomic type bound {:?}", pred)
                 },
                 _ => (),
             }
@@ -453,6 +453,7 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         for param in &generics.ty_params {
             self.bounds_from_param_bounds(bounds, param.name.to_string(), &param.bounds);
         }
+        Ok(())
     }
 
     fn transpile_ty(&self, ty: ty::Ty<'tcx>, bounds: &TraitBounds) -> TransResult {
@@ -595,25 +596,28 @@ definition {name} :: \"{ty}\" where
         let mut bounds = TraitBounds::new();
         match item.node {
             Item_::ItemFn(ref decl, _, _, _, ref generics, _) => {
-                self.bounds_from_generics(&mut bounds, generics);
-                try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name, &bounds, None)))
+                try!(try_write(f, &name, self.bounds_from_generics(&mut bounds, generics).and_then(|()| {
+                    self.transpile_fn(item.id, decl, &name, &bounds, None)
+                })))
             }
             Item_::ItemImpl(_, _, ref generics, _, ref self_ty, ref items) =>
                 for item in items {
-                    bounds.clear();
-                    self.bounds_from_generics(&mut bounds, generics);
                     let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
+                    bounds.clear();
+                    if let Err(err) = self.bounds_from_generics(&mut bounds, generics) {
+                        try!(try_write(f, &name, Err(err)));
+                        continue
+                    }
 
                     match item.node {
                         hir::ImplItem_::MethodImplItem(ref sig, _) => {
-                            self.bounds_from_generics(&mut bounds, &sig.generics);
-
                             let self_ty = match sig.explicit_self.node {
                                 hir::ExplicitSelf_::SelfStatic => None,
                                 ref ty => Some(ty),
                             };
-                            try!(try_write(f, &name, self.transpile_fn(item.id, &sig.decl, &name, &bounds,
-                                                                       self_ty)))
+                            try!(try_write(f, &name, self.bounds_from_generics(&mut bounds, &sig.generics).and_then(|()| {
+                                self.transpile_fn(item.id, &sig.decl, &name, &bounds, self_ty)
+                            })))
                         }
                         _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
                     }
@@ -634,9 +638,10 @@ definition {name} :: \"{ty}\" where
                 try!(try_write(f, &name, self.transpile_struct(&name, data, generics))),
             Item_::ItemTrait(_, ref generics, ref param_bounds, ref items) => {
                 let mut bounds = TraitBounds::new();
-                self.bounds_from_generics(&mut bounds, generics);
-                self.bounds_from_param_bounds(&mut bounds, "Self".to_string(), param_bounds);
-                try!(try_write(f, &name, self.transpile_trait(&name, &bounds, items)))
+                try!(try_write(f, &name, self.bounds_from_generics(&mut bounds, generics).and_then(|()| {
+                    self.bounds_from_param_bounds(&mut bounds, "Self".to_string(), param_bounds);
+                    self.transpile_trait(&name, &bounds, items)
+                })))
             }
             _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
         };
