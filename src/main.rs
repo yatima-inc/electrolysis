@@ -19,6 +19,7 @@ extern crate rustc_trans;
 mod component;
 mod mir_graph;
 mod traits;
+mod path_exts;
 
 use std::collections::HashMap;
 use std::env;
@@ -409,6 +410,10 @@ fn format_generic_ty(generics: &[String], ty: &str) -> String {
     }
 }
 
+fn write_isabelle_header<It: Iterator<Item=path::PathBuf>>(f: &mut File, file_name: &str, file_deps: It) -> io::Result<()> {
+        write!(f, "theory {}\nimports\n{}begin\n\n", file_name, file_deps.map(|s| format!("  \"{}\"\n", s.to_str().unwrap())).join(""))
+}
+
 struct ModuleTranspiler<'a, 'tcx: 'a> {
     input: &'a path::Path,
     crate_name: &'a str,
@@ -583,7 +588,7 @@ definition {name} :: \"{ty}\" where
         }).join_results("\n"))))
     }
 
-    fn transpile_item(&self, item: &hir::Item, path: &path::Path, f: &mut File) -> io::Result<()> {
+    fn transpile_item(&self, item: &hir::Item, path: &path::Path, f: &mut File, mod_paths: &mut Vec<path::PathBuf>) -> io::Result<()> {
         fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
             match res {
                 Ok(trans) => try!(write!(f, "{}\n\n", trans)),
@@ -628,10 +633,10 @@ definition {name} :: \"{ty}\" where
                 let mod_path = path::Path::new(mod_path);
                 if mod_path == path {
                     for item in module.items.iter() {
-                        try!(self.transpile_item(item, path, f));
+                        try!(self.transpile_item(item, path, f, mod_paths));
                     }
                 } else {
-                    try!(self.transpile_module(module));
+                    try!(self.transpile_module(module, mod_paths));
                 }
             },
             Item_::ItemStruct(ref data, ref generics) =>
@@ -648,25 +653,47 @@ definition {name} :: \"{ty}\" where
         Ok(())
     }
 
-    fn transpile_module(&self, module: &hir::Mod) -> io::Result<()> {
-        let p = &self.tcx.sess.codemap().span_to_filename(module.inner);
-        let p = path::Path::new(p);
+    fn get_export_root(&self) -> path::PathBuf {
+        path::Path::new("export").join(self.crate_name)
+    }
+
+    fn transpile_module(&self, module: &hir::Mod, mod_paths: &mut Vec<path::PathBuf>) -> io::Result<()> {
+        let p = self.tcx.sess.codemap().span_to_filename(module.inner);
+        let p = path::Path::new(&p);
         let base = self.input.parent().unwrap();
-        let new_path = path::Path::new("export").join(self.crate_name).join(p.relative_from(base).unwrap()).with_extension("thy");
+        let new_path = p.relative_from(base).unwrap();
+        mod_paths.push(new_path.with_file_name(p.file_stem().unwrap()));
+        let new_path = self.get_export_root().join(new_path).with_extension("thy");
         std::fs::create_dir_all(new_path.parent().unwrap()).unwrap();
         let mut f = try!(File::create(&new_path));
-        try!(write!(f, "theory {}
-imports \"../../Rustabelle\"
-begin
-
-", p.file_stem().unwrap().to_str().unwrap()));
+        let deps = module.items.iter().filter_map(|item| match item.node {
+            Item_::ItemUse(ref path) => {
+                let node_id = match path.node {
+                    hir::ViewPath_::ViewPathList(_, ref list) => list[0].node.id(),
+                    _ => item.id,
+                };
+                let did = self.tcx.def_map.borrow()[&node_id].def_id();
+                let p_use = if did.is_local() {
+                    let p_use = self.tcx.sess.codemap().span_to_filename(self.tcx.map.span_if_local(did).unwrap());
+                    let p_use = path::Path::new(&p_use);
+                    let p_use = path_exts::path_relative_from(&p_use, &base).unwrap();
+                    p_use.with_file_name(p_use.file_stem().unwrap())
+                } else {
+                    let crate_name = self.tcx.def_path(did)[0].data.to_string();
+                    path::PathBuf::from("..").join(crate_name).join("all")
+                };
+                let p_use = path_exts::path_relative_from(&p_use, p.relative_from(base).unwrap().parent().unwrap()).unwrap();
+                Some(p_use.to_path_buf())
+            }
+            _ => None,
+        });
+        try!(write_isabelle_header(&mut f, p.file_stem().unwrap().to_str().unwrap(), deps));
 
         for item in module.items.iter() {
-            try!(self.transpile_item(item, &p, &mut f));
+            try!(self.transpile_item(item, &p, &mut f, mod_paths));
         }
 
-        try!(write!(f, "end\n"));
-        Ok(())
+        write!(f, "end\n")
     }
 }
 
@@ -683,5 +710,10 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
         mir_map: &build_mir_for_crate(tcx),
     };
     println!("Transpiling...");
-    trans.transpile_module(&state.hir_crate.unwrap().module)
+    let mut mod_paths = vec![];
+    try!(trans.transpile_module(&state.hir_crate.unwrap().module, &mut mod_paths));
+
+    let mut f = try!(File::create(trans.get_export_root().join("all.thy")));
+    try!(write_isabelle_header(&mut f, "all", mod_paths.into_iter()));
+    write!(f, "end\n")
 }
