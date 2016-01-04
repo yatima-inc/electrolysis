@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use petgraph::Graph;
 use petgraph::algo::*;
 
-use rustc_mir::repr::*;
+use rustc::mir::repr::*;
 
 fn mk_mir_graph(mir: &Mir, start: BasicBlock, blocks: &Vec<BasicBlock>) -> Graph<BasicBlock, ()> {
     let mut g = Graph::new();

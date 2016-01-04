@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use rustc_mir::repr::*;
+use rustc::mir::repr::*;
 
 use super::FnTranspiler;
 use ::mir_graph::mir_sccs;
@@ -79,9 +79,9 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
             }
             match trans.mir.basic_block_data(bb).terminator {
                 Terminator::Call { ref data, .. } => {
-                    uses.push(&data.func);
+                    operand(&data.func, &mut uses);
                     for arg in &data.args {
-                        uses.push(arg);
+                        operand(arg, &mut uses);
                     }
                     defs.extend(try!(trans.call_return_dests(data)));
                 },
