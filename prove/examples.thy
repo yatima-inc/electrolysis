@@ -1,5 +1,5 @@
 theory examples
-imports "../export/examples/lib" Binomial
+imports "../export/examples" Binomial
 begin       
 
 lemma fac: "examples_fac (n::u32) = fact n"

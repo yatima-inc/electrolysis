@@ -1,7 +1,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(slice_patterns)]
-#![feature(path_relative_from)]
 
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 
@@ -20,9 +19,8 @@ extern crate rustc_trans;
 mod component;
 mod mir_graph;
 mod traits;
-mod path_exts;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io;
 use std::io::prelude::*;
@@ -34,7 +32,7 @@ use itertools::Itertools;
 
 use syntax::ast;
 use rustc_front::hir;
-use rustc_front::hir::{Path, FnDecl, Pat_, BindingMode, Item_};
+use rustc_front::hir::{FnDecl, Pat_, BindingMode, Item_};
 use rustc_mir::mir_map::build_mir_for_crate;
 use rustc::mir::repr::*;
 use rustc::middle::const_eval::ConstVal;
@@ -424,12 +422,7 @@ fn format_generic_ty(generics: &[String], ty: &str) -> String {
     }
 }
 
-fn write_isabelle_header<It: Iterator<Item=path::PathBuf>>(f: &mut File, file_name: &str, file_deps: It) -> io::Result<()> {
-        write!(f, "theory {}\nimports\n{}begin\n\n", file_name, file_deps.map(|s| format!("  \"{}\"\n", s.to_str().unwrap())).join(""))
-}
-
 struct ModuleTranspiler<'a, 'tcx: 'a> {
-    input: &'a path::Path,
     crate_name: &'a str,
     tcx: &'a ty::ctxt<'tcx>,
     mir_map: &'a rustc_mir::mir_map::MirMap<'tcx>,
@@ -602,7 +595,7 @@ definition {name} :: \"{ty}\" where
         }).join_results("\n"))))
     }
 
-    fn transpile_item(&self, item: &hir::Item, path: &path::Path, f: &mut File, mod_paths: &mut Vec<path::PathBuf>) -> io::Result<()> {
+    fn transpile_item(&self, item: &hir::Item, f: &mut File) -> io::Result<()> {
         fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
             match res {
                 Ok(trans) => try!(write!(f, "{}\n\n", trans)),
@@ -642,17 +635,8 @@ definition {name} :: \"{ty}\" where
                     }
                 },
             Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
-            Item_::ItemMod(ref module) => {
-                let mod_path = &self.tcx.sess.codemap().span_to_filename(module.inner);
-                let mod_path = path::Path::new(mod_path);
-                if mod_path == path {
-                    for id in module.item_ids.iter() {
-                        try!(self.transpile_item(self.tcx.map.expect_item(id.id), path, f, mod_paths));
-                    }
-                } else {
-                    try!(self.transpile_module(module, mod_paths));
-                }
-            },
+            Item_::ItemMod(ref module) =>
+                try!(self.transpile_module(f, module)),
             Item_::ItemStruct(ref data, ref generics) =>
                 try!(try_write(f, &name, self.transpile_struct(&name, data, generics))),
             Item_::ItemTrait(_, ref generics, ref param_bounds, ref items) => {
@@ -667,67 +651,56 @@ definition {name} :: \"{ty}\" where
         Ok(())
     }
 
-    fn get_export_root(&self) -> path::PathBuf {
-        path::Path::new("export").join(self.crate_name)
+    fn transpile_module(&self, f: &mut File, module: &hir::Mod) -> io::Result<()> {
+        for item_id in module.item_ids.iter() {
+            try!(self.transpile_item(self.tcx.map.expect_item(item_id.id), f));
+        }
+        Ok(())
     }
+}
 
-    fn transpile_module(&self, module: &hir::Mod, mod_paths: &mut Vec<path::PathBuf>) -> io::Result<()> {
-        let p = self.tcx.sess.codemap().span_to_filename(module.inner);
-        let p = path::Path::new(&p);
-        let base = self.input.parent().unwrap();
-        let new_path = p.relative_from(base).unwrap();
-        mod_paths.push(new_path.with_file_name(p.file_stem().unwrap()));
-        let new_path = self.get_export_root().join(new_path).with_extension("thy");
-        std::fs::create_dir_all(new_path.parent().unwrap()).unwrap();
-        let mut f = try!(File::create(&new_path));
-        let deps = module.item_ids.iter().filter_map(|item_id| match self.tcx.map.expect_item(item_id.id).node {
+struct DepsCollector<'a, 'tcx: 'a> {
+    tcx: &'a ty::ctxt<'tcx>,
+    deps: HashSet<DefId>,
+}
+
+impl<'a, 'tcx> rustc_front::intravisit::Visitor<'a> for DepsCollector<'a, 'tcx> {
+    fn visit_item(&mut self, item: &'a hir::Item) {
+        match item.node {
             Item_::ItemUse(ref path) => {
                 let node_id = match path.node {
                     hir::ViewPath_::ViewPathList(_, ref list) => list[0].node.id(),
-                    _ => item_id.id,
+                    _ => item.id,
                 };
                 let did = self.tcx.def_map.borrow()[&node_id].def_id();
-                let p_use = if did.is_local() {
-                    let p_use = self.tcx.sess.codemap().span_to_filename(self.tcx.map.span_if_local(did).unwrap());
-                    let p_use = path::Path::new(&p_use);
-                    let p_use = path_exts::path_relative_from(&p_use, &base).unwrap();
-                    p_use.with_file_name(p_use.file_stem().unwrap())
-                } else {
-                    let crate_name = self.tcx.def_path(did)[0].data.to_string();
-                    path::PathBuf::from("..").join(crate_name).join("all")
-                };
-                let p_use = path_exts::path_relative_from(&p_use, p.relative_from(base).unwrap().parent().unwrap()).unwrap();
-                Some(p_use.to_path_buf())
+                if !did.is_local() {
+                    self.deps.insert(did);
+                }
             }
-            _ => None,
-        });
-        try!(write_isabelle_header(&mut f, p.file_stem().unwrap().to_str().unwrap(), deps));
-
-        for item_id in module.item_ids.iter() {
-            try!(self.transpile_item(self.tcx.map.expect_item(item_id.id), &p, &mut f, mod_paths));
+            _ => {}
         }
-
-        write!(f, "end\n")
     }
 }
 
 fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
+    let crate_name = state.crate_name.unwrap();
     println!("Building MIR...");
     let trans = ModuleTranspiler {
-        input: match *state.input {
-            session::config::Input::File(ref p) => p,
-            _ => panic!("A file would be nice."),
-        },
-        crate_name: state.crate_name.unwrap(),
+        crate_name: crate_name,
         tcx: tcx,
         mir_map: &build_mir_for_crate(tcx),
     };
     println!("Transpiling...");
-    let mut mod_paths = vec![];
-    try!(trans.transpile_module(&state.hir_crate.unwrap().module, &mut mod_paths));
+    let mut f = try!(File::create(path::Path::new("export").join(format!("{}.thy", crate_name))));
+    let mut deps_collector = DepsCollector { tcx: tcx, deps: HashSet::new() };
+    state.hir_crate.unwrap().visit_all_items(&mut deps_collector);
+    try!(write!(f, "theory {}\nimports\n{}begin\n\n", crate_name, deps_collector.deps.into_iter().map(|did| {
+        let crate_name = tcx.def_path(did)[0].data.to_string();
+        format!("  \"{}\"\n", crate_name)
+    }).join("")));
 
-    let mut f = try!(File::create(trans.get_export_root().join("all.thy")));
-    try!(write_isabelle_header(&mut f, "all", mod_paths.into_iter()));
+    try!(trans.transpile_module(&mut f, &state.hir_crate.unwrap().module));
+
     write!(f, "end\n")
 }
