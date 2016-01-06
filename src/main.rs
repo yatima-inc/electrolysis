@@ -685,20 +685,29 @@ impl<'a, 'tcx> rustc_front::intravisit::Visitor<'a> for DepsCollector<'a, 'tcx> 
 fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.unwrap();
+
     println!("Building MIR...");
     let trans = ModuleTranspiler {
         crate_name: crate_name,
         tcx: tcx,
         mir_map: &build_mir_for_crate(tcx),
     };
+
     println!("Transpiling...");
+    let deps = {
+        let mut deps_collector = DepsCollector { tcx: tcx, deps: HashSet::new() };
+        state.hir_crate.unwrap().visit_all_items(&mut deps_collector);
+        let mut deps: Vec<String> = deps_collector.deps.into_iter().map(|did| tcx.def_path(did)[0].data.to_string()).collect();
+        deps.sort();
+        if path::Path::new("thys").join(format!("{}_pre.thy", crate_name)).exists() {
+            deps.insert(0, format!("{}_pre", crate_name));
+        }
+        deps
+    };
+
     let mut f = try!(File::create(path::Path::new("thys").join(format!("{}_export.thy", crate_name))));
-    let mut deps_collector = DepsCollector { tcx: tcx, deps: HashSet::new() };
-    state.hir_crate.unwrap().visit_all_items(&mut deps_collector);
-    try!(write!(f, "theory {}_export\nimports\n{}begin\n\n", crate_name, deps_collector.deps.into_iter().map(|did| {
-        let crate_name = tcx.def_path(did)[0].data.to_string();
-        format!("  \"{}_export\"\n", crate_name)
-    }).join("")));
+    try!(write!(f, "theory {}_export\nimports\n{}\nbegin\n\n", crate_name,
+                deps.into_iter().map(|file| format!("  {}", file)).join("\n")));
 
     try!(trans.transpile_module(&mut f, &state.hir_crate.unwrap().module));
 

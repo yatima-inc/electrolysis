@@ -1,4 +1,4 @@
-theory Rustabelle
+theory core_pre
 imports Main "~~/src/HOL/Library/While_Combinator"
 begin
 
