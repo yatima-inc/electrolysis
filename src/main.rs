@@ -692,12 +692,12 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
         mir_map: &build_mir_for_crate(tcx),
     };
     println!("Transpiling...");
-    let mut f = try!(File::create(path::Path::new("export").join(format!("{}.thy", crate_name))));
+    let mut f = try!(File::create(path::Path::new("thys").join(format!("{}_export.thy", crate_name))));
     let mut deps_collector = DepsCollector { tcx: tcx, deps: HashSet::new() };
     state.hir_crate.unwrap().visit_all_items(&mut deps_collector);
-    try!(write!(f, "theory {}\nimports\n{}begin\n\n", crate_name, deps_collector.deps.into_iter().map(|did| {
+    try!(write!(f, "theory {}_export\nimports\n{}begin\n\n", crate_name, deps_collector.deps.into_iter().map(|did| {
         let crate_name = tcx.def_path(did)[0].data.to_string();
-        format!("  \"{}\"\n", crate_name)
+        format!("  \"{}_export\"\n", crate_name)
     }).join("")));
 
     try!(trans.transpile_module(&mut f, &state.hir_crate.unwrap().module));
