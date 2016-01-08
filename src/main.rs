@@ -130,7 +130,7 @@ fn transpile_def_id(did: DefId, tcx: &ty::ctxt, crate_name: &str) -> String {
     if did.is_local() {
         path = format!("{}::{}", crate_name, path);
     }
-    path.replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_")
+    path.replace("::", "_").replace("<", "_").replace(">", "_").replace(".", "_").replace(",", "_")
 }
 
 fn unwrap_refs<'tcx>(ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
