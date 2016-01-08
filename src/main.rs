@@ -301,7 +301,10 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _), ref ops) => {
                 let variant = &adt_def.variants[variant_idx];
                 let ops = try!(ops.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
-                Ok(format!("({}.make {})", self.transpile_def_id(variant.did), ops.iter().join(" ")))
+                Ok(format!("({}{} {})",
+                           self.transpile_def_id(variant.did),
+                           if adt_def.adt_kind() == ty::AdtKind::Struct { ".make" } else { "" },
+                           ops.iter().join(" ")))
             }
             _ => Err(format!("unimplemented: rvalue {:?}", rv)),
         }
