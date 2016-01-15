@@ -392,11 +392,16 @@ definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
                 rec!(bb_if),
                 rec!(bb_else)),
             Terminator::Return => self.return_expr.clone(),
-            Terminator::Call { ref data, targets: (next, _) } => {
-                let call = format!("({} {})", try!(self.get_operand(&data.func)),
+            Terminator::Call {
+                data: Constant { literal: Literal::Item { def_id, substs, .. } },
+                targets: (next, _)
+            } => {
+                let call = format!("({} {} {})", try!(self.get_operand(&data.func)),
                                    try!(data.args.iter().map(|op| self.get_operand(op)).join_results(" ")));
                 try!(self.set_lvalues(try!(self.call_return_dests(data)).into_iter(), &call)) + &&rec!(next)
             }
+            Terminator::Call { .. } =>
+                throw!("unimplemented: invoking lambda"),
             Terminator::Switch { ref discr, ref adt_def, ref targets } => {
                 let arms: TransResult = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
                     Ok(format!("{} {} => {}", self.transpile_def_id(var.did),
@@ -431,7 +436,7 @@ struct ModuleTranspiler<'a, 'tcx: 'a> {
     mir_map: &'a rustc_mir::mir_map::MirMap<'tcx>,
 }
 
-type TraitBounds = HashMap<String, Vec<String>>;
+type TraitBounds = Vec<(String, String)>
 
 impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
     fn transpile_def_id(&self, did: DefId) -> String {
@@ -440,6 +445,10 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
 
     fn transpile_generics(&self, generics: &hir::Generics, ty: &str) -> TransResult {
         Ok(format_generic_ty(&generics.ty_params.iter().map(|p| format!("'{}", p.name)).collect_vec()[..], ty))
+    }
+
+    fn can_transpile_trait_to_typeclass(&self, trait_did: DefId) -> bool {
+        self.tcx.trait_defs.borrow(trait_did).generics
     }
 
     fn bounds_from_param_bounds(&self, bounds: &mut TraitBounds, name: String, param_bounds: &[hir::TyParamBound]) {
@@ -455,7 +464,6 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
     }
 
     fn bounds_from_generics(&self, bounds: &mut TraitBounds, generics: &hir::Generics) -> Result<(), String> {
-
         for p in &generics.where_clause.predicates {
             match p {
                 &hir::WherePredicate::BoundPredicate(ref pred) => match unwrap_refs(self.hir_ty_to_ty(&pred.bounded_ty)).sty {
@@ -541,6 +549,9 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
                 try_unwrap_mut_ref(&self.hir_ty_to_ty(&param.ty)).map(|_| name.clone())
             }
         });
+        let trait_params = bounds.iter().flat_map(|(ty_param, traits)| {
+            traits.iter().map(|tr| format!("{}_{}", ty_param, tr)).collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
 
         let mir = &self.mir_map[&id];
         let trans = FnTranspiler {
@@ -554,12 +565,11 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
 
         Ok(format!("{prelude}
 
-definition {name} :: \"{ty}\" where
+definition {name} where
 \"{name} {param_names} = ({body})\"",
                     prelude=comp.prelude,
                     name=name,
-                    ty=try!(self.transpile_ty(self.tcx.node_id_to_type(id), bounds)),
-                    param_names=param_names.iter().join(" "),
+                    param_names=param_names.iter().chain(trait_params.iter()).join(" "),
                     body=body,
         ))
     }
@@ -579,19 +589,12 @@ definition {name} :: \"{ty}\" where
     }
 
     fn transpile_trait(&self, name: &str, bounds: &TraitBounds, items: &[hir::TraitItem]) -> TransResult {
-        //let self_bounds = match &bounds.keys().collect::<Vec<_>>()[..] {
-        //    &[] => vec![],
-        //    &[param] | param.to_string == "Self" => bounds[param].clone(),
-        //    _ => throw!("unimplemented: parameterized trait"),
-        //};
-        //let mut bounds = TraitBounds::new();
-        //bounds.insert(
-        Ok(format!("class {} =\n{}\n\n", name, try!(items.into_iter().map(|item| {
+        Ok(format!("record {} =\n{}\n\n", name, try!(items.into_iter().map(|item| {
             match item.node {
                 hir::TraitItem_::MethodTraitItem(_, None) => {
                     let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id), bounds));
                     let ty = ty.replace("'Self", "'a"); // oh well
-                    Ok(format!("fixes {} :: \"{}\"", item.name, ty))
+                    Ok(format!("  {} :: \"{}\"", item.name, ty))
                 }
                 _ => throw!("unimplemented: trait item {:?}", item),
             }
@@ -615,9 +618,9 @@ definition {name} :: \"{ty}\" where
                     self.transpile_fn(item.id, decl, &name, &bounds, None)
                 })))
             }
-            Item_::ItemImpl(_, _, ref generics, _, ref self_ty, ref items) =>
+            Item_::ItemImpl(_, _, ref generics, ref base_trait, ref self_ty, ref items) => {
                 for item in items {
-                    let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
+                    let name = self.transpile_def_id(self.tcx.map.local_def_id(item.id));
                     bounds.clear();
                     if let Err(err) = self.bounds_from_generics(&mut bounds, generics) {
                         try!(try_write(f, &name, Err(err)));
@@ -636,14 +639,20 @@ definition {name} :: \"{ty}\" where
                         }
                         _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
                     }
-                },
+                }
+                if let &Some(ref trait_ref) = base_trait {
+                    try!(write!(f, "definition {} = \"\\<lparr>\n{}\n\\<rparr>\"\n\n", name, items.iter().map(|item| {
+                        let name = self.transpile_def_id(self.tcx.map.local_def_id(item.id));
+                        format!("  {} := {}", item.name, name)
+                    }).join("\n")));
+                }
+            }
             Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
             Item_::ItemMod(ref module) =>
                 try!(self.transpile_module(f, module)),
             Item_::ItemStruct(ref data, ref generics) =>
                 try!(try_write(f, &name, self.transpile_struct(&name, data, generics))),
             Item_::ItemTrait(_, ref generics, ref param_bounds, ref items) => {
-                let mut bounds = TraitBounds::new();
                 try!(try_write(f, &name, self.bounds_from_generics(&mut bounds, generics).and_then(|()| {
                     self.bounds_from_param_bounds(&mut bounds, "Self".to_string(), param_bounds);
                     self.transpile_trait(&name, &bounds, items)

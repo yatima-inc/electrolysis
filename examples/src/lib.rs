@@ -1,4 +1,4 @@
-#![feature(no_std, rustc_attrs)]
+#![feature(rustc_attrs)]
 #![no_std]
 
 //#[rustc_mir(graphviz="fac.gv")]

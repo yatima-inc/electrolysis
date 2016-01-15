@@ -14,6 +14,7 @@ proof-
   }
   note 1 = this
   show ?thesis
+  oops
   unfolding examples_fac_def
   apply (auto simp: core_iter_I_IntoIterator_into_iter_def ops.core_ops_Range.defs)
   apply (rule loop_rule[where P="\<lambda>s. case s of (res, rng) \<Rightarrow>
