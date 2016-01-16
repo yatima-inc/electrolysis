@@ -77,15 +77,14 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
                     _ => throw!("unimplemented: find_nonlocals statement {:?}", stmt),
                 }
             }
-            match trans.mir.basic_block_data(bb).terminator {
-                Terminator::Call { ref data, .. } => {
-                    operand(&data.func, &mut uses);
-                    for arg in &data.args {
+            if let Some(ref term) = trans.mir.basic_block_data(bb).terminator {
+                if let &Terminator::Call { ref func, ref args, .. } = term {
+                    operand(func, &mut uses);
+                    for arg in args {
                         operand(arg, &mut uses);
                     }
-                    defs.extend(try!(trans.call_return_dests(data)));
-                },
-                _ => (),
+                    defs.extend(try!(trans.call_return_dests(term)));
+                }
             }
         }
 
