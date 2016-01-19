@@ -35,6 +35,7 @@ use rustc_front::hir;
 use rustc_front::hir::{FnDecl, Pat_, BindingMode, Item_};
 use rustc_mir::mir_map::build_mir_for_crate;
 use rustc::mir::repr::*;
+use rustc::middle::cstore::CrateStore;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
 use rustc::middle::subst::{Substs, ParamSpace};
@@ -102,7 +103,7 @@ fn binop_to_string(op: BinOp) -> &'static str {
         BinOp::Eq => "==",
         BinOp::Lt => "<",
         BinOp::Le => "<=",
-        BinOp::Ne => "\\<ne>",
+        BinOp::Ne => "\\<noteq>",
         BinOp::Ge => ">=",
         BinOp::Gt => ">",
     }
@@ -152,7 +153,7 @@ fn try_unwrap_mut_ref<'tcx>(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
         Some(match *lv {
-            Lvalue::Var(idx) => format!("{}", self.mir.var_decls[idx as usize].name),
+            Lvalue::Var(idx) => format!("v_{}", self.mir.var_decls[idx as usize].name),
             Lvalue::Temp(idx) => format!("t_{}", idx),
             Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
             Lvalue::Static(did) => self.transpile_def_id(did),
@@ -277,13 +278,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             Operand::Consume(ref lv) => try!(self.get_lvalue(lv)),
             Operand::Constant(ref c) => match c.literal {
                 Literal::Value { ref value } => try!(self.transpile_constval(value)),
-                Literal::Item { def_id, kind: _, substs }  => {
-                    match self.tcx.trait_of_item(def_id) {
-                        Some(trait_did) =>
-                            self.transpile_def_id(try!(traits::lookup_trait_item_impl(self.tcx, def_id, substs))),
-                        _ => self.transpile_def_id(def_id),
-                    }
-                }
+                _ => throw!("unimplemented: constant {:?}", c)
             }
         })
     }
@@ -354,19 +349,24 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                     Operand::Consume(ref lv) => try_unwrap_mut_ref(&try!(self.lvalue_ty(lv))).map(|_| lv),
                     Operand::Constant(_) => None,
                 })).collect::<Result<Vec<_>, String>>());
-                Ok(iter::once(kind.destination().unwrap()).chain(muts.into_iter().filter_map(|x| x)).collect())
+                Ok(kind.destination().into_iter().chain(muts.into_iter().filter_map(|x| x)).collect())
             }
             _ => Ok(Vec::new()),
         }
     }
 
     fn call_trait_args(&self, callee_id: DefId, substs: &Substs<'tcx>) -> Result<Vec<String>, String> {
-        if substs.types.is_empty() {
-            return Ok(Vec::new())
+        match self.tcx.map.as_local_node_id(callee_id) {
+            Some(n) => {
+                let bounds = try!(self.mod_transpiler.bounds_from_node(n));
+                Ok(bounds.into_iter().map(|(name, _)| name).collect())
+            }
+            None => {
+                println!("{:?}", self.tcx.sess.cstore.item_predicates(self.tcx, callee_id));
+                println!("{}", self.transpile_def_id(callee_id));
+                Ok(Vec::new())
+            }
         }
-        let n = self.tcx.map.as_local_node_id(callee_id).unwrap();
-        let bounds = try!(self.mod_transpiler.bounds_from_node(n));
-        Ok(bounds.into_iter().map(|(name, _)| name).collect())
     }
 
     fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
@@ -383,14 +383,11 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
             if l_comp.exits.len() != 1 {
                 throw!("Oops, multiple loop exits: {:?}", l_comp);
             }
-            comp.prelude = format!("{}
-
-definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
-                                   comp.prelude,
-                                   name=name,
-                                   uses=l_comp.nonlocal_uses.iter().join(" "),
-                                   defs=l_comp.nonlocal_defs.iter().join(", "),
-                                   body=body);
+            comp.prelude.push(format!("definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
+                                      name=name,
+                                      uses=l_comp.nonlocal_uses.iter().join(" "),
+                                      defs=l_comp.nonlocal_defs.iter().join(", "),
+                                      body=body));
             return Ok(format!("let ({muts}) = loop ({name} {immuts}) ({muts}) in\n{cont}", muts=l_comp.nonlocal_defs.iter().join(", "),
                               name=name, immuts=l_comp.nonlocal_uses.iter().join(" "), cont=rec!(l_comp.exits[0])));
         }
@@ -410,9 +407,16 @@ definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
                     func: Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }),
                     ref args, ref kind,
                 } => {
-                    let call = format!("({} {} {})", self.transpile_def_id(def_id),
-                                       try!(args.iter().map(|op| self.get_operand(op)).join_results(" ")),
-                                       try!(self.call_trait_args(def_id, substs)).join(" "));
+                    let def_id = match self.tcx.trait_of_item(def_id) {
+                        Some(trait_did) => try!(traits::lookup_trait_item_impl(self.tcx, def_id, substs)),
+                        _ => def_id,
+                    };
+                    let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
+                    let call = match self.tcx.adt_defs.borrow().get(&def_id) {
+                        Some(ref adt_def) => throw!("Weird Adt call: {:?}", terminator),
+                        None => format!("({} {})", self.transpile_def_id(def_id),
+                                        args.into_iter().chain(try!(self.call_trait_args(def_id, substs)).into_iter()).join(" "))
+                    };
                     try!(self.set_lvalues(try!(self.call_return_dests(&terminator)).into_iter(), &call)) + &&rec!(kind.successors()[0])
                 }
                 Terminator::Call { .. } =>
@@ -431,7 +435,7 @@ definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
                     }).join_results(" | ");
                     format!("case {} of {}", try!(self.get_lvalue(discr)), try!(arms))
                 },
-                Terminator::Resume => unreachable!(),
+                Terminator::Resume => String::new(),
             }),
             None => None,
         };
@@ -496,10 +500,17 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
             rustc::front::map::NodeItem(&hir::Item { node: hir::Item_::ItemFn(_, _, _, _, ref generics, _), .. }) =>
                 try!(self.bounds_from_generics(&mut bounds, generics)),
             rustc::front::map::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), .. }) |
-            rustc::front::map::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, _), .. }) =>
-                try!(self.bounds_from_generics(&mut bounds, &sig.generics)),
+            rustc::front::map::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, _), .. }) => {
+                let generics = match self.tcx.map.expect_item(self.tcx.map.get_parent(node)).node {
+                    Item_::ItemImpl(_, _, ref generics, _, _, _) => generics,
+                    Item_::ItemTrait(_, ref generics, _, _) => generics,
+                    _ => unreachable!(),
+                };
+                try!(self.bounds_from_generics(&mut bounds, generics));
+                try!(self.bounds_from_generics(&mut bounds, &sig.generics));
+            }
             rustc::front::map::NodeForeignItem(_) => {} // surely these won't have trait bounds?
-            _ => unreachable!(),
+            n => panic!("weird node: {:?}", n),
         }
         Ok(bounds)
     }
@@ -582,15 +593,12 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         let body = try!(trans.transpile_basic_block(START_BLOCK, &mut comp));
 
 
-        Ok(format!("{prelude}
-
-definition {name} where
-\"{name} {param_names} = ({body})\"",
-                    prelude=comp.prelude,
+        let def = format!("definition {name} where\n\"{name} {param_names} = ({body})\"",
                     name=name,
                     param_names=param_names.iter().join(" ") + &trait_params.join(" "),
                     body=body,
-        ))
+        );
+        Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
     }
 
     fn transpile_struct(&self, name: &str, data: &hir::VariantData, generics: &hir::Generics) -> TransResult {
@@ -608,16 +616,30 @@ definition {name} where
     }
 
     fn transpile_trait(&self, name: &str, items: &[hir::TraitItem]) -> TransResult {
-        Ok(format!("record {} =\n{}\n\n", name, try!(items.into_iter().map(|item| {
+        if items.is_empty() {
+            return Ok(String::new());
+        }
+        let fns = try!(items.into_iter().map(|item| {
             match item.node {
-                hir::TraitItem_::MethodTraitItem(_, None) => {
+                hir::TraitItem_::MethodTraitItem(_, _) => {
                     let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id)));
                     let ty = ty.replace("'Self", "'a"); // oh well
-                    Ok(format!("  {} :: \"{}\"", item.name, ty))
+                    Ok(format!("  {}_{} :: \"{}\"", name, item.name, ty))
                 }
                 _ => throw!("unimplemented: trait item {:?}", item),
             }
-        }).join_results("\n"))))
+        }).join_results("\n"));
+        let default_impls = try!(items.into_iter().filter_map(|item| {
+            match item.node {
+                hir::TraitItem_::MethodTraitItem(ref sig, Some(_)) => {
+                    let item_name = format!("{}_{}", name, item.name);
+                    Some(self.transpile_fn(item.id, &*sig.decl, &item_name, Some(&sig.explicit_self.node)))
+                }
+                _ => None,
+            }
+        }).join_results("\n"));
+
+        Ok(format!("record {} =\n{}\n\n{}\n\n", name, fns, default_impls))
     }
 
     fn transpile_item(&self, item: &hir::Item, f: &mut File) -> io::Result<()> {
@@ -647,11 +669,14 @@ definition {name} where
                         _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
                     }
                 }
-                if base_trait.is_some() {
-                    try!(write!(f, "definition {} = \"\\<lparr>\n{}\n\\<rparr>\"\n\n", name, items.iter().map(|item| {
-                        let name = self.transpile_def_id(self.tcx.map.local_def_id(item.id));
-                        format!("  {} := {}", item.name, name)
-                    }).join("\n")));
+                if !items.is_empty() {
+                    if let &Some(ref base_trait) = base_trait {
+                        try!(write!(f, "definition \"{} = \\<lparr>\n{}\n\\<rparr>\"\n\n", name, items.iter().map(|item| {
+                            let trait_name = self.transpile_def_id(self.tcx.trait_ref_to_def_id(base_trait));
+                            let name = self.transpile_def_id(self.tcx.map.local_def_id(item.id));
+                            format!("  {}_{} = {}", trait_name, item.name, name)
+                        }).join(",\n")));
+                    }
                 }
             }
             Item_::ItemExternCrate(..) | Item_::ItemUse(..) => (),
@@ -712,7 +737,7 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     let deps = {
         let mut deps_collector = DepsCollector { tcx: tcx, deps: HashSet::new() };
         state.hir_crate.unwrap().visit_all_items(&mut deps_collector);
-        let mut deps: Vec<String> = deps_collector.deps.into_iter().map(|did| tcx.def_path(did)[0].data.to_string()).collect();
+        let mut deps: Vec<String> = deps_collector.deps.into_iter().map(|did| format!("{}_export", tcx.def_path(did)[0].data.to_string())).collect();
         deps.sort();
         if path::Path::new("thys").join(format!("{}_pre.thy", crate_name)).exists() {
             deps.insert(0, format!("{}_pre", crate_name));

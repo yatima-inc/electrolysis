@@ -8,7 +8,7 @@ use ::mir_graph::mir_sccs;
 // A loop or the full function body
 #[derive(Default, Debug)]
 pub struct Component<'a, 'tcx: 'a> {
-    pub prelude: String,
+    pub prelude: Vec<String>,
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
     pub loops: Vec<Vec<BasicBlock>>,
