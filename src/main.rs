@@ -14,11 +14,9 @@ extern crate rustc_front;
 extern crate rustc_metadata;
 extern crate rustc_mir;
 extern crate syntax;
-extern crate rustc_trans;
 
 mod component;
 mod mir_graph;
-mod traits;
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -376,19 +374,16 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
 
     fn transpile_trait_call(&self, caller: ast::NodeId, callee: DefId, substs: &Substs<'tcx>) -> TransResult {
         use rustc::middle::infer;
+        let trait_def_id = self.tcx.trait_of_item(callee).unwrap();
 
         // from trans::meth::trans_method_callee
-        let trait_did = self.tcx.trait_of_item(callee).unwrap();
-        let trait_substs = substs.clone().method_to_trait();
-        let trait_substs = self.tcx.mk_substs(trait_substs);
-        let trait_ref = ty::TraitRef::new(trait_did, trait_substs);
+        let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
         let trait_ref = ty::Binder(trait_ref);
 
         let span = syntax::codemap::DUMMY_SP;
         let param_env = ty::ParameterEnvironment::for_item(self.tcx, caller);
         let bla = format!("{:?}", param_env.caller_bounds);
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), false);
-        //let infcx = infer::normalizing_infer_ctxt(self.tcx, &self.tcx.tables);
+        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env));
         let mut selcx = SelectionContext::new(&infcx);
         let obligation =
             Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID),
@@ -406,7 +401,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                     ty::MethodTraitItem(method) => method.name,
                     _ => unreachable!(),
                 };
-                let callee_substs = traits::combine_impl_and_methods_tps(/*tcx, */substs.clone(), data.substs);
+                let callee_substs = substs.clone().with_method_from(&data.substs);
 
                 let mth = self.tcx.get_impl_method(impl_did, callee_substs, mname);
                 Ok(iter::once(self.transpile_def_id(mth.method.def_id)).chain(try!(data.nested.into_iter().map(|obl| Ok(match obl.predicate {
