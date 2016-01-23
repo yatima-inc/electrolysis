@@ -8,7 +8,7 @@ use rustc::middle::def_id::DefId;
 //use rustc_trans::trans::monomorphize;
 
 // copied from trans::meth
-fn combine_impl_and_methods_tps<'tcx>(//tcx: &ctxt<'tcx>,
+pub fn combine_impl_and_methods_tps<'tcx>(//tcx: &ctxt<'tcx>,
                                       node_substs: subst::Substs<'tcx>,
                                       rcvr_substs: subst::Substs<'tcx>)
                                       -> subst::Substs<'tcx>

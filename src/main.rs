@@ -39,6 +39,7 @@ use rustc::middle::cstore::CrateStore;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
 use rustc::middle::subst::{Substs, ParamSpace};
+use rustc::middle::traits::*;
 use rustc::middle::ty;
 
 use rustc_driver::driver;
@@ -111,7 +112,7 @@ fn binop_to_string(op: BinOp) -> &'static str {
 
 pub struct FnTranspiler<'a, 'tcx: 'a> {
     mod_transpiler: &'a ModuleTranspiler<'a, 'tcx>,
-    fn_name: String,
+    node_id: ast::NodeId,
     tcx: &'a ty::ctxt<'tcx>,
     mir: &'a Mir<'tcx>,
     param_names: &'a Vec<String>,
@@ -125,13 +126,17 @@ fn selector(idx: usize, len: usize) -> Vec<&'static str> {
         .collect()
 }
 
+fn mk_isabelle_name(s: &str) -> String {
+    s.replace(|c: char| !c.is_alphanumeric(), "_").trim_matches('_').to_string()
+}
+
 fn transpile_def_id(did: DefId, tcx: &ty::ctxt, crate_name: &str) -> String {
     // what could ever go wrong
     let mut path = tcx.item_path_str(did);
     if did.is_local() {
         path = format!("{}::{}", crate_name, path);
     }
-    path.replace(|c: char| !c.is_alphanumeric(), "_")
+    mk_isabelle_name(&path)
 }
 
 fn unwrap_refs<'tcx>(ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
@@ -149,8 +154,11 @@ fn try_unwrap_mut_ref<'tcx>(ty: &ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
     }
 }
 
-
 impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
+    fn def_id(&self) -> DefId {
+        self.tcx.map.local_def_id(self.node_id)
+    }
+
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
         Some(match *lv {
             Lvalue::Var(idx) => format!("v_{}", self.mir.var_decls[idx as usize].name),
@@ -355,18 +363,73 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn call_trait_args(&self, callee_id: DefId, substs: &Substs<'tcx>) -> Result<Vec<String>, String> {
-        match self.tcx.map.as_local_node_id(callee_id) {
-            Some(n) => {
-                let bounds = try!(self.mod_transpiler.bounds_from_node(n));
-                Ok(bounds.into_iter().map(|(name, _)| name).collect())
-            }
-            None => {
-                println!("{:?}", self.tcx.sess.cstore.item_predicates(self.tcx, callee_id));
-                println!("{}", self.transpile_def_id(callee_id));
-                Ok(Vec::new())
-            }
+    fn is_marker_trait(&self, trait_def_id: DefId) -> bool {
+        self.tcx.trait_items(trait_def_id).is_empty()
+    }
+
+    fn transpile_trait_ref(&self, trait_ref: &ty::TraitRef<'tcx>) -> TransResult {
+        let substs: Result<Vec<_>,_> = trait_ref.substs.types.iter().map(|ty| {
+            self.mod_transpiler.transpile_ty(ty).map(|s| mk_isabelle_name(&s))
+        }).collect();
+        Ok(try!(substs).into_iter().chain(iter::once(self.transpile_def_id(trait_ref.def_id))).join("_"))
+    }
+
+    fn transpile_trait_call(&self, caller: ast::NodeId, callee: DefId, substs: &Substs<'tcx>) -> TransResult {
+        use rustc::middle::infer;
+
+        // from trans::meth::trans_method_callee
+        let trait_did = self.tcx.trait_of_item(callee).unwrap();
+        let trait_substs = substs.clone().method_to_trait();
+        let trait_substs = self.tcx.mk_substs(trait_substs);
+        let trait_ref = ty::TraitRef::new(trait_did, trait_substs);
+        let trait_ref = ty::Binder(trait_ref);
+
+        let span = syntax::codemap::DUMMY_SP;
+        let param_env = ty::ParameterEnvironment::for_item(self.tcx, caller);
+        let bla = format!("{:?}", param_env.caller_bounds);
+        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), false);
+        //let infcx = infer::normalizing_infer_ctxt(self.tcx, &self.tcx.tables);
+        let mut selcx = SelectionContext::new(&infcx);
+        let obligation =
+            Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID),
+            trait_ref.to_poly_trait_predicate());
+        let selection = match selcx.select(&obligation) {
+            Ok(x) => x.unwrap(),
+            Err(err) => throw!("obligation select: {:?} {:?} {:?}", obligation, err, bla),
+        };
+
+        match selection {
+            Vtable::VtableImpl(data) => {
+                // from trans::meth::trans_monomorphized_callee
+                let impl_did = data.impl_def_id;
+                let mname = match self.tcx.impl_or_trait_item(callee) {
+                    ty::MethodTraitItem(method) => method.name,
+                    _ => unreachable!(),
+                };
+                let callee_substs = traits::combine_impl_and_methods_tps(/*tcx, */substs.clone(), data.substs);
+
+                let mth = self.tcx.get_impl_method(impl_did, callee_substs, mname);
+                Ok(iter::once(self.transpile_def_id(mth.method.def_id)).chain(try!(data.nested.into_iter().map(|obl| Ok(match obl.predicate {
+                    ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
+                        let obl = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), trait_pred.clone());
+                        match try!(selcx.select(&obl).map_err(|e| format!("obligation select: {:?} {:?}", obl, e))) {
+                            Some(Vtable::VtableImpl(data)) => Some(self.transpile_def_id(data.impl_def_id)),
+                            Some(Vtable::VtableParam(_)) => Some(format!("{:?}", trait_pred)),
+                            Some(vtable) => throw!("unimplemented: vtable {:?}", vtable),
+                            None => throw!("unfulfilled predicate: {:?}", obl),
+                        }
+                    }
+                    _ => None,
+                })).collect::<Result<Vec<_>, _>>()).into_iter().filter_map(|x| x)).join(" "))
+            },
+            Vtable::VtableParam(_) => Ok(format!("{} {}", self.transpile_def_id(callee), try!(self.transpile_trait_ref(&trait_ref.skip_binder())))),
+            vtable => throw!("unimplemented: vtable {:?}", vtable),
         }
+            /*let mut fulfill_cx = infcx.fulfillment_cx.borrow_mut();
+              for obl in selection.nested_obligations() {
+              fulfill_cx.register_predicate_obligation(&infcx, obl);
+              }
+              infer::drain_fulfillment_cx(&infcx, &mut fulfill_cx, &selection).map_err(|e| format!("obligation drain: {:?}", e));*/
     }
 
     fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
@@ -379,7 +442,7 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = try!(Component::new(self, bb, l, true));
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
-            let name = format!("{}_{}", self.fn_name, bb.index());
+            let name = format!("{}_{}", self.tcx.item_name(self.def_id()), bb.index());
             if l_comp.exits.len() != 1 {
                 throw!("Oops, multiple loop exits: {:?}", l_comp);
             }
@@ -407,15 +470,15 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                     func: Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }),
                     ref args, ref kind,
                 } => {
-                    let def_id = match self.tcx.trait_of_item(def_id) {
-                        Some(trait_did) => try!(traits::lookup_trait_item_impl(self.tcx, def_id, substs)),
-                        _ => def_id,
+                    let call = match self.tcx.trait_of_item(def_id) {
+                        Some(trait_did) => try!(self.transpile_trait_call(self.node_id, def_id, substs)),
+                        _ => self.transpile_def_id(def_id),
                     };
                     let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
                     let call = match self.tcx.adt_defs.borrow().get(&def_id) {
                         Some(ref adt_def) => throw!("Weird Adt call: {:?}", terminator),
-                        None => format!("({} {})", self.transpile_def_id(def_id),
-                                        args.into_iter().chain(try!(self.call_trait_args(def_id, substs)).into_iter()).join(" "))
+                        None => format!("({} {})", call,
+                                        args.into_iter().join(" "))
                     };
                     try!(self.set_lvalues(try!(self.call_return_dests(&terminator)).into_iter(), &call)) + &&rec!(kind.successors()[0])
                 }
@@ -466,53 +529,6 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
 
     fn transpile_generics(&self, generics: &hir::Generics, ty: &str) -> TransResult {
         Ok(format_generic_ty(&generics.ty_params.iter().map(|p| format!("'{}", p.name)).collect_vec()[..], ty))
-    }
-
-    fn bounds_from_param_bounds(&self, bounds: &mut TraitBounds, name: String, param_bounds: &[hir::TyParamBound]) {
-        for bound in param_bounds {
-            match *bound {
-                hir::TyParamBound::TraitTyParamBound(ref poly_trait_ref, hir::TraitBoundModifier::None) => {
-                    let trait_ref = self.transpile_def_id(self.tcx.trait_ref_to_def_id(&poly_trait_ref.trait_ref));
-                    bounds.push((name.clone(), trait_ref));
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn bounds_from_generics(&self, bounds: &mut TraitBounds, generics: &hir::Generics) -> Result<(), String> {
-        for p in &generics.where_clause.predicates {
-            match p {
-                &hir::WherePredicate::BoundPredicate(ref pred) =>
-                    self.bounds_from_param_bounds(bounds, try!(self.transpile_hir_ty(&pred.bounded_ty)), &pred.bounds),
-                _ => (),
-            }
-        }
-        for param in &generics.ty_params {
-            self.bounds_from_param_bounds(bounds, param.name.to_string(), &param.bounds);
-        }
-        Ok(())
-    }
-
-    fn bounds_from_node(&self, node: ast::NodeId) -> Result<TraitBounds, String> {
-        let mut bounds = TraitBounds::new();
-        match self.tcx.map.get(node) {
-            rustc::front::map::NodeItem(&hir::Item { node: hir::Item_::ItemFn(_, _, _, _, ref generics, _), .. }) =>
-                try!(self.bounds_from_generics(&mut bounds, generics)),
-            rustc::front::map::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), .. }) |
-            rustc::front::map::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, _), .. }) => {
-                let generics = match self.tcx.map.expect_item(self.tcx.map.get_parent(node)).node {
-                    Item_::ItemImpl(_, _, ref generics, _, _, _) => generics,
-                    Item_::ItemTrait(_, ref generics, _, _) => generics,
-                    _ => unreachable!(),
-                };
-                try!(self.bounds_from_generics(&mut bounds, generics));
-                try!(self.bounds_from_generics(&mut bounds, &sig.generics));
-            }
-            rustc::front::map::NodeForeignItem(_) => {} // surely these won't have trait bounds?
-            n => panic!("weird node: {:?}", n),
-        }
-        Ok(bounds)
     }
 
     fn transpile_ty(&self, ty: ty::Ty<'tcx>) -> TransResult {
@@ -579,13 +595,9 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
                 try_unwrap_mut_ref(&self.hir_ty_to_ty(&param.ty)).map(|_| name.clone())
             }
         });
-        let trait_params = try!(self.bounds_from_node(id)).into_iter().map(|(ty_param, tr)| {
-            format!("{}_{}", ty_param, tr)
-        }).collect::<Vec<_>>();
-
         let mir = &self.mir_map[&id];
         let trans = FnTranspiler {
-            mod_transpiler: &self, fn_name: name.to_string(),
+            mod_transpiler: &self, node_id: id,
             tcx: self.tcx, mir: mir, param_names: &param_names,
             return_expr: format!("({})", iter::once("ret".to_string()).chain(muts).join(", ")),
         };
@@ -593,9 +605,15 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         let body = try!(trans.transpile_basic_block(START_BLOCK, &mut comp));
 
 
+        let trait_params = try!(self.tcx.lookup_predicates(trans.def_id()).predicates.into_iter().filter_map(|pred| match pred {
+            ty::Predicate::Trait(ref trait_pred) if !trans.is_marker_trait(trait_pred.skip_binder().def_id()) =>
+                Some(trans.transpile_trait_ref(&trait_pred.skip_binder().trait_ref)),
+            _ => None
+        }).collect::<Result<Vec<_>, _>>());
+
         let def = format!("definition {name} where\n\"{name} {param_names} = ({body})\"",
                     name=name,
-                    param_names=param_names.iter().join(" ") + &trait_params.join(" "),
+                    param_names=trait_params.iter().chain(param_names.iter()).join(" "),
                     body=body,
         );
         Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
@@ -624,7 +642,7 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
                 hir::TraitItem_::MethodTraitItem(_, _) => {
                     let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id)));
                     let ty = ty.replace("'Self", "'a"); // oh well
-                    Ok(format!("  {}_{} :: \"{}\"", name, item.name, ty))
+                    Ok(format!("  {}__{} :: \"{}\"", name, item.name, ty))
                 }
                 _ => throw!("unimplemented: trait item {:?}", item),
             }
@@ -632,7 +650,7 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         let default_impls = try!(items.into_iter().filter_map(|item| {
             match item.node {
                 hir::TraitItem_::MethodTraitItem(ref sig, Some(_)) => {
-                    let item_name = format!("{}_{}", name, item.name);
+                    let item_name = format!("{}__{}", name, item.name);
                     Some(self.transpile_fn(item.id, &*sig.decl, &item_name, Some(&sig.explicit_self.node)))
                 }
                 _ => None,
