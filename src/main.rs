@@ -373,6 +373,33 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
     }
 
     fn transpile_trait_call(&self, caller: ast::NodeId, callee: DefId, substs: &Substs<'tcx>) -> TransResult {
+        // FIXME ctxt::get_impl_method throws subst error
+        fn get_impl_method_def_id<'tcx>(tcx: &ty::ctxt<'tcx>, impl_def_id: DefId, name: ast::Name) -> DefId {
+            // there don't seem to be nicer accessors to these:
+            let impl_or_trait_items_map = tcx.impl_or_trait_items.borrow();
+
+            for impl_item in &tcx.impl_items.borrow()[&impl_def_id] {
+                if let ty::MethodTraitItem(ref meth) =
+                    impl_or_trait_items_map[&impl_item.def_id()] {
+                        if meth.name == name {
+                            return meth.def_id
+                        }
+                    }
+            }
+
+            // It is not in the impl - get the default from the trait.
+            let trait_ref = tcx.impl_trait_ref(impl_def_id).unwrap();
+            for trait_item in tcx.trait_items(trait_ref.def_id).iter() {
+                if let &ty::MethodTraitItem(ref meth) = trait_item {
+                    if meth.name == name {
+                        return meth.def_id
+                    }
+                }
+            }
+
+            unreachable!()
+        }
+
         use rustc::middle::infer;
         let trait_def_id = self.tcx.trait_of_item(callee).unwrap();
 
@@ -401,10 +428,8 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                     ty::MethodTraitItem(method) => method.name,
                     _ => unreachable!(),
                 };
-                let callee_substs = substs.clone().with_method_from(&data.substs);
-
-                let mth = self.tcx.get_impl_method(impl_did, callee_substs, mname);
-                Ok(iter::once(self.transpile_def_id(mth.method.def_id)).chain(try!(data.nested.into_iter().map(|obl| Ok(match obl.predicate {
+                let method_def_id = get_impl_method_def_id(self.tcx, impl_did, mname);
+                Ok(iter::once(self.transpile_def_id(method_def_id)).chain(try!(data.nested.into_iter().map(|obl| Ok(match obl.predicate {
                     ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
                         let obl = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), trait_pred.clone());
                         match try!(selcx.select(&obl).map_err(|e| format!("obligation select: {:?} {:?}", obl, e))) {
@@ -417,7 +442,22 @@ impl<'a, 'tcx: 'a> FnTranspiler<'a, 'tcx> {
                     _ => None,
                 })).collect::<Result<Vec<_>, _>>()).into_iter().filter_map(|x| x)).join(" "))
             },
-            Vtable::VtableParam(_) => Ok(format!("{} {}", self.transpile_def_id(callee), try!(self.transpile_trait_ref(&trait_ref.skip_binder())))),
+            Vtable::VtableParam(_) => {
+                // FIXME very broken parameter lookup
+                let param_trait_ref = try!(self.tcx.lookup_predicates(self.def_id()).predicates.into_iter().filter_map(|pred| match pred {
+                    ty::Predicate::Trait(ref trait_pred) => {
+                        let param_trait_ref = ty::Binder(trait_pred.skip_binder().trait_ref.clone());
+                        if supertraits(self.tcx, param_trait_ref).any(|t| t.skip_binder().def_id == trait_ref.skip_binder().def_id) {
+                            Some(param_trait_ref)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }).next().ok_or_else(|| format!("param trait lookup failed for {:?}", trait_ref)));
+
+                Ok(format!("{} {}", self.transpile_def_id(callee), try!(self.transpile_trait_ref(&param_trait_ref.skip_binder()))))
+            }
             vtable => throw!("unimplemented: vtable {:?}", vtable),
         }
             /*let mut fulfill_cx = infcx.fulfillment_cx.borrow_mut();
@@ -632,14 +672,15 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         if items.is_empty() {
             return Ok(String::new());
         }
-        let fns = try!(items.into_iter().map(|item| {
+        let fns = try!(items.into_iter().filter_map(|item| {
             match item.node {
                 hir::TraitItem_::MethodTraitItem(_, _) => {
-                    let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id)));
-                    let ty = ty.replace("'Self", "'a"); // oh well
-                    Ok(format!("  {}__{} :: \"{}\"", name, item.name, ty))
+                    Some(self.transpile_ty(self.tcx.node_id_to_type(item.id)).map(|ty| {
+                        let ty = ty.replace("'Self", "'a"); // oh well
+                        format!("  {}__{} :: \"{}\"", name, item.name, ty)
+                    }))
                 }
-                _ => throw!("unimplemented: trait item {:?}", item),
+                _ => None
             }
         }).join_results("\n"));
         let default_impls = try!(items.into_iter().filter_map(|item| {
