@@ -668,43 +668,42 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_trait(&self, name: &str, items: &[hir::TraitItem]) -> TransResult {
+    fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
+        match res {
+            Ok(trans) => try!(write!(f, "{}\n\n", trans)),
+            Err(err) => try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *"))),
+        };
+        Ok(())
+    }
+
+    fn transpile_trait(&self, f: &mut File, name: &str, items: &[hir::TraitItem]) -> io::Result<()> {
         if items.is_empty() {
             return Ok(String::new());
         }
-        let fns = try!(items.into_iter().filter_map(|item| {
+        let fns = items.into_iter().map(|item| {
             match item.node {
                 hir::TraitItem_::MethodTraitItem(_, _) => {
-                    Some(self.transpile_ty(self.tcx.node_id_to_type(item.id)).map(|ty| {
-                        let ty = ty.replace("'Self", "'a"); // oh well
-                        format!("  {}__{} :: \"{}\"", name, item.name, ty)
-                    }))
+                    let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id)));
+                    let ty = ty.replace("'Self", "'a"); // oh well
+                    Ok(format!("  {}__{} :: \"{}\"", name, item.name, ty))
                 }
-                _ => None
+                _ => throw!("unimplemented: trait item {:?}", item),
             }
-        }).join_results("\n"));
-        let default_impls = try!(items.into_iter().filter_map(|item| {
+        }).join_results("\n");
+        try!(try_write(f, name, fns.map(|fns| format!("record {} =\n{}", name, fns))));
+
+        for item in items.into_iter() {
             match item.node {
                 hir::TraitItem_::MethodTraitItem(ref sig, Some(_)) => {
                     let item_name = format!("{}__{}", name, item.name);
-                    Some(self.transpile_fn(item.id, &*sig.decl, &item_name, Some(&sig.explicit_self.node)))
+                    try!(try_write(f, item_name, self.transpile_fn(item.id, &*sig.decl, &item_name, Some(&sig.explicit_self.node))));
                 }
-                _ => None,
+                _ => {}
             }
-        }).join_results("\n"));
-
-        Ok(format!("record {} =\n{}\n\n{}\n\n", name, fns, default_impls))
+        }
     }
 
     fn transpile_item(&self, item: &hir::Item, f: &mut File) -> io::Result<()> {
-        fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
-            match res {
-                Ok(trans) => try!(write!(f, "{}\n\n", trans)),
-                Err(err) => try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *"))),
-            };
-            Ok(())
-        }
-
         let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
         match item.node {
             Item_::ItemFn(ref decl, _, _, _, _, _) =>
