@@ -57,6 +57,14 @@ trait StringResultIterator<E> : Iterator<Item=Result<String, E>> {
 
 impl<T, E> StringResultIterator<E> for T where T: Iterator<Item=Result<String, E>> { }
 
+fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
+    match res {
+        Ok(trans) => try!(write!(f, "{}\n\n", trans)),
+        Err(err) => try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *"))),
+    };
+    Ok(())
+}
+
 fn main() {
     let krate = env::args().nth(1).unwrap();
     let crate_name = env::args().nth(2).unwrap();
@@ -668,43 +676,58 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
         }
     }
 
-    fn try_write(f: &mut File, name: &str, res: TransResult) -> io::Result<()> {
-        match res {
-            Ok(trans) => try!(write!(f, "{}\n\n", trans)),
-            Err(err) => try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *"))),
-        };
-        Ok(())
+    fn transpile_associated_types(&self, trait_def_id: DefId, prefix: &str) -> Result<Vec<String>, String> {
+        self.tcx.lookup_predicates(trait_def_id).predicates.into_iter().map(|pred| Ok(match pred {
+            ty::Predicate::Trait(ty::Binder(ref trait_pred)) => {
+                let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
+                let ty_param = mk_isabelle_name(&&try!(self.transpile_ty(trait_pred.self_ty())));
+                trait_def.associated_type_names.iter().map(|name| format!("{}_{}", prefix, name)).chain(try!(self.transpile_associated_types(trait_pred.def_id(), &format!("{}_{}", prefix, ty_param)))).collect_vec()
+            }
+            _ => Vec::new()
+        })).collect::<Result<Vec<_>, _>>().map(|v| v.into_iter().flat_map(|x| x).collect_vec())
     }
 
-    fn transpile_trait(&self, f: &mut File, name: &str, items: &[hir::TraitItem]) -> io::Result<()> {
+    fn transpile_trait(&self, f: &mut File, trait_def_id: DefId, generics: &hir::Generics, items: &[hir::TraitItem]) -> io::Result<()> {
+        let trait_name = self.tcx.item_name(trait_def_id).to_string();
+        println!("{}", trait_name);
         if items.is_empty() {
-            return Ok(String::new());
+            return Ok(());
         }
-        let fns = items.into_iter().map(|item| {
-            match item.node {
-                hir::TraitItem_::MethodTraitItem(_, _) => {
-                    let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id)));
-                    let ty = ty.replace("'Self", "'a"); // oh well
-                    Ok(format!("  {}__{} :: \"{}\"", name, item.name, ty))
-                }
-                _ => throw!("unimplemented: trait item {:?}", item),
+
+        let fns = items.into_iter().filter_map(|item| match item.node {
+            hir::TraitItem_::MethodTraitItem(_, _) => {
+                Some(self.transpile_ty(self.tcx.node_id_to_type(item.id)).map(|ty| {
+                    //let ty = ty.replace("'Self", "'a"); // oh well
+                    format!("  {}__{} :: \"{}\"", trait_name, item.name, ty)
+                }))
             }
+            _ => None,
         }).join_results("\n");
-        try!(try_write(f, name, fns.map(|fns| format!("record {} =\n{}", name, fns))));
+        try!(try_write(f, &trait_name, fns.and_then(|fns| {
+            self.transpile_associated_types(trait_def_id, "").map(|assoc_types| {
+                format!("record {} =\n{}",
+                        format_generic_ty(
+                            &generics.ty_params.iter().map(|p| format!("'{}", p.name)).chain(assoc_types).collect_vec(),
+                            &trait_name),
+                        fns)
+            })
+        })));
 
         for item in items.into_iter() {
             match item.node {
                 hir::TraitItem_::MethodTraitItem(ref sig, Some(_)) => {
-                    let item_name = format!("{}__{}", name, item.name);
-                    try!(try_write(f, item_name, self.transpile_fn(item.id, &*sig.decl, &item_name, Some(&sig.explicit_self.node))));
+                    let item_name = format!("{}__{}", trait_name, item.name);
+                    try!(try_write(f, &item_name, self.transpile_fn(item.id, &*sig.decl, &item_name, Some(&sig.explicit_self.node))));
                 }
                 _ => {}
             }
         }
+        Ok(())
     }
 
     fn transpile_item(&self, item: &hir::Item, f: &mut File) -> io::Result<()> {
-        let name = format!("{}", self.transpile_def_id(self.tcx.map.local_def_id(item.id)));
+        let item_def_id = self.tcx.map.local_def_id(item.id);
+        let name = format!("{}", self.transpile_def_id(item_def_id));
         match item.node {
             Item_::ItemFn(ref decl, _, _, _, _, _) =>
                 try!(try_write(f, &name, self.transpile_fn(item.id, decl, &name, None))),
@@ -737,8 +760,8 @@ impl<'a, 'tcx> ModuleTranspiler<'a, 'tcx> {
                 try!(self.transpile_module(f, module)),
             Item_::ItemStruct(ref data, ref generics) =>
                 try!(try_write(f, &name, self.transpile_struct(&name, data, generics))),
-            Item_::ItemTrait(_, _, _, ref items) =>
-                try!(try_write(f, &name, self.transpile_trait(&name, items))),
+            Item_::ItemTrait(_, ref generics, _, ref items) =>
+                try!(self.transpile_trait(f, item_def_id, generics, items)),
             _ => try!(write!(f, "(* unimplemented item type: {:?} *)\n\n", name)),
         };
         Ok(())
