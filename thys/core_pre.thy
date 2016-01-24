@@ -25,10 +25,6 @@ type_synonym usize = nat
 
 definition "core__num__u32__checked_add x y= Some (x+y)"
 
-type_synonym 'a core__option__Option = "'a option"
-abbreviation "core__option__Option__Some \<equiv> Some"
-abbreviation "core__option__Option__None \<equiv> None"
-
 abbreviation core__mem__swap :: "'T \<Rightarrow> 'T \<Rightarrow> unit \<times> 'T \<times> 'T" where
   "core__mem__swap x y \<equiv> ((),y,x)"
 
