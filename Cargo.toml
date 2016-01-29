@@ -5,5 +5,5 @@ authors = ["Sebastian Ullrich <sebasti@nullri.ch>"]
 
 [dependencies]
 itertools = "0.4.0"
-petgraph = "0.2.2"
+petgraph = { path = "petulant-avenger-graphlibrary/" } #"0.2.2"
 rustc_mir = { path = "librustc/src/librustc_mir/" }

@@ -3,7 +3,7 @@ name = "rustabelle"
 version = "0.1.0"
 dependencies = [
  "itertools 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "petgraph 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "petgraph 0.2.2",
  "rustc_mir 0.1.0",
 ]
 
@@ -20,7 +20,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "petgraph"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "fixedbitset 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
