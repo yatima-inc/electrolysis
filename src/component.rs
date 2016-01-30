@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rustc::mir::repr::*;
 
-use super::FnTranspiler;
+use super::Transpiler;
 use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
@@ -19,8 +19,8 @@ pub struct Component<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> Component<'a, 'tcx> {
-    pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component<'a, 'tcx>, String> {
-        let loops = mir_sccs(trans.mir, start, &blocks);
+    pub fn new(trans: &mut Transpiler<'a, 'tcx>, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component<'a, 'tcx>, String> {
+        let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         let mut comp = Component {
             header: if is_loop { Some(start) } else { None },
@@ -31,7 +31,7 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
         Ok(comp)
     }
 
-    fn find_nonlocals(&mut self, trans: &FnTranspiler) -> Result<(), String> {
+    fn find_nonlocals(&mut self, trans: &mut Transpiler<'a, 'tcx>) -> Result<(), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
@@ -63,7 +63,7 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
         let mut drops = Vec::new();
 
         for &bb in &self.blocks {
-            for stmt in &trans.mir.basic_block_data(bb).statements {
+            for stmt in &trans.mir().basic_block_data(bb).statements {
                 match stmt.kind {
                     StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
                         defs.push(lv);
@@ -77,7 +77,7 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
                     _ => throw!("unimplemented: find_nonlocals statement {:?}", stmt),
                 }
             }
-            if let Some(ref term) = trans.mir.basic_block_data(bb).terminator {
+            if let Some(ref term) = trans.mir().basic_block_data(bb).terminator {
                 if let &Terminator::Call { ref func, ref args, .. } = term {
                     operand(func, &mut uses);
                     for arg in args {
