@@ -184,14 +184,11 @@ pub struct Transpiler<'a, 'tcx: 'a> {
 }
 
 fn transpile_def_id(tcx: &ty::ctxt, did: DefId) -> String {
-    tcx.with_path(did, |mut path| {
-        if did.is_local() {
-            mk_isabelle_name(&path_to_string(path))
-        } else {
-            let crate_name = path.next().unwrap();
-            format!("{}.{}", crate_name, mk_isabelle_name(&path_to_string(path)))
-        }
-    })
+    let mut path = tcx.item_path_str(did);
+    if did.is_local() {
+        path = format!("{}::{}", tcx.sess.opts.crate_name.clone().unwrap(), path);
+    }
+    mk_isabelle_name(&path)
 }
 
 fn transpile_node_id(tcx: &ty::ctxt, node_id: ast::NodeId) -> String {
@@ -863,21 +860,20 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     let Transpiler { deps, trans_results, .. } = trans;
     let Deps { crate_deps, graph, .. } = deps.into_inner();
 
-    let mut crate_deps: Vec<String> = crate_deps.into_iter().collect();
+    let mut crate_deps: Vec<String> = crate_deps.into_iter().map(|krate| format!("{}_export", krate)).collect();
     crate_deps.sort();
     if path::Path::new("thys").join(format!("{}_pre.thy", crate_name)).exists() {
         crate_deps.insert(0, format!("{}_pre", crate_name));
     }
 
-    let mut f = try!(File::create(path::Path::new("thys").join(format!("{}.thy", crate_name))));
-    try!(write!(f, "theory {}\nimports\n{}\nbegin\n\n", crate_name,
+    let mut f = try!(File::create(path::Path::new("thys").join(format!("{}_export.thy", crate_name))));
+    try!(write!(f, "theory {}_export\nimports\n{}\nbegin\n\n", crate_name,
                 crate_deps.into_iter().map(|file| format!("  {}", file)).join("\n")));
 
     try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
     let condensed = condensation(graph, false);
     try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
     let mut failed = HashSet::new();
-    println!("{} {}", condensed.node_count(), toposort(&condensed).len());
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
             [node_id] => {
