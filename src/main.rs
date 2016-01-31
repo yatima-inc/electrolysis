@@ -18,6 +18,7 @@ extern crate syntax;
 mod component;
 mod mir_graph;
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io;
@@ -34,7 +35,7 @@ use syntax::ast::{self, NodeId};
 use rustc_front::hir::{self, FnDecl, Pat_, BindingMode, Item_};
 use rustc_front::intravisit;
 use rustc_mir::mir_map::{build_mir_for_crate, MirMap};
-use rustc::front::map::Node;
+use rustc::front::map::{Node, path_to_string};
 use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
 use rustc::middle::const_eval::ConstVal;
@@ -152,41 +153,61 @@ fn format_generic_ty<It: Iterator<Item=String>>(generics: It, ty: &str) -> Strin
     }
 }
 
-pub struct Transpiler<'a, 'tcx: 'a> {
-    crate_name: &'a str,
-    tcx: &'a ty::ctxt<'tcx>,
-    mir_map: &'a MirMap<'tcx>,
-    crate_deps: Vec<String>,
+struct Deps {
+    crate_deps: HashSet<String>,
     def_idcs: HashMap<NodeId, graph::NodeIndex>,
+    graph: Graph<NodeId, ()>,
+}
+
+impl Deps {
+    fn get_def_idx(&mut self, id: NodeId) -> graph::NodeIndex {
+        let Deps { ref mut def_idcs, ref mut graph, .. } = *self;
+        *def_idcs.entry(id).or_insert_with(|| graph.add_node(id))
+    }
+
+    fn add_dep(&mut self, used: NodeId, user: NodeId) {
+        let from = self.get_def_idx(used);
+        let to = self.get_def_idx(user);
+        self.graph.add_edge(from, to, ());
+    }
+}
+
+pub struct Transpiler<'a, 'tcx: 'a> {
+    tcx: &'a ty::ctxt<'tcx>,
+    mir_map: MirMap<'tcx>,
     trans_results: HashMap<NodeId, TransResult>,
-    dep_graph: Graph<NodeId, ()>,
+    deps: RefCell<Deps>,
 
     // inside of fns
     node_id: ast::NodeId,
+    param_names: Vec<String>,
+}
+
+fn transpile_def_id(tcx: &ty::ctxt, did: DefId) -> String {
+    tcx.with_path(did, |mut path| {
+        if did.is_local() {
+            mk_isabelle_name(&path_to_string(path))
+        } else {
+            let crate_name = path.next().unwrap();
+            format!("{}.{}", crate_name, mk_isabelle_name(&path_to_string(path)))
+        }
+    })
+}
+
+fn transpile_node_id(tcx: &ty::ctxt, node_id: ast::NodeId) -> String {
+    transpile_def_id(tcx, tcx.map.local_def_id(node_id))
 }
 
 impl<'a, 'tcx> Transpiler<'a, 'tcx> {
-    fn get_def_idx(&mut self, id: NodeId) -> graph::NodeIndex {
-        let Transpiler { ref mut def_idcs, ref mut dep_graph, .. } = *self;
-        *def_idcs.entry(id).or_insert_with(|| dep_graph.add_node(id))
-    }
-
-    fn add_dep(&mut self, id: NodeId) {
-        let from = self.get_def_idx(id);
-        let to = self.get_def_idx(self.node_id);
-        self.dep_graph.add_edge(from, to, ());
-    }
-
-    fn transpile_def_id(&mut self, did: DefId) -> String {
+    fn transpile_def_id(&self, did: DefId) -> String {
         if let Some(node_id) = self.tcx.map.as_local_node_id(did) {
-            self.add_dep(node_id);
+            self.deps.borrow_mut().add_dep(node_id, self.node_id);
+        } else {
+            let crate_name = self.tcx.sess.cstore.crate_name(did.krate);
+            self.deps.borrow_mut().crate_deps.insert(crate_name.clone());
         }
-        // what could ever go wrong
-        let mut path = self.tcx.item_path_str(did);
-        if did.is_local() {
-            path = format!("{}::{}", self.crate_name, path);
-        }
-        mk_isabelle_name(&path)
+
+        transpile_def_id(self.tcx, did)
     }
 
     fn transpile_node_id(&self, node_id: ast::NodeId) -> String {
@@ -233,7 +254,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 try!(substs.types.iter().map(|ty| self.transpile_ty(ty)).collect_results()),
                 &self.transpile_def_id(adt_def.did)
             ),
-            ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(ty)),
+            ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
             ty::TypeVariants::TyParam(ref param) => format!("'{}", param.name),
             ty::TypeVariants::TyProjection(ref proj) => format!("'{}__{}", try!(self.transpile_trait_ref(&proj.trait_ref)), proj.item_name),
             _ => match ty.ty_to_def_id() {
@@ -273,11 +294,11 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         &self.mir_map[&self.node_id]
     }
 
-    fn lvalue_name(&mut self, lv: &Lvalue) -> Option<String> {
+    fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
         Some(match *lv {
             Lvalue::Var(idx) => format!("v_{}", self.mir().var_decls[idx as usize].name),
             Lvalue::Temp(idx) => format!("t_{}", idx),
-            Lvalue::Arg(idx) => self.param_names()[idx as usize].clone(),
+            Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
             Lvalue::Static(did) => self.transpile_def_id(did),
             Lvalue::ReturnPointer => "ret".to_string(),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
@@ -567,7 +588,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
               infer::drain_fulfillment_cx(&infcx, &mut fulfill_cx, &selection).map_err(|e| format!("obligation drain: {:?}", e));*/
     }
 
-    fn transpile_basic_block<'b, 'c, 'd: 'b>(&'b mut self, bb: BasicBlock, comp: &'c mut Component<'d, 'tcx>) -> TransResult {
+    fn transpile_basic_block(&'a self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
         if !comp.blocks.contains(&bb) {
@@ -649,36 +670,27 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn return_expr(&self) -> TransResult {
-        let muts = self.sig().inputs.iter().filter_map(try_unwrap_mut_ref);
-        let muts = try!(muts.map(|ty| self.transpile_ty(ty)).collect_results());
+        let muts = self.sig().inputs.iter().zip(self.param_names.iter()).filter_map(|(ty, name)| {
+            try_unwrap_mut_ref(ty).map(|_| name.clone())
+        });
         Ok(format!("({})", iter::once("ret".to_string()).chain(muts).join(", ")))
     }
 
-    fn param_names(&self) -> Vec<String> {
-        match self.tcx.map.get(self.node_id) {
-            Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), .. }) =>
-                sig.decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-                    Pat_::PatIdent(_, ref ident, _) => ident.node.name.to_string(),
-                    _ => format!("p{}", i),
-                }).collect(),
-            _ => unreachable!(),
-        }
-    }
+    fn transpile_fn(&mut self, name: String, decl: &FnDecl) -> TransResult {
+        self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
+            Pat_::PatIdent(_, ref ident, _) => ident.node.name.to_string(),
+            _ => format!("p{}", i),
+        }).collect();
 
-    fn transpile_fn(&mut self) -> TransResult {
         let mut comp = try!(Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), false));
         let body = try!(self.transpile_basic_block(START_BLOCK, &mut comp));
-
 
         let trait_params = try!(self.trait_predicates_without_markers(self.def_id()).map(|trait_pred| {
                 self.transpile_trait_ref(&trait_pred.trait_ref)
         }).collect_results());
 
         let def = format!("definition {name} where\n\"{name} {param_names} = ({body})\"",
-                    name=self.transpile_def_id(self.def_id()),
-                    param_names=trait_params.chain(self.param_names().into_iter()).join(" "),
-                    body=body,
-        );
+                          name=name, param_names=trait_params.chain(self.param_names.clone()).join(" "), body=body);
         Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
     }
 
@@ -753,8 +765,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         self.node_id = item.id;
         let name = self.transpile_def_id(self.def_id());
         Ok(match item.node {
-            Item_::ItemFn(..) =>
-                try!(self.transpile_fn()),
+            Item_::ItemFn(ref decl, _, _, _, _, _) =>
+                try!(self.transpile_fn(name, decl)),
             Item_::ItemImpl(_, _, _, ref base_trait, _, ref items) => {
                 match base_trait {
                     &Some(ref base_trait) if !self.is_marker_trait(self.tcx.trait_ref_to_def_id(base_trait)) => {
@@ -779,30 +791,27 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     try!(self.transpile_trait(self.def_id(), generics, items))
                 }
             }
-            Item_::ItemUse(..) | Item_::ItemMod(..) => "".to_string(),
-            Item_::ItemExternCrate(Some(ref name)) => {
-                self.crate_deps.push(name.to_string());
-                "".to_string()
-            }
-            _ => throw!("unimplemented item type: {:?}", item),
+            Item_::ItemUse(..) | Item_::ItemMod(..) | Item_::ItemExternCrate(_) => "".to_string(),
+            _ => throw!("unimplemented item type: {:?}", name),
         })
     }
 
     fn transpile_method(&mut self, node_id: NodeId) -> TransResult {
         self.node_id = node_id;
         let name = self.transpile_def_id(self.def_id());
-        let name = match self.tcx.map.get(node_id) {
-            Node::NodeImplItem(_) => name,
-            Node::NodeTraitItem(_) =>
-                format!("{}__{}", self.transpile_def_id(self.tcx.trait_of_item(self.def_id()).unwrap()), name),
-                _ => unreachable!(),
+        let (name, sig) = match self.tcx.map.get(node_id) {
+            Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), .. }) => (name, sig),
+            Node::NodeTraitItem(&hir::TraitItem { node: hir::MethodTraitItem(ref sig, _), .. }) =>
+                (format!("{}__{}", self.transpile_def_id(self.tcx.trait_of_item(self.def_id()).unwrap()), name), sig),
+            _ => unreachable!(),
         };
-        self.transpile_fn()
+        self.transpile_fn(name, &*sig.decl)
     }
 }
 
 impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     fn visit_item(&mut self, item: &'a hir::Item) {
+        self.deps.borrow_mut().get_def_idx(item.id);
         let res = self.transpile_item(item);
         self.trans_results.insert(item.id, res);
         intravisit::walk_item(self, item);
@@ -811,6 +820,7 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     fn visit_impl_item(&mut self, ii: &'a hir::ImplItem) {
         match ii.node {
             hir::ImplItemKind::Method(..) => {
+                self.deps.borrow_mut().get_def_idx(ii.id);
                 let res = self.transpile_method(ii.id);
                 self.trans_results.insert(ii.id, res);
             }
@@ -821,6 +831,7 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     fn visit_trait_item(&mut self, trait_item: &'a hir::TraitItem) {
         match trait_item.node {
             hir::TraitItem_::MethodTraitItem(_, Some(_)) => {
+                self.deps.borrow_mut().get_def_idx(trait_item.id);
                 let res = self.transpile_method(trait_item.id);
                 self.trans_results.insert(trait_item.id, res);
             }
@@ -834,43 +845,51 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     let crate_name = state.crate_name.unwrap();
 
     println!("Building MIR...");
-    let trans = Transpiler {
-        crate_name: crate_name,
+    let mut trans = Transpiler {
         tcx: tcx,
-        mir_map: &build_mir_for_crate(tcx),
-        crate_deps: Vec::new(),
-        def_idcs: HashMap::new(),
+        mir_map: build_mir_for_crate(tcx),
         trans_results: HashMap::new(),
-        dep_graph: Graph::new(),
+        deps: RefCell::new(Deps {
+            crate_deps: HashSet::new(),
+            def_idcs: HashMap::new(),
+            graph: Graph::new(),
+        }),
         node_id: 0,
+        param_names: Vec::new(),
     };
     println!("Transpiling...");
     state.hir_crate.unwrap().visit_all_items(&mut trans);
 
-    let mut crate_deps: Vec<String> = trans.crate_deps.into_iter().map(|krate| format!("{}_export", krate)).collect();
+    let Transpiler { deps, trans_results, .. } = trans;
+    let Deps { crate_deps, graph, .. } = deps.into_inner();
+
+    let mut crate_deps: Vec<String> = crate_deps.into_iter().collect();
     crate_deps.sort();
     if path::Path::new("thys").join(format!("{}_pre.thy", crate_name)).exists() {
         crate_deps.insert(0, format!("{}_pre", crate_name));
     }
 
-    /*
-    try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&deps_collector.dep_graph)));
-    write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed))
-    */
-    let mut f = try!(File::create(path::Path::new("thys").join(format!("{}_export.thy", crate_name))));
-    try!(write!(f, "theory {}_export\nimports\n{}\nbegin\n\n", crate_name,
+    let mut f = try!(File::create(path::Path::new("thys").join(format!("{}.thy", crate_name))));
+    try!(write!(f, "theory {}\nimports\n{}\nbegin\n\n", crate_name,
                 crate_deps.into_iter().map(|file| format!("  {}", file)).join("\n")));
 
-    let condensed = condensation(trans.dep_graph, false);
+    try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
+    let condensed = condensation(graph, false);
+    try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
     let mut failed = HashSet::new();
+    println!("{} {}", condensed.node_count(), toposort(&condensed).len());
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
             [node_id] => {
-                let name = trans.transpile_node_id(node_id);
+                let name = transpile_node_id(tcx, node_id);
                 let failed_deps = condensed.neighbors(idx).filter(|idx| failed.contains(idx)).collect_vec();
                 if failed_deps.is_empty() {
-                    match trans.trans_results.get(&node_id) {
-                        Some(&Ok(ref trans)) => try!(write!(f, "{}\n\n", trans)),
+                    match trans_results.get(&node_id) {
+                        Some(&Ok(ref trans)) => {
+                            if !trans.is_empty() {
+                                try!(write!(f, "{}\n\n", trans));
+                            }
+                        }
                         Some(&Err(ref err)) => {
                             failed.insert(idx);
                             try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *")))
@@ -881,14 +900,14 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
                     }
                 } else {
                     try!(write!(f, "(* {}: failed dependencies {} *)\n\n", name, failed_deps.into_iter().flat_map(|idx| &condensed[idx]).map(|&node_id| {
-                        trans.transpile_node_id(node_id)
+                        transpile_node_id(tcx, node_id)
                     }).join(", ")));
                 }
             }
             component => {
                 failed.insert(idx);
                 try!(write!(f, "(* unimplemented: circular dependencies: {} *)\n\n", component.iter().map(|&node_id| {
-                    trans.transpile_node_id(node_id)
+                    transpile_node_id(tcx, node_id)
                 }).join(", ")));
             }
         }

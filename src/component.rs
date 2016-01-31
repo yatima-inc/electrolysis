@@ -19,7 +19,7 @@ pub struct Component<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> Component<'a, 'tcx> {
-    pub fn new(trans: &mut Transpiler<'a, 'tcx>, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component<'a, 'tcx>, String> {
+    pub fn new(trans: &Transpiler<'a, 'tcx>, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component<'a, 'tcx>, String> {
         let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         let mut comp = Component {
@@ -31,7 +31,7 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
         Ok(comp)
     }
 
-    fn find_nonlocals(&mut self, trans: &mut Transpiler<'a, 'tcx>) -> Result<(), String> {
+    fn find_nonlocals(&mut self, trans: &Transpiler<'a, 'tcx>) -> Result<(), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
@@ -89,8 +89,9 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
         }
 
         let ret = Lvalue::ReturnPointer;
-        self.nonlocal_defs = trans.locals().iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
-        self.nonlocal_uses = trans.locals().iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
+        let locals = trans.locals();
+        self.nonlocal_defs = locals.iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
+        self.nonlocal_uses = locals.iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
         Ok(())
     }
 }
