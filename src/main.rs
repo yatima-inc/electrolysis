@@ -610,13 +610,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                            iter::repeat("_").take(var.fields.len()).join(" "),
                            rec!(target)))
                     }).join_results(" | ");
-                    format!("case {} of {}", try!(self.get_lvalue(discr)), try!(arms))
+                    format!("(case {} of {})", try!(self.get_lvalue(discr)), try!(arms))
                 },
                 Terminator::SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
                     let arms: TransResult = values.iter().zip(targets).map(|(val, &target)| {
                         Ok(format!("{} => {}", try!(self.transpile_constval(val)), rec!(target)))
                     }).join_results(" | ");
-                    format!("case {} of {}", try!(self.get_lvalue(discr)), try!(arms))
+                    format!("(case {} of {})", try!(self.get_lvalue(discr)), try!(arms))
                 },
                 Terminator::Resume => String::new(),
             }),
@@ -698,7 +698,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let prefix = try!(self.transpile_trait_ref(&trait_pred.trait_ref));
             let ty_params = trait_def.associated_type_names.iter().map(|name| format!("'{}__{}", prefix, name)).collect_vec();
             let supertrait = if trait_pred.def_id() == trait_def_id { None } else {
-                Some((prefix, format_generic_ty(
+                Some((format!("{}__{}", trait_name, prefix), format_generic_ty(
                             try!(trait_pred.trait_ref.substs.types.iter().map(|ty| self.transpile_ty(ty)).collect_results()),
                             &self.transpile_def_id(trait_pred.def_id()))))
             };
@@ -708,7 +708,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let supertraits = supertraits.into_iter().filter_map(|x| x);
 
         let fns = try!(items.into_iter().filter_map(|item| match item.node {
-            hir::TraitItem_::MethodTraitItem(_, _) => {
+            // FIXME: Do something more clever than ignoring default method overrides
+            hir::TraitItem_::MethodTraitItem(ref sig, None) => {
                 Some(self.transpile_ty(self.tcx.node_id_to_type(item.id)).map(|ty| {
                     (format!("{}__{}", trait_name, item.name), ty)
                 }))
@@ -717,7 +718,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }).collect_results());
         Ok(format!("record {} =\n{}",
                    format_generic_ty(
-                       iter::once("'Self".to_string()).chain(generics.ty_params.iter().map(|p| format!("'{}", p.name))).chain(assoc_ty_params),
+                       generics.ty_params.iter().map(|p| format!("'{}", p.name)).chain(iter::once("'Self".to_string())).chain(assoc_ty_params),
                        &trait_name),
                    supertraits.chain(fns).map(|(name, ty)| {
                        format!("  {} :: \"{}\"", name, ty)
@@ -738,15 +739,18 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 return Ok(None);
             }
             let field_name = try!(self.transpile_trait_ref(&trait_pred.trait_ref));
-            //let mut trait_substs = trait_pred.trait_ref.substs.clone();
-            //trait_substs.types.replace(ParamSpace::SelfSpace, vec![self.hir_ty_to_ty(self_ty)]);
-            //let trait_ref = trait_substs.to_trait_ref(self.tcx, trait_pred.trait_ref.def_id);
             let trait_impl = try!(self.infer_trait_impl(&trait_pred.trait_ref, id));
-            Ok(Some(format!("{} {}", field_name, trait_impl)))
+            Ok(Some(format!("  {} = {}", field_name, trait_impl)))
         }).collect_results()).filter_map(|x| x);
         let methods = items.iter().filter_map(|item| match item.node {
             hir::ImplItemKind::Method(..) => {
+                // FIXME: Do something more clever than ignoring default method overrides
+                if self.tcx.provided_trait_methods(trait_def_id).iter().any(|m| m.name == item.name) {
+                    return None
+                }
+
                 let name = self.transpile_node_id(item.id);
+
                 Some(format!("  {}__{} = {}", trait_name, item.name, name))
             }
             _ => None,
@@ -787,8 +791,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let name = self.transpile_def_id(self.def_id());
         let (name, sig) = match self.tcx.map.get(node_id) {
             Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), .. }) => (name, sig),
-            Node::NodeTraitItem(&hir::TraitItem { node: hir::MethodTraitItem(ref sig, _), .. }) =>
-                (format!("{}__{}", self.transpile_def_id(self.tcx.trait_of_item(self.def_id()).unwrap()), name), sig),
+            Node::NodeTraitItem(&hir::TraitItem { node: hir::MethodTraitItem(ref sig, _), .. }) => (name, sig),
             _ => unreachable!(),
         };
         self.transpile_fn(name, &*sig.decl)
