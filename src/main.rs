@@ -335,11 +335,19 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                            args=selector(field.index(), variant.fields.len()).join(" ")))
             }
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field) }) =>
-                match unwrap_refs(try!(self.lvalue_ty(base))).sty {
+                Ok(match unwrap_refs(try!(self.lvalue_ty(base))).sty {
+                    ty::TypeVariants::TyTuple(ref tys) => {
+                        let value = try!(self.get_lvalue(base));
+                        match tys.len() {
+                            1 => value,
+                            2 => format!("fst {}", value),
+                            _ => format!("({}) {}", iter::once("fst".into()).chain(iter::repeat("\\<circ> snd").take(tys.len()-2)).join(" "), value),
+                        }
+                    }
                     ty::TypeVariants::TyStruct(ref adt_def, _) =>
-                        Ok(format!("({}_{} {})", self.transpile_def_id(adt_def.did), adt_def.struct_variant().fields[field.index()].name, try!(self.get_lvalue(base)))),
+                        format!("({}_{} {})", self.transpile_def_id(adt_def.did), adt_def.struct_variant().fields[field.index()].name, try!(self.get_lvalue(base))),
                     ref ty => throw!("unimplemented: accessing field of {:?}", ty),
-                },
+                }),
             _ => Err(format!("unimplemented: loading {:?}", lv)),
         }
     }
@@ -641,6 +649,11 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn transpile_fn(&mut self, name: String, decl: &FnDecl, suppress_type_predicates: bool) -> TransResult {
+        // FIXME... or not
+        if name.starts_with("core__tuple___A__B__C__D") {
+            return Ok("".into())
+        }
+
         self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
             Pat_::PatIdent(_, ref ident, _) => ident.node.name.to_string(),
             _ => format!("p{}", i),
@@ -750,7 +763,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             }
             let field_name = try!(self.transpile_trait_ref(&trait_pred.trait_ref));
             let trait_impl = try!(self.infer_trait_impl(&trait_pred.trait_ref, id));
-            Ok(Some(format!("  {}__{} = {}", field_name, trait_impl)))
+            Ok(Some(format!("  {}__{} = {}", trait_name, field_name, trait_impl)))
         }).collect_results()).filter_map(|x| x);
 
         let trait_params = try!(self.trait_predicates_without_markers(def_id).map(|trait_pred| {
@@ -885,7 +898,7 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
         match &condensed[idx][..] {
             [node_id] => {
                 let name = transpile_node_id(tcx, node_id);
-                let failed_deps = condensed.neighbors(idx).filter(|idx| failed.contains(idx)).collect_vec();
+                let failed_deps = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).filter(|idx| failed.contains(idx)).collect_vec();
                 if failed_deps.is_empty() {
                     match trans_results.get(&node_id) {
                         Some(&Ok(ref trans)) => {
@@ -897,11 +910,10 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
                             failed.insert(idx);
                             try!(write!(f, "(* {}: {} *)\n\n", name, err.replace("(*", "( *")))
                         }
-                        None => {
-                            failed.insert(idx);
-                        }
+                        None => {}
                     }
                 } else {
+                    failed.insert(idx);
                     try!(write!(f, "(* {}: failed dependencies {} *)\n\n", name, failed_deps.into_iter().flat_map(|idx| &condensed[idx]).map(|&node_id| {
                         transpile_node_id(tcx, node_id)
                     }).join(", ")));
