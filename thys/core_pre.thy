@@ -23,9 +23,10 @@ qed
 type_synonym u32 = nat
 type_synonym usize = nat
 
-definition "core__num__u32__checked_add x y= Some (x+y)"
+definition "u32_to_usize = id"
 
-abbreviation core__mem__swap :: "'T \<Rightarrow> 'T \<Rightarrow> unit \<times> 'T \<times> 'T" where
-  "core__mem__swap x y \<equiv> ((),y,x)"
+definition "core__num__u32__overflowing_add x y = (x + y, False)"
+
+definition "core__mem__swap x y = ((),y,x)"
 
 end

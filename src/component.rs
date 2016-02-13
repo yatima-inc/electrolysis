@@ -53,6 +53,7 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
                         operand(op, uses);
                     }
                 }
+                Rvalue::Cast(_, ref op, _) => operand(op, uses),
                 _ => throw!("unimplemented: find_nonlocals rvalue {:?}", rv),
             }
             Ok(())
