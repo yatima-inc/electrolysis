@@ -34,7 +34,8 @@ use petgraph::algo::*;
 use syntax::ast::{self, NodeId};
 use rustc_front::hir::{self, FnDecl, Pat_, Item_};
 use rustc_front::intravisit;
-use rustc_mir::mir_map::{build_mir_for_crate, MirMap};
+use rustc::mir::mir_map::MirMap;
+use rustc_mir::mir_map::build_mir_for_crate;
 use rustc::front::map::Node;
 use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
@@ -88,7 +89,7 @@ fn main() {
     println!("Compiling up to MIR...");
     driver::compile_input(&sess, &cstore, cfg,
         &session::config::Input::File(path::PathBuf::from(&krate)),
-        &None, &None, None, driver::CompileController {
+        &None, &None, None, &driver::CompileController {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
                 callback: Box::new(|state| transpile_crate(&state).unwrap()),
@@ -315,7 +316,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn mir(&self) -> &Mir<'tcx> {
-        &self.mir_map[&self.node_id]
+        &self.mir_map.map[&self.node_id]
     }
 
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
@@ -511,17 +512,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
                 }
             }
-            StatementKind::Drop(DropKind::Deep, ref lv) => {
-                //match comp.refs.get(&self.lvalue_idx(lv)) {
-                //    Some(lsource) => format!("let ({lsource}, {lv}) = ({lv}, undefined) in\n", lsource=lsource, lv=self.get_lvalue(lv)),
-                //    None => self.set_lvalue(lv, "undefined")
-                //}
-                Ok(match comp.refs.get(&&try!(self.lvalue_idx(lv))) {
-                    Some(lsource) => try!(self.set_lvalue(lsource, &&try!(self.get_lvalue(lv)))),
-                    None => "".to_string()
-                })
-            }
-            _ => throw!("unimplemented: statement {:?}", stmt),
         }
     }
 
@@ -535,12 +525,12 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn call_return_dests<'b>(&self, call: &'b Terminator<'tcx>) -> Result<Vec<&'b Lvalue<'tcx>>, String> {
         match call {
-            &Terminator::Call { ref args, ref kind, .. } => {
+            &Terminator::Call { ref args, destination: Some((ref lv, _)), .. } => {
                 let muts = try!(args.iter().map(|op| Ok(match *op {
                     Operand::Consume(ref lv) => try_unwrap_mut_ref(&try!(self.lvalue_ty(lv))).map(|_| lv),
                     Operand::Constant(_) => None,
                 })).collect::<Result<Vec<_>, String>>());
-                Ok(kind.destination().into_iter().chain(muts.into_iter().filter_map(|x| x)).collect())
+                Ok(iter::once(lv).chain(muts.into_iter().filter_map(|x| x)).collect())
             }
             _ => Ok(Vec::new()),
         }
@@ -689,7 +679,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 Terminator::Return => try!(self.return_expr()),
                 Terminator::Call {
                     func: Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }),
-                    ref args, ref kind,
+                    ref args, destination: Some((_, target)), ..
                 } => {
                     let call = match self.tcx.trait_of_item(def_id) {
                         Some(_) => try!(self.transpile_trait_call(self.node_id, def_id, substs)),
@@ -701,7 +691,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         None => format!("({} {})", call,
                                         args.into_iter().join(" "))
                     };
-                    try!(self.set_lvalues(try!(self.call_return_dests(&terminator)).into_iter(), &call)) + &&rec!(kind.successors()[0])
+                    try!(self.set_lvalues(try!(self.call_return_dests(&terminator)).into_iter(), &call)) + &&rec!(target)
                 }
                 Terminator::Call { .. } =>
                     throw!("unimplemented: call {:?}", terminator),
@@ -719,6 +709,17 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     }).join_results(" | ");
                     format!("(case {} of {})", try!(self.get_lvalue(discr)), try!(arms))
                 },
+                Terminator::Drop { ref value, target, .. } => {
+                    //match comp.refs.get(&self.lvalue_idx(lv)) {
+                    //    Some(lsource) => format!("let ({lsource}, {lv}) = ({lv}, undefined) in\n", lsource=lsource, lv=self.get_lvalue(lv)),
+                    //    None => self.set_lvalue(lv, "undefined")
+                    //}
+                    let drop = match comp.refs.get(&&try!(self.lvalue_idx(value))) {
+                        Some(lsource) => try!(self.set_lvalue(lsource, &&try!(self.get_lvalue(value)))),
+                        None => "".to_string()
+                    };
+                    drop + &&rec!(target)
+                }
                 Terminator::Resume => String::new(),
             }),
             None => None,

@@ -74,17 +74,19 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
                         defs.push(lv);
                         try!(rvalue(rv, &mut uses));
                     }
-                    StatementKind::Drop(DropKind::Deep, ref lv) => drops.push(lv),
-                    _ => throw!("unimplemented: find_nonlocals statement {:?}", stmt),
                 }
             }
             if let Some(ref term) = trans.mir().basic_block_data(bb).terminator {
-                if let &Terminator::Call { ref func, ref args, .. } = term {
-                    operand(func, &mut uses);
-                    for arg in args {
-                        operand(arg, &mut uses);
+                match *term {
+                    Terminator::Call { ref func, ref args, .. } => {
+                        operand(func, &mut uses);
+                        for arg in args {
+                            operand(arg, &mut uses);
+                        }
+                        defs.extend(try!(trans.call_return_dests(term)));
                     }
-                    defs.extend(try!(trans.call_return_dests(term)));
+                    Terminator::Drop { ref value, .. } => drops.push(value),
+                    _ => {}
                 }
             }
         }
