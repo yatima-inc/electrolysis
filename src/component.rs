@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rustc::mir::repr::*;
 
@@ -13,25 +13,28 @@ pub struct Component<'a, 'tcx: 'a> {
     pub blocks: Vec<BasicBlock>,
     pub loops: Vec<Vec<BasicBlock>>,
     pub exits: Vec<BasicBlock>,
-    pub nonlocal_defs: Vec<String>,
-    pub nonlocal_uses: Vec<String>,
+    pub live_defs: HashSet<String>,
+    pub ret_val: String,
     pub refs: HashMap<usize, &'a Lvalue<'tcx>>
 }
 
 impl<'a, 'tcx> Component<'a, 'tcx> {
-    pub fn new(trans: &Transpiler<'a, 'tcx>, start: BasicBlock, blocks: Vec<BasicBlock>, is_loop: bool) -> Result<Component<'a, 'tcx>, String> {
+    pub fn new(trans: &Transpiler<'a, 'tcx>, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&Component<'a, 'tcx>>)
+        -> Component<'a, 'tcx> {
         let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
-        let mut comp = Component {
-            header: if is_loop { Some(start) } else { None },
+        Component {
+            header: outer.map(|_| start),
+            live_defs: match outer {
+                Some(comp) => comp.live_defs.clone(),
+                None => HashSet::new(),
+            },
             blocks: blocks, loops: loops,
             .. Default::default()
-        };
-        try!(comp.find_nonlocals(trans));
-        Ok(comp)
+        }
     }
 
-    fn find_nonlocals(&mut self, trans: &Transpiler<'a, 'tcx>) -> Result<(), String> {
+    pub fn defs_uses(&mut self, trans: &Transpiler<'a, 'tcx>) -> Result<(HashSet<String>, HashSet<String>), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
@@ -61,7 +64,6 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
 
         let mut defs = Vec::new();
         let mut uses = Vec::new();
-        let mut drops = Vec::new();
 
         for &bb in &self.blocks {
             for stmt in &trans.mir().basic_block_data(bb).statements {
@@ -85,16 +87,12 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
                         }
                         defs.extend(try!(trans.call_return_dests(term)));
                     }
-                    Terminator::Drop { ref value, .. } => drops.push(value),
                     _ => {}
                 }
             }
         }
 
-        let ret = Lvalue::ReturnPointer;
-        let locals = trans.locals();
-        self.nonlocal_defs = locals.iter().filter(|lv| defs.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
-        self.nonlocal_uses = locals.iter().filter(|lv| **lv != ret && uses.contains(lv) && !drops.contains(lv)).map(|lv| trans.lvalue_name(lv).unwrap()).collect();
-        Ok(())
+        Ok((defs.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect(),
+            uses.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect()))
     }
 }

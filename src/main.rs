@@ -332,14 +332,17 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         })
     }
 
-    fn locals(&self) -> Vec<Lvalue> {
+    fn num_locals(&self) -> usize {
+        self.mir().var_decls.len() + self.mir().temp_decls.len() + 1
+    }
+
+    fn locals(&self) -> Vec<String> {
         self.mir().var_decls.iter().enumerate().map(|(idx, _)| Lvalue::Var(idx as u32))
             .chain(self.mir().temp_decls.iter().enumerate().map(|(idx, _)| Lvalue::Temp(idx as u32)))
             .chain(iter::once(Lvalue::ReturnPointer))
+            .map(|lv| self.lvalue_name(&lv).unwrap())
             .collect()
     }
-
-    fn num_locals(&self) -> usize { self.locals().len() }
 
     fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> TransResult {
         if let Some(name) = self.lvalue_name(lv) {
@@ -499,25 +502,25 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_statement(&self, stmt: &'a Statement<'tcx>, comp: &mut Component<'a, 'tcx>) -> TransResult {
         match stmt.kind {
-            StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref lsource)) => {
-                comp.refs.insert(try!(self.lvalue_idx(lv)), lsource);
-                self.set_lvalue(lv, &&try!(self.get_lvalue(lsource)))
-                //format!("let ({lv}, {lsource}) = ({lsource}, undefined) in\n", lv=self.get_lvalue(lv), lsource=self.get_lvalue(lsource))
-            }
             StatementKind::Assign(ref lv, ref rv) => {
-                if *lv != Lvalue::ReturnPointer && try!(self.lvalue_ty(lv)).is_nil() {
-                    // optimization/rustc_mir workaround: don't save '()'
-                    Ok("".to_string())
-                } else {
-                    self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
+                if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
+                    comp.refs.insert(try!(self.lvalue_idx(lv)), lsource);
                 }
+                //if *lv != Lvalue::ReturnPointer && try!(self.lvalue_ty(lv)).is_nil() {
+                //    // optimization/rustc_mir workaround: don't save '()'
+                //    Ok("".to_string())
+                //}
+                if let Some(name) = self.lvalue_name(lv) {
+                    comp.live_defs.insert(name);
+                }
+                self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
             }
         }
     }
 
     fn transpile_basic_block_rec(&'a self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
         if comp.header == Some(bb) {
-            Ok(format!("(({}), True)", comp.nonlocal_defs.iter().join(", ")))
+            Ok(format!("({}, True)", comp.ret_val))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -648,22 +651,23 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return Ok(format!("(({}), False)", comp.nonlocal_defs.iter().join(", ")));
+            return Ok(format!("({}, False)", comp.ret_val))
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
-            let mut l_comp = try!(Component::new(self, bb, l, true));
+            let mut l_comp = Component::new(self, bb, l, Some(&comp));
+            let (l_defs, l_uses) = try!(l_comp.defs_uses(self));
+            let nonlocal_defs = format!("({})", self.locals().into_iter().filter(|v| comp.live_defs.contains(v) && l_defs.contains(v)).join(", "));
+            let nonlocal_uses = self.locals().into_iter().filter(|v| comp.live_defs.contains(v) && l_uses.contains(v)).join(" ");
+            l_comp.ret_val = nonlocal_defs.clone();
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
             let name = format!("{}_{}", self.tcx.item_name(self.def_id()), bb.index());
             if l_comp.exits.len() != 1 {
                 throw!("Oops, multiple loop exits: {:?}", l_comp);
             }
-            comp.prelude.push(format!("definition {name} where \"{name} {uses} = (\\<lambda>({defs}). {body})\"",
-                                      name=name,
-                                      uses=l_comp.nonlocal_uses.iter().join(" "),
-                                      defs=l_comp.nonlocal_defs.iter().join(", "),
-                                      body=body));
-            return Ok(format!("let ({muts}) = loop ({name} {immuts}) ({muts}) in\n{cont}", muts=l_comp.nonlocal_defs.iter().join(", "),
-                              name=name, immuts=l_comp.nonlocal_uses.iter().join(" "), cont=rec!(l_comp.exits[0])));
+            comp.prelude.push(format!("definition {name} where \"{name} {uses} = (\\<lambda>{defs}. {body})\"",
+                                      name=name, uses=nonlocal_uses, defs=nonlocal_defs, body=body));
+            return Ok(format!("let {defs} = loop ({name} {uses}) {defs} in\n{cont}",
+                              defs=nonlocal_defs, name=name, uses=nonlocal_uses, cont=rec!(l_comp.exits[0])));
         }
 
         let data = self.mir().basic_block_data(bb);
@@ -753,7 +757,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             _ => format!("p{}", i),
         }).collect();
 
-        let mut comp = try!(Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), false));
+        let mut comp = Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), None);
         let body = try!(self.transpile_basic_block(START_BLOCK, &mut comp));
 
         let trait_predicates = if suppress_type_predicates {

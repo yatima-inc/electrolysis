@@ -4,7 +4,6 @@ version = "0.1.0"
 dependencies = [
  "itertools 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "petgraph 0.2.2",
- "rustc_mir 0.0.0",
 ]
 
 [[package]]
@@ -23,8 +22,4 @@ version = "0.2.2"
 dependencies = [
  "fixedbitset 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
-
-[[package]]
-name = "rustc_mir"
-version = "0.0.0"
 
