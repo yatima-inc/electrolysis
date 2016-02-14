@@ -1,9 +1,6 @@
 #![feature(rustc_attrs)]
 #![no_std]
 
-trait Foo { fn foo(); }
-impl Foo for u32 { }
-
 #[rustc_mir(graphviz="fac.gv")]
 fn fac(n: u32) -> u32 {
     let mut res = 1;

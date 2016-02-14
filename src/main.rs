@@ -1,6 +1,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-#![feature(slice_patterns)]
+#![feature(slice_patterns, advanced_slice_patterns)]
 
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 
@@ -186,7 +186,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
 
 enum TraitImplLookup<'tcx> {
     Static { impl_def_id: DefId, substs: Substs<'tcx>, params: Vec<String> },
-    Dynamic(ty::TraitRef<'tcx>),
+    Dynamic(Vec<ty::TraitRef<'tcx>>),
 }
 
 impl<'tcx> TraitImplLookup<'tcx> {
@@ -194,12 +194,22 @@ impl<'tcx> TraitImplLookup<'tcx> {
         match self {
             TraitImplLookup::Static { impl_def_id, params, .. } =>
                 Ok(format!("({})", iter::once(trans.transpile_def_id(impl_def_id)).chain(params).join(" "))),
-            TraitImplLookup::Dynamic(trait_ref) =>
-                trans.transpile_trait_ref(&trait_ref),
+            TraitImplLookup::Dynamic(supertrait_path) => {
+                fn to_string<'a, 'tcx>(trans: &Transpiler<'a, 'tcx>, path: &[ty::TraitRef<'tcx>]) -> TransResult {
+                    match path {
+                        [param] => trans.transpile_trait_ref(param),
+                        [t1, t2, ..] =>
+                            Ok(format!("({}__{} {})", trans.transpile_def_id(t2.def_id), try!(trans.transpile_trait_ref(t1)),
+                                try!(to_string(trans, &path[1..])))),
+                        _ => unreachable!(),
+                    }
+                }
+                to_string(trans, &supertrait_path[..])
+            }
         }
     }
-
 }
+
 fn transpile_def_id(tcx: &ty::ctxt, did: DefId) -> String {
     let mut path = tcx.item_path_str(did);
     if did.is_local() {
@@ -232,7 +242,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(format_generic_ty(generics.ty_params.iter().map(|p| format!("'{}", p.name)), ty))
     }
 
-    fn transpile_trait_ref(&self, trait_ref: &ty::TraitRef<'tcx>) -> TransResult {
+    fn transpile_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult {
         let substs = try!(trait_ref.substs.types.iter().map(|ty| {
             self.transpile_ty(ty).map(|s| mk_isabelle_name(&s))
         }).collect_results());
@@ -270,7 +280,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ),
             ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
             ty::TypeVariants::TyParam(ref param) => format!("'{}", param.name),
-            ty::TypeVariants::TyProjection(ref proj) => format!("'{}__{}", try!(self.transpile_trait_ref(&proj.trait_ref)), proj.item_name),
+            ty::TypeVariants::TyProjection(ref proj) => format!("'{}__{}", try!(self.transpile_trait_ref(proj.trait_ref)), proj.item_name),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
                 None => throw!("unimplemented: ty {:?}", ty),
@@ -569,7 +579,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         // from trans::meth::trans_method_callee
         let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
 
-        let imp = try!(self.infer_trait_impl(&trait_ref, caller));
+        let imp = try!(self.infer_trait_impl(trait_ref, caller));
 
         if let TraitImplLookup::Static { impl_def_id, ref params, .. } = imp {
                 // from trans::meth::trans_monomorphized_callee
@@ -578,23 +588,39 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     _ => unreachable!(),
                 };
                 if let (meth_def_id, false) = get_impl_method(self.tcx, impl_def_id, mname) {
-                    return Ok(self.transpile_def_id(meth_def_id))
+                    return Ok(iter::once(&self.transpile_def_id(meth_def_id)).chain(params).join(" "))
                 }
         }
         Ok(format!("{} {}", self.transpile_def_id(callee), try!(imp.to_string(self))))
     }
 
-    fn infer_trait_impl(&self, trait_ref: &ty::TraitRef<'tcx>, param_env: NodeId) -> Result<TraitImplLookup<'tcx>, String> {
+    fn supertrait_path(&self, trait_ref: ty::TraitRef<'tcx>, supertrait_ref: ty::TraitRef<'tcx>) -> Option<Vec<ty::TraitRef<'tcx>>> {
+        // FIXME don't ignore substs
+        if trait_ref.def_id == supertrait_ref.def_id {
+            return Some(vec![trait_ref])
+        }
+
+        self.trait_predicates(trait_ref.def_id).filter_map(|t| {
+            if t.trait_ref == trait_ref {
+                return None
+            }
+            self.supertrait_path(t.trait_ref, supertrait_ref)
+        }).next().map(|mut path| {
+            path.push(trait_ref);
+            path
+        })
+    }
+
+    fn infer_trait_impl(&self, trait_ref: ty::TraitRef<'tcx>, param_env: NodeId) -> Result<TraitImplLookup<'tcx>, String> {
         use rustc::middle::infer;
 
         let span = syntax::codemap::DUMMY_SP;
         let param_env = ty::ParameterEnvironment::for_item(self.tcx, param_env);
+        let pred = ty::Binder(trait_ref).to_poly_trait_predicate().subst(self.tcx, &param_env.free_substs);
         let dbg_param_env = format!("{:?}", param_env.caller_bounds);
         let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env));
         let mut selcx = SelectionContext::new(&infcx);
-        let obligation =
-            Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID),
-            ty::Binder(trait_ref.clone()).to_poly_trait_predicate());
+        let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
         let selection = match selcx.select(&obligation) {
             Ok(x) => x.unwrap(),
             Err(err) => throw!("obligation select: {:?} {:?} {:?}", obligation, err, dbg_param_env),
@@ -617,17 +643,11 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 Ok(TraitImplLookup::Static { impl_def_id: data.impl_def_id, substs: data.substs, params: nested_traits.collect_vec() })
             },
             Vtable::VtableParam(_) => {
-                // FIXME very broken parameter lookup
-                let param_trait_ref = try!(self.trait_predicates_without_markers(self.def_id()).filter_map(|trait_pred| {
-                    let param_trait_ref = ty::Binder(trait_pred.trait_ref);
-                    if supertraits(self.tcx, param_trait_ref).any(|t| t.skip_binder().def_id == trait_ref.def_id) {
-                        Some(param_trait_ref)
-                    } else {
-                        None
-                    }
+                let path = try!(self.trait_predicates_without_markers(self.def_id()).filter_map(|trait_pred| {
+                    self.supertrait_path(trait_pred.trait_ref, trait_ref)
                 }).next().ok_or_else(|| format!("param trait lookup failed for {:?}", trait_ref)));
 
-                Ok(TraitImplLookup::Dynamic(param_trait_ref.skip_binder().clone()))
+                Ok(TraitImplLookup::Dynamic(path))
             }
             vtable => throw!("unimplemented: vtable {:?}", vtable),
         }
@@ -746,7 +766,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         };
 
         let trait_params = try!(trait_predicates.into_iter().map(|trait_pred| {
-                self.transpile_trait_ref(&trait_pred.trait_ref)
+                self.transpile_trait_ref(trait_pred.trait_ref)
         }).collect_results());
 
         let def = format!("definition {name} where\n\"{name} {param_names} = ({body})\"",
@@ -791,7 +811,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         let (assoc_ty_params, supertraits): (Vec<_>, Vec<_>) = try!(self.trait_predicates_without_markers(trait_def_id).map(|trait_pred| -> Result<_, String> {
             let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
-            let prefix = try!(self.transpile_trait_ref(&trait_pred.trait_ref));
+            let prefix = try!(self.transpile_trait_ref(trait_pred.trait_ref));
             let ty_params = trait_def.associated_type_names.iter().map(|name| format!("'{}__{}", prefix, name)).collect_vec();
             let supertrait = if trait_pred.def_id() == trait_def_id { None } else {
                 Some((format!("{}__{}", trait_name, prefix), format_generic_ty(
@@ -824,9 +844,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_trait_impl(&self, id: NodeId, trait_ref: &hir::TraitRef, self_ty: &hir::Ty, items: &[hir::ImplItem]) -> TransResult {
         let def_id = self.tcx.map.local_def_id(id);
-        if !self.hir_ty_to_ty(self_ty).regions().is_empty() {
-            throw!("ign");
-        }
         let trait_def_id = self.tcx.trait_ref_to_def_id(trait_ref);
         let ty_trait_ref = self.tcx.impl_trait_ref(def_id).unwrap();
         let trait_name = self.transpile_def_id(trait_def_id);
@@ -834,13 +851,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             if trait_pred.def_id() == trait_def_id {
                 return Ok(None);
             }
-            let field_name = try!(self.transpile_trait_ref(&trait_pred.trait_ref));
-            let trait_impl = try!(self.infer_trait_impl(&trait_pred.trait_ref, id));
+            let field_name = try!(self.transpile_trait_ref(trait_pred.trait_ref));
+            let trait_impl = try!(self.infer_trait_impl(trait_pred.trait_ref, id));
             Ok(Some(format!("  {}__{} = {}", trait_name, field_name, try!(trait_impl.to_string(self)))))
         }).collect_results()).filter_map(|x| x);
 
         let trait_params = try!(self.trait_predicates_without_markers(def_id).map(|trait_pred| {
-                self.transpile_trait_ref(&trait_pred.trait_ref)
+                self.transpile_trait_ref(trait_pred.trait_ref)
         }).collect_results()).collect_vec();
 
         let methods = items.iter().filter_map(|item| match item.node {
