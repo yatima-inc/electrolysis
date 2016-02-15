@@ -23,10 +23,10 @@ qed
 type_synonym u32 = nat
 type_synonym usize = nat
 
-definition "u32_to_usize = id"
+definition[simp]: "u32_to_usize = id"
 
-definition "core__num__u32__overflowing_add x y = (x + y, False)"
+definition[simp]: "core_num_u32_overflowing_add x y = (x + y, False)"
 
-definition "core__mem__swap x y = ((),y,x)"
+definition[simp]: "core_mem_swap x y = ((),y,x)"
 
 end
