@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rustc::mir::repr::*;
 
@@ -7,7 +7,7 @@ use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
 #[derive(Default, Debug)]
-pub struct Component<'a, 'tcx: 'a> {
+pub struct Component {
     pub prelude: Vec<String>,
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
@@ -15,12 +15,11 @@ pub struct Component<'a, 'tcx: 'a> {
     pub exits: Vec<BasicBlock>,
     pub live_defs: HashSet<String>,
     pub ret_val: String,
-    pub refs: HashMap<usize, &'a Lvalue<'tcx>>
 }
 
-impl<'a, 'tcx> Component<'a, 'tcx> {
-    pub fn new(trans: &Transpiler<'a, 'tcx>, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&Component<'a, 'tcx>>)
-        -> Component<'a, 'tcx> {
+impl Component {
+    pub fn new(trans: &Transpiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&Component>)
+        -> Component {
         let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         Component {
@@ -34,7 +33,7 @@ impl<'a, 'tcx> Component<'a, 'tcx> {
         }
     }
 
-    pub fn defs_uses(&mut self, trans: &Transpiler<'a, 'tcx>) -> Result<(HashSet<String>, HashSet<String>), String> {
+    pub fn defs_uses(&mut self, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),

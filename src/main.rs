@@ -183,6 +183,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     // inside of fns
     node_id: ast::NodeId,
     param_names: Vec<String>,
+    refs: RefCell<HashMap<usize, Lvalue<'tcx>>>,
 }
 
 enum TraitImplLookup<'tcx> {
@@ -320,6 +321,12 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
+        if let Some(lv_idx) = self.lvalue_idx(lv).ok() {
+            if let Some(ref lv) = self.refs.borrow().get(&lv_idx) {
+                return self.lvalue_name(lv)
+            }
+        }
+
         Some(match *lv {
             Lvalue::Var(idx) => format!("v_{}", self.mir().var_decls[idx as usize].name),
             Lvalue::Temp(idx) => format!("t_{}", idx),
@@ -480,7 +487,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 Ok(format!("({}_to_{} {})", try!(self.transpile_ty(try!(self.operand_ty(op)))),
                     try!(self.transpile_ty(ty)), try!(self.get_operand(op)))),
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) => self.get_lvalue(lv),
-            Rvalue::Ref(_, BorrowKind::Mut, ref lv) => self.get_lvalue(lv),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 let mut ops = try!(ops.iter().map(|op| self.get_operand(op)).collect_results());
                 Ok(format!("({})", ops.join(", ")))
@@ -500,7 +506,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_statement(&self, stmt: &'a Statement<'tcx>, comp: &mut Component<'a, 'tcx>) -> TransResult {
+    fn transpile_statement(&self, stmt: &Statement<'tcx>, comp: &mut Component) -> TransResult {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 if *lv != Lvalue::ReturnPointer && try!(self.lvalue_ty(lv)).is_nil() {
@@ -508,18 +514,21 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     return Ok("".to_string())
                 }
 
-                if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
-                    comp.refs.insert(try!(self.lvalue_idx(lv)), lsource);
-                }
                 if let Some(name) = self.lvalue_name(lv) {
                     comp.live_defs.insert(name);
                 }
-                self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
+
+                if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
+                    self.refs.borrow_mut().insert(try!(self.lvalue_idx(lv)), lsource.clone());
+                    Ok("".to_string())
+                } else {
+                    self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
+                }
             }
         }
     }
 
-    fn transpile_basic_block_rec(&'a self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
+    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
         if comp.header == Some(bb) {
             Ok(format!("({}, True)", comp.ret_val))
         } else {
@@ -643,7 +652,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block(&'a self, bb: BasicBlock, comp: &mut Component<'a, 'tcx>) -> TransResult {
+    fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
         if !comp.blocks.contains(&bb) {
@@ -667,7 +676,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                               defs=nonlocal_defs, name=name, uses=nonlocal_uses, cont=rec!(l_comp.exits[0])));
         }
 
-        let data = self.mir().basic_block_data(bb);
+        let data = self.mir().basic_block_data(bb).clone();
         let stmts = try!(data.statements.iter().map(|s| self.transpile_statement(s, comp)).collect::<Result<Vec<_>, _>>());
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match *terminator {
@@ -710,17 +719,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     }).join_results(" | ");
                     format!("(case {} of {})", try!(self.get_lvalue(discr)), try!(arms))
                 },
-                Terminator::Drop { ref value, target, .. } => {
-                    //match comp.refs.get(&self.lvalue_idx(lv)) {
-                    //    Some(lsource) => format!("let ({lsource}, {lv}) = ({lv}, undefined) in\n", lsource=lsource, lv=self.get_lvalue(lv)),
-                    //    None => self.set_lvalue(lv, "undefined")
-                    //}
-                    let drop = match comp.refs.get(&&try!(self.lvalue_idx(value))) {
-                        Some(lsource) => try!(self.set_lvalue(lsource, &&try!(self.get_lvalue(value)))),
-                        None => "".to_string()
-                    };
-                    drop + &&rec!(target)
-                }
+                Terminator::Drop { target, .. } => rec!(target),
                 Terminator::Resume => String::new(),
             }),
             None => None,
@@ -749,6 +748,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             return Ok("".into())
         }
 
+        self.refs.borrow_mut().clear();
         self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
             Pat_::PatIdent(_, ref ident, _) => ident.node.name.to_string(),
             _ => format!("p{}", i),
@@ -965,6 +965,7 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
         }),
         node_id: 0,
         param_names: Vec::new(),
+        refs: RefCell::new(HashMap::new()),
     };
     println!("Transpiling...");
     state.hir_crate.unwrap().visit_all_items(&mut trans);
