@@ -176,14 +176,14 @@ impl Deps {
 
 pub struct Transpiler<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
-    mir_map: MirMap<'tcx>,
+    mir_map: &'a MirMap<'tcx>,
     trans_results: HashMap<NodeId, TransResult>,
     deps: RefCell<Deps>,
 
     // inside of fns
     node_id: ast::NodeId,
     param_names: Vec<String>,
-    refs: RefCell<HashMap<usize, Lvalue<'tcx>>>,
+    refs: RefCell<HashMap<usize, &'a Lvalue<'tcx>>>,
 }
 
 enum TraitImplLookup<'tcx> {
@@ -316,23 +316,37 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         self.tcx.map.local_def_id(self.node_id)
     }
 
-    fn mir(&self) -> &Mir<'tcx> {
+    fn mir(&self) -> &'a Mir<'tcx> {
         &self.mir_map.map[&self.node_id]
     }
 
-    fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
+    fn local_name(&self, lv: &Lvalue) -> String {
+        match *lv {
+            Lvalue::Var(idx) => self.mir().var_decls[idx as usize].name.to_string(),
+            Lvalue::Temp(idx) => format!("t{}", idx),
+            Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
+            Lvalue::ReturnPointer => "ret".to_string(),
+            _ => panic!("not a local: {:?}", lv),
+        }
+    }
+
+    fn deref_mut(&self, lv: &Lvalue) -> Option<&Lvalue<'tcx>> {
         if let Some(lv_idx) = self.lvalue_idx(lv).ok() {
-            if let Some(ref lv) = self.refs.borrow().get(&lv_idx) {
-                return self.lvalue_name(lv)
+            if let Some(lv) = self.refs.borrow().get(&lv_idx) {
+                return Some(lv)
             }
+        }
+        None
+    }
+
+    fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
+        if let Some(lv) = self.deref_mut(lv) {
+            return self.lvalue_name(lv)
         }
 
         Some(match *lv {
-            Lvalue::Var(idx) => format!("v_{}", self.mir().var_decls[idx as usize].name),
-            Lvalue::Temp(idx) => format!("t_{}", idx),
-            Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
+            Lvalue::Var(..) | Lvalue::Temp(..) | Lvalue::Arg(..) | Lvalue::ReturnPointer => self.local_name(lv),
             Lvalue::Static(did) => self.transpile_def_id(did),
-            Lvalue::ReturnPointer => "ret".to_string(),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 return self.lvalue_name(base),
             Lvalue::Projection(_) => return None,
@@ -347,14 +361,18 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         self.mir().var_decls.iter().enumerate().map(|(idx, _)| Lvalue::Var(idx as u32))
             .chain(self.mir().temp_decls.iter().enumerate().map(|(idx, _)| Lvalue::Temp(idx as u32)))
             .chain(iter::once(Lvalue::ReturnPointer))
-            .map(|lv| self.lvalue_name(&lv).unwrap())
+            .map(|lv| self.local_name(&lv))
             .collect()
     }
 
     fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> TransResult {
+        if let Some(lv) = self.deref_mut(lv) {
+            return self.get_lvalue(lv)
+        }
         if let Some(name) = self.lvalue_name(lv) {
             return Ok(name)
         }
+
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 self.get_lvalue(base),
@@ -428,6 +446,9 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
+        if let Some(lv) = self.deref_mut(lv) {
+            return self.set_lvalue(lv, val)
+        }
         if let Some(name) = self.lvalue_name(lv) {
             return Ok(format!("let {} = {} in\n", name, val));
         }
@@ -448,11 +469,15 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn set_lvalues<'b, It: Iterator<Item=&'b Lvalue<'tcx>>>(&self, lvs: It, val: &str) -> TransResult
-        where 'tcx: 'b {
-        Ok(format!("let ({}) = {} in\n",
-                   try!(lvs.map(|lv| self.lvalue_name(lv).ok_or("unimplemented: non-trivial set_lvalues")).join_results(", ")),
-                   val))
+    fn set_lvalues<'b>(&self, lvs: Vec<&'b Lvalue<'tcx>>, val: &str) -> TransResult {
+        let (direct_dests, indirect_dests): (Vec<_>, Vec<_>) = try!(lvs.into_iter().map(|lv| -> Result<_, String> {
+            Ok(match self.lvalue_name(lv) {
+                Some(name) => (name, None),
+                None => (self.local_name(lv), Some(try!(self.set_lvalue(self.deref_mut(lv).unwrap(), &self.local_name(lv)))))
+            })
+        }).collect_results()).unzip();
+        let direct_dests = format!("let ({}) = {} in\n", direct_dests.into_iter().join(", "), val);
+        Ok(iter::once(direct_dests).chain(indirect_dests.into_iter().filter_map(|x| x)).join(""))
     }
 
     fn transpile_constval(&self, val: &ConstVal) -> TransResult {
@@ -506,9 +531,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_statement(&self, stmt: &Statement<'tcx>, comp: &mut Component) -> TransResult {
+    fn transpile_statement(&self, stmt: &'a Statement<'tcx>, comp: &mut Component) -> TransResult {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
+                if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
+                    self.refs.borrow_mut().insert(try!(self.lvalue_idx(lv)), lsource);
+                    return Ok("".to_string())
+                }
                 if *lv != Lvalue::ReturnPointer && try!(self.lvalue_ty(lv)).is_nil() {
                     // optimization/rustc_mir workaround: don't save '()'
                     return Ok("".to_string())
@@ -518,12 +547,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     comp.live_defs.insert(name);
                 }
 
-                if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
-                    self.refs.borrow_mut().insert(try!(self.lvalue_idx(lv)), lsource.clone());
-                    Ok("".to_string())
-                } else {
-                    self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
-                }
+                self.set_lvalue(lv, &&try!(self.get_rvalue(rv)))
             }
         }
     }
@@ -670,13 +694,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             if l_comp.exits.len() != 1 {
                 throw!("Oops, multiple loop exits: {:?}", l_comp);
             }
-            comp.prelude.push(format!("definition \"{name} {uses} = (\\<lambda>{defs}. {body})\"",
+            comp.prelude.push(format!("definition \"{name} {uses} = (\\<lambda>{defs}.\n{body})\"",
                                       name=name, uses=nonlocal_uses, defs=nonlocal_defs, body=body));
             return Ok(format!("let {defs} = loop ({name} {uses}) {defs} in\n{cont}",
                               defs=nonlocal_defs, name=name, uses=nonlocal_uses, cont=rec!(l_comp.exits[0])));
         }
 
-        let data = self.mir().basic_block_data(bb).clone();
+        let data = self.mir().basic_block_data(bb);
         let stmts = try!(data.statements.iter().map(|s| self.transpile_statement(s, comp)).collect::<Result<Vec<_>, _>>());
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match *terminator {
@@ -701,7 +725,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         None => format!("({} {})", call,
                                         args.into_iter().join(" "))
                     };
-                    try!(self.set_lvalues(try!(self.call_return_dests(&terminator)).into_iter(), &call)) + &&rec!(target)
+                    try!(self.set_lvalues(try!(self.call_return_dests(&terminator)), &call)) + &&rec!(target)
                 }
                 Terminator::Call { .. } =>
                     throw!("unimplemented: call {:?}", terminator),
@@ -956,7 +980,7 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     println!("Building MIR...");
     let mut trans = Transpiler {
         tcx: tcx,
-        mir_map: build_mir_for_crate(tcx),
+        mir_map: &build_mir_for_crate(tcx),
         trans_results: HashMap::new(),
         deps: RefCell::new(Deps {
             crate_deps: HashSet::new(),
