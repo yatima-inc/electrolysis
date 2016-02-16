@@ -322,7 +322,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn local_name(&self, lv: &Lvalue) -> String {
         match *lv {
-            Lvalue::Var(idx) => self.mir().var_decls[idx as usize].name.to_string(),
+            Lvalue::Var(idx) => mk_isabelle_name(&self.mir().var_decls[idx as usize].name.as_str()),
             Lvalue::Temp(idx) => format!("t{}", idx),
             Lvalue::Arg(idx) => self.param_names[idx as usize].clone(),
             Lvalue::ReturnPointer => "ret".to_string(),
@@ -778,6 +778,10 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             _ => format!("p{}", i),
         }).collect();
 
+        let params = try!(self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| -> TransResult {
+            Ok(format!("({} :: {})", name, try!(self.transpile_ty(&arg.ty))))
+        }).collect_results());
+
         let mut comp = Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), None);
         let body = try!(self.transpile_basic_block(START_BLOCK, &mut comp));
 
@@ -795,8 +799,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 self.transpile_trait_ref(trait_pred.trait_ref)
         }).collect_results());
 
-        let def = format!("definition[simp]: \"{name} {param_names} = ({body})\"",
-                          name=name, param_names=trait_params.chain(self.param_names.clone()).join(" "), body=body);
+        let def = format!("definition[simp]: \"{name} {params} = ({body})\"",
+                          name=name, params=trait_params.chain(params).join(" "), body=body);
         Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
     }
 

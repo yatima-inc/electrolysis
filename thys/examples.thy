@@ -4,7 +4,7 @@ begin
 
 declare split_def[simp] Let_def[simp]
 
-lemma fac: "examples_fac TYPE(_) (n::u32) = fact n"
+lemma fac: "examples_fac (n::u32) = fact n"
 proof-
   {
     fix x2c x2
