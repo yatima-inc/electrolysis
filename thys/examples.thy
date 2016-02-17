@@ -1,29 +1,20 @@
 theory examples
-imports examples_export Binomial
+imports core examples_export Binomial
 begin
 
-declare split_def[simp] Let_def[simp]
-
 lemma fac: "examples_fac (n::u32) = fact n"
+apply simp
+apply (rule loop_range_u32'[where body=examples_fac_4 and P="\<lambda>i res. res = fact (i-1)"])
+   apply (auto simp: examples_fac_4_def)[1]
+   apply (erule trans)
 proof-
-  {
-    fix x2c x2
-    assume asm: "Suc x2c = core_ops_Range_start x2"
-    have "fact x2c * core_ops_Range_start x2 = fact (core_ops_Range_start x2)"
-    by (auto simp: asm[symmetric])
-  }
-  note 1 = this
-  show ?thesis
-  apply simp
-  apply (rule loop_rule[where P="\<lambda>s. case s of (res, rng) \<Rightarrow>
-    let l = core_ops_Range_start rng in
-    let r = core_ops_Range_end rng in
-    (case l of Suc l \<Rightarrow> res = fact l \<and> (n = 0 \<and> l = 1 \<or> l < r) \<and> r = n+1 | _ \<Rightarrow> False)"])
-      apply (auto simp: core_ops_Range.make_def)[1]
-     unfolding examples_fac_4_def
-     apply (auto simp add: 1 le_less_Suc_eq simp del: mult_Suc_right split:prod.splits split_if_asm nat.splits)[2]
-  apply (rule wf_measure[of "\<lambda>s. case s of (_,rng) \<Rightarrow> core_ops_Range_end rng - core_ops_Range_start rng"])
-  by (auto split:split_if_asm)
-qed
+  show "fact (max 2 (Suc n) - 1) = fact n"
+  apply (cases "n > 1")
+   apply (cases n; auto)
+  by (cases n; auto)
+
+  show "\<And>i res. 2 \<le> i \<Longrightarrow> res = fact (i - 1) \<Longrightarrow> res * i = fact (Suc i - 1)"
+  by (case_tac i; auto)
+qed simp
 
 end
