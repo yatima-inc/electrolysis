@@ -2,15 +2,13 @@ theory examples
 imports core examples_export Binomial
 begin
 
-lemma fac: "examples_fac (n::u32) = fact n"
+lemma fac: "examples_fac n = Some (fact n)"
 apply simp
-apply (rule loop_range_u32'[where body=examples_fac_4 and P="\<lambda>i res. res = fact (i-1)"])
+apply (rule loop_range_u32'[where P="\<lambda>i res. res = fact (i-1)"])
    apply (auto simp: examples_fac_4_def)[1]
-   apply (erule trans)
+  apply clarsimp
 proof-
-  show "fact (max 2 (Suc n) - 1) = fact n"
-  apply (cases "n > 1")
-   apply (cases n; auto)
+  show "fact (max (Suc 0) n) = fact n"
   by (cases n; auto)
 
   show "\<And>i res. 2 \<le> i \<Longrightarrow> res = fact (i - 1) \<Longrightarrow> res * i = fact (Suc i - 1)"

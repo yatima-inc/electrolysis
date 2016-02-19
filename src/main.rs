@@ -264,16 +264,12 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ty::TypeVariants::TyBareFn(_, ref data) => {
                 let sig = data.sig.skip_binder();
                 let muts = sig.inputs.iter().filter_map(try_unwrap_mut_ref);
-                let inputs = try!(sig.inputs.iter().map(|ty| self.transpile_ty(ty)).join_results(" => "));
+                let inputs = try!(sig.inputs.iter().map(|ty| self.transpile_ty(ty)).collect_results());
                 let outputs = match sig.output {
                     ty::FnOutput::FnConverging(out_ty) => try!(iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)).join_results(" × ")),
                     ty::FnOutput::FnDiverging => throw!("unimplemented: diverging function"),
                 };
-                if inputs.is_empty() {
-                    outputs
-                } else {
-                    format!("{} => {}", inputs, outputs)
-                }
+                inputs.chain(iter::once(format!("({}) option", outputs))).join(" => ")
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
             ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format_generic_ty(
@@ -469,14 +465,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn set_lvalues<'b>(&self, lvs: Vec<&'b Lvalue<'tcx>>, val: &str) -> TransResult {
+    fn set_lvalues_option<'b>(&self, lvs: Vec<&'b Lvalue<'tcx>>, val: &str) -> TransResult {
         let (direct_dests, indirect_dests): (Vec<_>, Vec<_>) = try!(lvs.into_iter().map(|lv| -> Result<_, String> {
             Ok(match self.lvalue_name(lv) {
                 Some(name) => (name, None),
                 None => (self.local_name(lv), Some(try!(self.set_lvalue(self.deref_mut(lv).unwrap(), &self.local_name(lv)))))
             })
         }).collect_results()).unzip();
-        let direct_dests = format!("let ({}) = {} in\n", direct_dests.into_iter().join(", "), val);
+        let direct_dests = format!("do ({}) \\<leftarrow> {};\n", direct_dests.into_iter().join(", "), val);
         Ok(iter::once(direct_dests).chain(indirect_dests.into_iter().filter_map(|x| x)).join(""))
     }
 
@@ -554,7 +550,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
         if comp.header == Some(bb) {
-            Ok(format!("({}, True)", comp.ret_val))
+            Ok(format!("Some ({}, True)", comp.ret_val))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -681,7 +677,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return Ok(format!("({}, False)", comp.ret_val))
+            return Ok(format!("Some ({}, False)", comp.ret_val))
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
@@ -696,7 +692,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             }
             comp.prelude.push(format!("definition \"{name} {uses} = (\\<lambda>{defs}.\n{body})\"",
                                       name=name, uses=nonlocal_uses, defs=nonlocal_defs, body=body));
-            return Ok(format!("let {defs} = loop ({name} {uses}) {defs} in\n{cont}",
+            return Ok(format!("do {defs} \\<leftarrow> loop' ({name} {uses}) {defs};\n{cont}",
                               defs=nonlocal_defs, name=name, uses=nonlocal_uses, cont=rec!(l_comp.exits[0])));
         }
 
@@ -725,7 +721,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         None => format!("({} {})", call,
                                         args.into_iter().join(" "))
                     };
-                    try!(self.set_lvalues(try!(self.call_return_dests(&terminator)), &call)) + &&rec!(target)
+                    try!(self.set_lvalues_option(try!(self.call_return_dests(&terminator)), &call)) + &&rec!(target)
                 }
                 Terminator::Call { .. } =>
                     throw!("unimplemented: call {:?}", terminator),
@@ -763,7 +759,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let muts = self.sig().inputs.iter().zip(self.param_names.iter()).filter_map(|(ty, name)| {
             try_unwrap_mut_ref(ty).map(|_| name.clone())
         });
-        Ok(format!("({})", iter::once("ret".to_string()).chain(muts).join(", ")))
+        Ok(format!("Some ({})", iter::once("ret".to_string()).chain(muts).join(", ")))
     }
 
     fn transpile_fn(&mut self, name: String, decl: &FnDecl, suppress_type_predicates: bool) -> TransResult {
