@@ -63,6 +63,10 @@ abbreviation "checked_mul \<equiv> uint_checked (op *)"
 abbreviation "checked_div \<equiv> uint_checked (op div)"
 abbreviation "checked_mod \<equiv> uint_checked (op mod)"
 
+(* TODO *)
+definition "checked_shl (a::'a::len word) b = Some (a << (unat b))"
+definition "checked_shr (a::'a::len word) b = Some (a >> (unat b))"
+
 subsubsection {* Machine-Dependent Integer Types *}
 
 consts native_bs :: nat
@@ -96,6 +100,8 @@ subsection {* Functions *}
 subsubsection {* Intrinsics *}
 
 abbreviation "core_intrinsics_add_with_overflow n m \<equiv> Some (uint_with_overflow (op +) n m)"
+abbreviation "core_intrinsics_sub_with_overflow n m \<equiv> Some (uint_with_overflow (op -) n m)"
+abbreviation "core_intrinsics_mul_with_overflow n m \<equiv> Some (uint_with_overflow (op *) n m)"
 
 subsubsection {* Manually-Translated Functions *}
 
