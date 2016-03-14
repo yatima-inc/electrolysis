@@ -11,6 +11,8 @@ subsection {* Control Flow *}
 
 subsubsection {* Succinct Monadic Bind Notation *}
 
+text {* A simple notation for @{term Option.bind} that does not need a surrounding do block. *}
+
 nonterminal dobinds and dobind
 syntax
   "_bind"       :: "[pttrn, 'a] => dobind"              ("(2_ \<leftarrow>/ _)" 10)
@@ -21,16 +23,18 @@ translations
 
 subsubsection {* Generalized While Combinator *}
 
-definition loop :: "('state \<Rightarrow> 'state \<times> bool) \<Rightarrow> 'state \<Rightarrow> 'state option" where
-  "loop l s \<equiv> map_option (\<lambda>(s,s',c). s')
-    (while_option (\<lambda>(s,s',c). c) (\<lambda>(s,s',c). (s',(l s'))) (s,(l s)))"
+datatype loop_control = Continue | Break
 
-definition loop' :: "('state \<Rightarrow> ('state \<times> bool) option) \<Rightarrow> 'state \<Rightarrow> 'state option" where
+definition loop :: "('state \<Rightarrow> 'state \<times> loop_control) \<Rightarrow> 'state \<Rightarrow> 'state option" where
+  "loop l s \<equiv> map_option (\<lambda>(s,s',c). s')
+    (while_option (\<lambda>(s,s',c). c = Continue) (\<lambda>(s,s',c). (s',(l s'))) (s,(l s)))"
+
+definition loop' :: "('state \<Rightarrow> ('state \<times> loop_control) option) \<Rightarrow> 'state \<Rightarrow> 'state option" where
   "loop' l s = Option.bind (
     loop (\<lambda>s. case s of
-      None \<Rightarrow> (None, False)
+      None \<Rightarrow> (None, Break)
     | Some s \<Rightarrow> (case l s of
-        None \<Rightarrow> (Some s, False)
+        None \<Rightarrow> (Some s, Break)
       | Some (s',c) \<Rightarrow> (Some s',c)))
     (Some s)
   ) id"

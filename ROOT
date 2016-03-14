@@ -1,8 +1,5 @@
-session "rustabelle" = "HOL" +
-  options [document = pdf, document_output = "output"]
-  theories [document = false]
-    "~~/src/HOL/Library/While_Combinator"
-    "thys/core_export"
+session "rustabelle" = "HOL-Library" +
+  options [document = pdf, document_output = "output", quick_and_dirty = true]
   theories
     "thys/examples"
   document_files
