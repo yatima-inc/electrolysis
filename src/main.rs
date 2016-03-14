@@ -5,6 +5,8 @@
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 
 extern crate itertools;
+#[macro_use]
+extern crate lazy_static;
 extern crate petgraph;
 
 #[macro_use]
@@ -72,6 +74,7 @@ impl<T, E> StringResultIterator<E> for T where T: Iterator<Item=Result<String, E
 fn main() {
     let krate = env::args().nth(1).unwrap();
     let crate_name = env::args().nth(2).unwrap();
+    let targets = env::args().skip(2).collect();
     let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(syntax::parse::token::get_ident_interner()));
     let sess = session::build_session(
         session::config::Options {
@@ -92,7 +95,7 @@ fn main() {
         &None, &None, None, &driver::CompileController {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
-                callback: Box::new(|state| transpile_crate(&state).unwrap()),
+                callback: Box::new(|state| transpile_crate(&state, &targets).unwrap()),
                 run_callback_on_error: false,
             },
             .. driver::CompileController::basic()
@@ -220,6 +223,14 @@ fn transpile_node_id(tcx: &ty::ctxt, node_id: ast::NodeId) -> String {
     transpile_def_id(tcx, tcx.map.local_def_id(node_id))
 }
 
+lazy_static! {
+    static ref INTRINSICS: HashSet<String> = vec![
+        "core_intrinsics_add_with_overflow",
+        "core_intrinsics_sub_with_overflow",
+        "core_intrinsics_mul_with_overflow",
+    ].into_iter().map(str::to_string).collect();
+}
+
 impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn transpile_def_id(&self, did: DefId) -> String {
         if let Some(node_id) = self.tcx.map.as_local_node_id(did) {
@@ -255,14 +266,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
             ty::TypeVariants::TyTuple(ref tys) => match &tys[..] {
                 [] => "unit".to_string(),
-                _ => format!("({})", try!(tys.iter().map(|ty| self.transpile_ty(ty)).join_results(" × "))),
+                _ => format!("({})", try!(tys.iter().map(|ty| self.transpile_ty(ty)).join_results(" \\<times> "))),
             },
             ty::TypeVariants::TyBareFn(_, ref data) => {
                 let sig = data.sig.skip_binder();
                 let muts = sig.inputs.iter().filter_map(|ty| try_unwrap_mut_ref(ty));
                 let inputs = try!(sig.inputs.iter().map(|ty| self.transpile_ty(ty)).collect_results());
                 let outputs = match sig.output {
-                    ty::FnOutput::FnConverging(out_ty) => try!(iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)).join_results(" × ")),
+                    ty::FnOutput::FnConverging(out_ty) => try!(iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)).join_results(" \\<times> ")),
                     ty::FnOutput::FnDiverging => throw!("unimplemented: diverging function"),
                 };
                 inputs.chain(iter::once(format!("({}) option", outputs))).join(" => ")
@@ -727,7 +738,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 } => {
                     let call = match self.tcx.trait_of_item(def_id) {
                         Some(_) => try!(self.transpile_trait_call(self.node_id, def_id, substs)),
-                        _ => self.transpile_def_id(def_id),
+                        _ => {
+                            let name = self.transpile_def_id(def_id);
+                            if name.starts_with("core_intrinsics") && !INTRINSICS.contains(&name) {
+                                throw!("unimplmented intrinsics: {}", name);
+                            }
+                            name
+                        }
                     };
                     let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
                     let call = match self.tcx.adt_defs.borrow().get(&def_id) {
@@ -1005,7 +1022,7 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     }
 }
 
-fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
+fn transpile_crate(state: &driver::CompileState, targets: &Vec<String>) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.unwrap();
 
@@ -1040,25 +1057,40 @@ fn transpile_crate(state: &driver::CompileState) -> io::Result<()> {
     try!(write!(f, "theory {}_export\nimports\n{}\nbegin\n\n", crate_name,
                 crate_deps.into_iter().map(|file| format!("  {}", file)).join("\n")));
 
-    try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
+    let targets: Option<HashSet<NodeId>> = if targets.is_empty() { None } else {
+        let targets = graph.node_indices().filter(|&ni| {
+            let name = transpile_node_id(tcx, graph[ni]);
+            targets.iter().any(|t| t.starts_with(&name))
+        });
+        let rev = petgraph::visit::Reversed(&graph);
+        Some(targets.flat_map(|ni| petgraph::visit::DfsIter::new(&rev, ni)).map(|ni| graph[ni]).collect())
+    };
+
+    //try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
     let condensed = condensation(graph, false);
-    try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
+    //try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
     let mut failed = HashSet::new();
 
-    let intrinsics: HashSet<_> = vec![
+    let ignored: HashSet<_> = vec![
         "core_mem_swap",
     ].into_iter().collect();
 
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
             [node_id] => {
+                if let Some(ref targets) = targets {
+                    if !targets.contains(&node_id) {
+                        continue
+                    }
+                }
+
                 let name = transpile_node_id(tcx, node_id);
+                if ignored.contains(&name as &str) {
+                    continue;
+                }
+
                 let failed_deps = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).filter(|idx| failed.contains(idx)).collect_vec();
                 if failed_deps.is_empty() {
-                    if intrinsics.contains(&name as &str) {
-                        continue;
-                    }
-
                     match trans_results.get(&node_id) {
                         Some(&Ok(ref trans)) => {
                             if !trans.is_empty() {
