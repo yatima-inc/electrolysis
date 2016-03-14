@@ -74,7 +74,7 @@ impl<T, E> StringResultIterator<E> for T where T: Iterator<Item=Result<String, E
 fn main() {
     let krate = env::args().nth(1).unwrap();
     let crate_name = env::args().nth(2).unwrap();
-    let targets = env::args().skip(2).collect();
+    let targets = env::args().skip(3).collect();
     let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(syntax::parse::token::get_ident_interner()));
     let sess = session::build_session(
         session::config::Options {
@@ -574,7 +574,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
         if comp.header == Some(bb) {
-            Ok(format!("Some ({}, True)", comp.ret_val))
+            Ok(format!("Some ({}, Continue)", comp.ret_val))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -701,7 +701,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         if !comp.blocks.contains(&bb) {
             comp.exits.push(bb);
-            return Ok(format!("Some ({}, False)", comp.ret_val))
+            return Ok(format!("Some ({}, Break)", comp.ret_val))
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
