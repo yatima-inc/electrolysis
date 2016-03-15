@@ -711,7 +711,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let params = self.trait_param_names.iter().chain(nonlocal_uses.iter()).join(" ");
             l_comp.ret_val = nonlocal_defs.clone();
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
-            let name = format!("{}_{}", self.transpile_def_id(self.def_id()), bb.index());
+            let name = format!("{}_loop_{}", self.transpile_def_id(self.def_id()), bb.index());
             if l_comp.exits.len() != 1 {
                 throw!("Oops, multiple loop exits: {:?}", l_comp);
             }
