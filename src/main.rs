@@ -11,6 +11,7 @@ extern crate petgraph;
 
 #[macro_use]
 extern crate rustc;
+extern crate rustc_const_eval;
 extern crate rustc_driver;
 extern crate rustc_front;
 extern crate rustc_metadata;
@@ -34,7 +35,7 @@ use petgraph::graph::{self, Graph};
 use petgraph::algo::*;
 
 use syntax::ast::{self, NodeId};
-use rustc_front::hir::{self, FnDecl, Pat_, Item_};
+use rustc_front::hir::{self, FnDecl, Item_, PatKind};
 use rustc_front::intravisit;
 use rustc::mir::mir_map::MirMap;
 use rustc_mir::mir_map::build_mir_for_crate;
@@ -45,7 +46,7 @@ use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
 use rustc::middle::subst::{Subst, Substs, ParamSpace};
 use rustc::middle::traits::*;
-use rustc::middle::ty;
+use rustc::middle::ty::{self, Ty, TyCtxt};
 
 use rustc_driver::driver;
 use syntax::diagnostics;
@@ -130,14 +131,14 @@ fn mk_isabelle_name(s: &str) -> String {
     s.replace("::", "_").replace(|c: char| !c.is_alphanumeric(), "_").trim_matches('_').to_string()
 }
 
-fn unwrap_refs<'tcx>(ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
+fn unwrap_refs<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
     match ty.sty {
         ty::TypeVariants::TyRef(_, ty::TypeAndMut { ty, .. }) => unwrap_refs(ty),
         _ => ty
     }
 }
 
-fn try_unwrap_mut_ref<'tcx>(ty: ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
+fn try_unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
     match ty.sty {
         ty::TypeVariants::TyRef(_, ty::TypeAndMut { mutbl: hir::Mutability::MutMutable, ty }) =>
             Some(ty),
@@ -173,7 +174,7 @@ impl Deps {
 }
 
 pub struct Transpiler<'a, 'tcx: 'a> {
-    tcx: &'a ty::ctxt<'tcx>,
+    tcx: &'a TyCtxt<'tcx>,
     mir_map: &'a MirMap<'tcx>,
     trans_results: HashMap<NodeId, TransResult>,
     deps: RefCell<Deps>,
@@ -186,7 +187,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
 }
 
 enum TraitImplLookup<'tcx> {
-    Static { impl_def_id: DefId, substs: Substs<'tcx>, params: Vec<String> },
+    Static { impl_def_id: DefId, substs: &'tcx Substs<'tcx>, params: Vec<String> },
     Dynamic(Vec<ty::TraitRef<'tcx>>),
 }
 
@@ -211,7 +212,7 @@ impl<'tcx> TraitImplLookup<'tcx> {
     }
 }
 
-fn transpile_def_id(tcx: &ty::ctxt, did: DefId) -> String {
+fn transpile_def_id(tcx: &TyCtxt, did: DefId) -> String {
     let mut path = tcx.item_path_str(did);
     if did.is_local() {
         path = format!("{}::{}", tcx.sess.opts.crate_name.clone().unwrap(), path);
@@ -219,7 +220,7 @@ fn transpile_def_id(tcx: &ty::ctxt, did: DefId) -> String {
     mk_isabelle_name(&path)
 }
 
-fn transpile_node_id(tcx: &ty::ctxt, node_id: ast::NodeId) -> String {
+fn transpile_node_id(tcx: &TyCtxt, node_id: ast::NodeId) -> String {
     transpile_def_id(tcx, tcx.map.local_def_id(node_id))
 }
 
@@ -258,7 +259,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(self.transpile_def_id(trait_ref.def_id))
     }
 
-    fn transpile_ty(&self, ty: ty::Ty<'tcx>) -> TransResult {
+    fn transpile_ty(&self, ty: Ty<'tcx>) -> TransResult {
         Ok(match ty.sty {
             ty::TypeVariants::TyBool => "bool".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
@@ -268,7 +269,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 [] => "unit".to_string(),
                 _ => format!("({})", try!(tys.iter().map(|ty| self.transpile_ty(ty)).join_results(" \\<times> "))),
             },
-            ty::TypeVariants::TyBareFn(_, ref data) => {
+            ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) => {
                 let sig = data.sig.skip_binder();
                 let muts = sig.inputs.iter().filter_map(|ty| try_unwrap_mut_ref(ty));
                 let inputs = try!(sig.inputs.iter().map(|ty| self.transpile_ty(ty)).collect_results());
@@ -382,7 +383,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 self.get_lvalue(base),
             Lvalue::Projection(box Projection {
-                elem: ProjectionElem::Field(ref field),
+                elem: ProjectionElem::Field(ref field, _),
                 base: Lvalue::Projection(box Projection {
                     ref base,
                     elem: ProjectionElem::Downcast(ref adt_def, variant_idx),
@@ -394,7 +395,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                            variant=self.transpile_def_id(variant.did),
                            args=selector(field.index(), variant.fields.len()).join(" ")))
             }
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field) }) =>
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) =>
                 Ok(match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyTuple(ref tys) => {
                         let value = try!(self.get_lvalue(base));
@@ -413,7 +414,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn lvalue_ty(&self, lv: &Lvalue<'tcx>) -> ty::Ty<'tcx> {
+    fn lvalue_ty(&self, lv: &Lvalue<'tcx>) -> Ty<'tcx> {
         self.mir().lvalue_ty(self.tcx, lv).to_ty(self.tcx)
     }
 
@@ -438,7 +439,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 self.set_lvalue(base, val),
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field) }) => {
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) => {
                 let base_name = try!(self.lvalue_name(base).ok_or_else(|| format!("ugh, nested fields assignments? {:?}", lv)));
                 match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
@@ -467,25 +468,20 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(match *val {
             ConstVal::Bool(true) => "True".to_string(),
             ConstVal::Bool(false) => "False".to_string(),
-            ConstVal::Int(i) => i.to_string(),
-            ConstVal::Uint(i) => i.to_string(),
+            ConstVal::Integral(i) => match i.int_type() {
+                Some(syntax::attr::IntType::UnsignedInt(uint_ty)) =>
+                    format!("({} {})", uint_ty, i.to_u64_unchecked()),
+                _ => throw!("unimplemented: literal {:?}", val),
+            },
             _ => throw!("unimplemented: literal {:?}", val),
         })
     }
 
     fn transpile_constant(&self, c: &Constant) -> TransResult {
-        Ok(match c.literal {
-            Literal::Value { ref value } => match *value {
-                ConstVal::Uint(u) => format!("({} {})",
-                    match c.ty.sty {
-                        ty::TypeVariants::TyUint(ref uty) => uty.ty_to_string(),
-                        ty::TypeVariants::TyChar => "char",
-                        _ => unreachable!(),
-                    }, u),
-                _ => try!(self.transpile_constval(value)),
-            },
+        match c.literal {
+            Literal::Value { ref value } => self.transpile_constval(value),
             _ => throw!("unimplemented: constant {:?}", c),
-        })
+        }
     }
 
     fn get_operand(&self, op: &Operand<'tcx>) -> TransResult {
@@ -595,7 +591,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_trait_call(&self, caller: ast::NodeId, callee: DefId, substs: &Substs<'tcx>) -> TransResult {
         // FIXME ctxt::get_impl_method throws subst error
-        fn get_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>, impl_def_id: DefId, name: ast::Name) -> (DefId, bool) {
+        fn get_impl_method<'tcx>(tcx: &TyCtxt<'tcx>, impl_def_id: DefId, name: ast::Name) -> (DefId, bool) {
             // there don't seem to be nicer accessors to these:
             let impl_or_trait_items_map = tcx.impl_or_trait_items.borrow();
 
@@ -668,7 +664,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let param_env = ty::ParameterEnvironment::for_item(self.tcx, callee_id);
         let pred = ty::Binder(trait_ref).to_poly_trait_predicate().subst(self.tcx, &param_env.free_substs);
         let dbg_param_env = format!("{:?}", param_env.caller_bounds);
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env));
+        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), rustc::middle::traits::ProjectionMode::Any);
         let mut selcx = SelectionContext::new(&infcx);
         let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
         let selection = match selcx.select(&obligation) {
@@ -741,7 +737,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         _ => {
                             let name = self.transpile_def_id(def_id);
                             if name.starts_with("core_intrinsics") && !INTRINSICS.contains(&name) {
-                                throw!("unimplmented intrinsics: {}", name);
+                                throw!("unimplemented intrinsics: {}", name);
                             }
                             name
                         }
@@ -780,7 +776,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(stmts.into_iter().chain(terminator.into_iter()).join(""))
     }
 
-    fn hir_ty_to_ty(&self, ty: &hir::Ty) -> ty::Ty<'tcx> {
+    fn hir_ty_to_ty(&self, ty: &hir::Ty) -> Ty<'tcx> {
         self.tcx.ast_ty_to_ty_cache.borrow()[&ty.id]
     }
 
@@ -804,7 +800,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         self.refs.borrow_mut().clear();
         self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-            Pat_::PatIdent(_, ref ident, _) => mk_isabelle_name(&ident.node.name.to_string()),
+            PatKind::Ident(_, ref ident, _) => mk_isabelle_name(&ident.node.name.to_string()),
             _ => format!("p{}", i),
         }).collect();
 
@@ -851,8 +847,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         match *data {
             hir::VariantData::Struct(ref fields, _) => {
                 let fields: TransResult = fields.iter().map(|f| {
-                    Ok(format!("  {}_{} :: \"{}\"", name, f.node.name().unwrap(),
-                               try!(self.transpile_hir_ty(&*f.node.ty))))
+                    Ok(format!("  {}_{} :: \"{}\"", name, f.name,
+                               try!(self.transpile_hir_ty(&*f.ty))))
                 }).join_results("\n");
                 let ty_params = generics.ty_params.iter().map(|p| format!("'{}", p.name)).chain(try!(self.transpile_associated_types(self.def_id())));
                 Ok(format!("record {} =\n{}",
@@ -869,7 +865,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 hir::VariantData::Unit(node_id) => self.transpile_node_id(node_id),
                 hir::VariantData::Tuple(ref fields, node_id) => {
                     let fields = try!(fields.iter().map(|f| -> TransResult {
-                        Ok(format!("\"{}\"", try!(self.transpile_hir_ty(&*f.node.ty))))
+                        Ok(format!("\"{}\"", try!(self.transpile_hir_ty(&*f.ty))))
                     }).join_results(" "));
                     format!("{} {}", self.transpile_node_id(node_id), fields)
                 }

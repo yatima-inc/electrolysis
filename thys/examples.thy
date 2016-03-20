@@ -55,7 +55,7 @@ proof-
   show ?thesis
   apply simp
   apply (rule loop_range_u32'[where P="\<lambda>i res. fact (unat i-1) < 2^32 \<and> res = u32 (fact (unat i-1))"])
-      apply (auto simp: examples_fac_loop_4_def)[1]
+      apply (auto simp: examples_fac_loop_5_def)[1]
      apply (auto simp: bind_eq_Some_conv)[1]
      apply (subst 4; simp add: 2)
     apply (simp only: 2)
