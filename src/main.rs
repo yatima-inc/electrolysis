@@ -379,6 +379,15 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             .collect()
     }
 
+    fn get_tuple_elem(value: String, idx: usize, len: usize) -> String {
+        if len == 1 {
+            return value
+        }
+        let fst = if idx == len - 1 { None } else { Some("fst") };
+        let snds = iter::repeat("snd").take(idx);
+        format!("({}) {}", fst.into_iter().chain(snds).join(" \\<circ> "), value)
+    }
+
     fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> TransResult {
         if let Some(lv) = self.deref_mut(lv) {
             return self.get_lvalue(lv)
@@ -405,17 +414,17 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             }
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) =>
                 Ok(match unwrap_refs(self.lvalue_ty(base)).sty {
-                    ty::TypeVariants::TyTuple(ref tys) => {
-                        let value = try!(self.get_lvalue(base));
-                        if tys.len() == 1 {
-                            return Ok(value)
+                    ty::TypeVariants::TyTuple(ref tys) =>
+                        Transpiler::get_tuple_elem(try!(self.get_lvalue(base)), field.index(), tys.len()),
+                    ty::TypeVariants::TyStruct(ref adt_def, _) => {
+                        if adt_def.struct_variant().is_tuple_struct() {
+                            format!("(case {} of {} x => x)",
+                                    Transpiler::get_tuple_elem(try!(self.get_lvalue(base)), field.index(), adt_def.struct_variant().fields.len()),
+                                    self.transpile_def_id(adt_def.did))
+                        } else {
+                            format!("({}_{} {})", self.transpile_def_id(adt_def.did), adt_def.struct_variant().fields[field.index()].name, try!(self.get_lvalue(base)))
                         }
-                        let fst = if field.index() == tys.len() - 1 { None } else { Some("fst") };
-                        let snds = iter::repeat("snd").take(field.index());
-                        format!("({}) {}", fst.into_iter().chain(snds).join(" \\<circ> "), value)
                     }
-                    ty::TypeVariants::TyStruct(ref adt_def, _) =>
-                        format!("({}_{} {})", self.transpile_def_id(adt_def.did), adt_def.struct_variant().fields[field.index()].name, try!(self.get_lvalue(base))),
                     ref ty => throw!("unimplemented: accessing field of {:?}", ty),
                 }),
             _ => Err(format!("unimplemented: loading {:?}", lv)),
@@ -544,7 +553,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 let ops = try!(ops.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
                 format!("{}{} {}",
                         self.transpile_def_id(variant.did),
-                        if adt_def.adt_kind() == ty::AdtKind::Struct { ".make" } else { "" },
+                        if adt_def.adt_kind() == ty::AdtKind::Struct && !adt_def.struct_variant().is_tuple_struct() { ".make" } else { "" },
                         ops.iter().join(" "))
             }
             _ => return Err(format!("unimplemented: rvalue {:?}", rv)),
@@ -869,7 +878,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     self.transpile_hir_ty(&*f.ty)
                 }).join_results(" \\<times> "));
                 let ty_params = generics.ty_params.iter().map(|p| format!("'{}", p.name)).chain(try!(self.transpile_associated_types(self.def_id())));
-                Ok(format!("datatype {} =\n{} {}", format_generic_ty(ty_params, name), name, fields))
+                Ok(format!("datatype {} =\n{} \"{}\"", format_generic_ty(ty_params, name), name, fields))
             }
             _ => throw!("unimplemented: struct {:?}", data)
         }
