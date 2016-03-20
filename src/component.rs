@@ -12,7 +12,7 @@ pub struct Component {
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
     pub loops: Vec<Vec<BasicBlock>>,
-    pub exits: Vec<BasicBlock>,
+    pub exits: HashSet<usize>,
     pub live_defs: HashSet<String>,
     pub ret_val: String,
 }

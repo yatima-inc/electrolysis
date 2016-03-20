@@ -705,7 +705,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
         if !comp.blocks.contains(&bb) {
-            comp.exits.push(bb);
+            comp.exits.insert(bb.index());
             return Ok(format!("Some ({}, Break)", comp.ret_val))
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
@@ -717,13 +717,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             l_comp.ret_val = nonlocal_defs.clone();
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
             let name = format!("{}_loop_{}", self.transpile_def_id(self.def_id()), bb.index());
-            if l_comp.exits.len() != 1 {
-                throw!("Oops, multiple loop exits: {:?}", l_comp);
-            }
+            let exit = match &l_comp.exits.iter().collect_vec()[..] {
+                [exit] => BasicBlock::new(*exit),
+                _ => throw!("Oops, multiple loop exits: {:?}", l_comp)
+            };
             comp.prelude.push(format!("definition \"{name} {params} = (\\<lambda>{defs}.\n{body})\"",
                                       name=name, params=params, defs=nonlocal_defs, body=body));
             return Ok(format!("do {defs} \\<leftarrow> loop' ({name} {params}) {defs};\n{cont}",
-                              defs=nonlocal_defs, name=name, params=params, cont=rec!(l_comp.exits[0])));
+                              defs=nonlocal_defs, name=name, params=params, cont=rec!(exit)));
         }
 
         let data = self.mir().basic_block_data(bb);
