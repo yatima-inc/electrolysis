@@ -4,6 +4,7 @@
 
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 
+extern crate clap;
 extern crate itertools;
 #[macro_use]
 extern crate lazy_static;
@@ -23,7 +24,6 @@ mod mir_graph;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::io;
 use std::io::prelude::*;
 use std::iter;
@@ -73,30 +73,39 @@ trait StringResultIterator<E> : Iterator<Item=Result<String, E>> where Self: Siz
 impl<T, E> StringResultIterator<E> for T where T: Iterator<Item=Result<String, E>> { }
 
 fn main() {
-    let krate = env::args().nth(1).unwrap();
-    let crate_name = env::args().nth(2).unwrap();
-    let targets = env::args().skip(3).collect();
+    let matches = clap::App::new("rustabelle")
+        .arg(clap::Arg::with_name("only")
+             .help("only export the listed items and their dependencies")
+             .long("only")
+             .takes_value(true))
+        .arg(clap::Arg::with_name("RUSTC_ARGS")
+             .help("arguments forwarded to rustc")
+             .multiple(true)
+             .use_delimiter(false))
+        .get_matches();
+
+    let targets = matches.values_of("only").map(|targets| targets.map(str::to_string).collect_vec());
+    let rustc_args = iter::once("rustc").chain(matches.values_of("RUSTC_ARGS").unwrap()).map(str::to_string).collect_vec();
+    let rustc_matches = rustc_driver::handle_options(rustc_args).expect("error parsing rustc args");
+    let options = session::config::build_session_options(&rustc_matches);
+    let input = match &rustc_matches.free[..] {
+        [ref file] => path::PathBuf::from(file),
+        _ => panic!("expected input file"),
+    };
+
     let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(syntax::parse::token::get_ident_interner()));
-    let sess = session::build_session(
-        session::config::Options {
-            crate_name: Some(crate_name),
-            crate_types: vec![session::config::CrateType::CrateTypeRlib],
-            maybe_sysroot: Some(path::PathBuf::from("/usr/local")),
-            unstable_features: syntax::feature_gate::UnstableFeatures::Allow,
-            .. session::config::basic_options()
-        },
-        Some(path::PathBuf::from(&krate)),
+    let sess = session::build_session(options, Some(input.clone()),
         diagnostics::registry::Registry::new(&rustc::DIAGNOSTICS),
         cstore.clone()
     );
     let cfg = session::config::build_configuration(&sess);
     println!("Compiling up to MIR...");
     driver::compile_input(&sess, &cstore, cfg,
-        &session::config::Input::File(path::PathBuf::from(&krate)),
+        &session::config::Input::File(input),
         &None, &None, None, &driver::CompileController {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
-                callback: Box::new(|state| transpile_crate(&state, &targets).unwrap()),
+                callback: Box::new(|state| transpile_crate(&state, targets.as_ref()).unwrap()),
                 run_callback_on_error: false,
             },
             .. driver::CompileController::basic()
@@ -1018,9 +1027,9 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     }
 }
 
-fn transpile_crate(state: &driver::CompileState, targets: &Vec<String>) -> io::Result<()> {
+fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
-    let crate_name = state.crate_name.unwrap();
+    let crate_name = state.crate_name.expect("missing --crate-name rust arg");
 
     println!("Building MIR...");
     let mut trans = Transpiler {
@@ -1053,14 +1062,14 @@ fn transpile_crate(state: &driver::CompileState, targets: &Vec<String>) -> io::R
     try!(write!(f, "theory {}_export\nimports\n{}\nbegin\n\n", crate_name,
                 crate_deps.into_iter().map(|file| format!("  {}", file)).join("\n")));
 
-    let targets: Option<HashSet<NodeId>> = if targets.is_empty() { None } else {
+    let targets: Option<HashSet<NodeId>> = targets.map(|targets| {
         let targets = graph.node_indices().filter(|&ni| {
             let name = transpile_node_id(tcx, graph[ni]);
             targets.iter().any(|t| t.starts_with(&name))
         });
         let rev = petgraph::visit::Reversed(&graph);
-        Some(targets.flat_map(|ni| petgraph::visit::DfsIter::new(&rev, ni)).map(|ni| graph[ni]).collect())
-    };
+        targets.flat_map(|ni| petgraph::visit::DfsIter::new(&rev, ni)).map(|ni| graph[ni]).collect()
+    });
 
     //try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
     let condensed = condensation(graph, false);
