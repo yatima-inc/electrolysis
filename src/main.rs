@@ -864,6 +864,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                            format_generic_ty(ty_params, name),
                            try!(fields)))
             }
+            hir::VariantData::Tuple(ref fields, _) => {
+                let fields = try!(fields.iter().map(|f| {
+                    self.transpile_hir_ty(&*f.ty)
+                }).join_results(" \\<times> "));
+                let ty_params = generics.ty_params.iter().map(|p| format!("'{}", p.name)).chain(try!(self.transpile_associated_types(self.def_id())));
+                Ok(format!("datatype {} =\n{} {}", format_generic_ty(ty_params, name), name, fields))
+            }
             _ => throw!("unimplemented: struct {:?}", data)
         }
     }
