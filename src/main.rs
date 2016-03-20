@@ -1122,6 +1122,13 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
                 }
             }
             component => {
+                let succeeded = component.iter().filter_map(|node_id| trans_results.get(node_id).and_then(|trans| trans.as_ref().ok())).collect_vec();
+                if succeeded.len() == component.len() {
+                    if succeeded.iter().all(|trans| trans.starts_with("datatype")) {
+                        try!(write!(f, "datatype {}\n\n", succeeded.iter().map(|trans| trans.trim_left_matches("datatype")).join("\n\nand")));
+                        continue;
+                    }
+                }
                 failed.insert(idx);
                 try!(write!(f, "(* unimplemented: circular dependencies: {}\n\n", component.iter().map(|&node_id| {
                     transpile_node_id(tcx, node_id)
