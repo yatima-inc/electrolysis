@@ -38,7 +38,6 @@ use syntax::ast::{self, NodeId};
 use rustc_front::hir::{self, FnDecl, Item_, PatKind};
 use rustc_front::intravisit;
 use rustc::mir::mir_map::MirMap;
-use rustc_mir::mir_map::build_mir_for_crate;
 use rustc::front::map::Node;
 use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
@@ -1039,10 +1038,9 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.expect("missing --crate-name rust arg");
 
-    println!("Building MIR...");
     let mut trans = Transpiler {
         tcx: tcx,
-        mir_map: &build_mir_for_crate(tcx),
+        mir_map: &state.mir_map.unwrap(),
         trans_results: HashMap::new(),
         deps: RefCell::new(Deps {
             crate_deps: HashSet::new(),
