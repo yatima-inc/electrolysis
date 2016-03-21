@@ -724,7 +724,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let params = self.trait_param_names.iter().chain(nonlocal_uses.iter()).join(" ");
             l_comp.ret_val = nonlocal_defs.clone();
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
-            let name = format!("{}_loop_{}", self.transpile_def_id(self.def_id()), bb.index());
+            let name = format!("{}_loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
             let exit = match &l_comp.exits.iter().collect_vec()[..] {
                 [exit] => BasicBlock::new(*exit),
                 _ => throw!("Oops, multiple loop exits: {:?}", l_comp)
@@ -847,8 +847,16 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             throw!("unimplemented: multiple parameters of the same trait");
         }
 
-        let def = format!("definition [simp]: \"{name} {params} = ({body})\"",
-                          name=name, params=self.trait_param_names.iter().chain(params.iter()).join(" "), body=body);
+        let idx = self.deps.borrow_mut().get_def_idx(self.node_id);
+        let is_rec = self.deps.borrow().graph.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx);
+        let header = if is_rec {
+            format!("function {} :: \"{}\" where\n  ",
+                    name, try!(self.transpile_ty(self.tcx.node_id_to_type(self.node_id))))
+        } else {
+            "definition [simp]: ".to_string()
+        };
+        let def = format!("{header} \"{name} {params} = ({body})\"{footer}",
+                          header= header, name=name, params=self.trait_param_names.iter().chain(params.iter()).join(" "), body=body, footer=if is_rec {" by auto"} else {""});
         Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
     }
 
@@ -1002,7 +1010,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_method(&mut self, node_id: NodeId) -> TransResult {
         self.node_id = node_id;
-        let name = self.transpile_def_id(self.def_id());
+        let name = transpile_def_id(self.tcx, self.def_id());
         let (sig, provided_method) = match self.tcx.map.get(node_id) {
             Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), .. }) => (sig, false),
             Node::NodeTraitItem(&hir::TraitItem { node: hir::MethodTraitItem(ref sig, _), .. }) => (sig, true),
