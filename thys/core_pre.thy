@@ -46,63 +46,22 @@ subsection {* Types *}
 
 subsubsection {* Machine Types *}
 
-text {* Isabelle's Word library provides some nice support for fixed-size integers. *}
+type_synonym u8 = nat
+type_synonym u16 = nat
+type_synonym u32 = nat
+type_synonym u64 = nat
+type_synonym usize = nat
 
-type_synonym u8 = "8 word"
-type_synonym u16 = "16 word"
-type_synonym u32 = "32 word"
-type_synonym u64 = "64 word"
+definition checked_sub :: "nat \<Rightarrow> nat \<Rightarrow> nat option" where
+  "checked_sub n m \<equiv> if n \<ge> m then Some (n - m) else None"
 
-abbreviation "u8 n \<equiv> word_of_int n::u8"
-abbreviation "u16 n \<equiv> word_of_int n::u16"
-abbreviation "u32 n \<equiv> word_of_int n::u32"
-abbreviation "u64 n \<equiv> word_of_int n::u64"
-
-lift_definition unsigned_with_overflow :: "(int \<Rightarrow> int \<Rightarrow> int) \<Rightarrow> 'a::len0 word \<Rightarrow> 'a word \<Rightarrow> 'a word \<times> bool" is "\<lambda>f n m.
-  let i = f (uint n) (uint m) in
-  (i, uint (word_of_int i::'a word) \<noteq> i)" .
-
-text {* In Rust, overflowing arithmetic operations are undefined behavior, which we model as returning @{term None}. *}
-
-lift_definition unsigned_checked :: "(int \<Rightarrow> int \<Rightarrow> int) \<Rightarrow> 'a::len0 word \<Rightarrow> 'a word \<Rightarrow> 'a word option" is "\<lambda>f n m. case unsigned_with_overflow f n m of
-  (n, False) \<Rightarrow> Some n
-| (_, True)  \<Rightarrow> None" .
-
-abbreviation "checked_add \<equiv> unsigned_checked (op +)"
-abbreviation "checked_sub \<equiv> unsigned_checked (op -)"
-abbreviation "checked_mul \<equiv> unsigned_checked (op *)"
-abbreviation "checked_div \<equiv> unsigned_checked (op div)"
-abbreviation "checked_mod \<equiv> unsigned_checked (op mod)"
+definition "checked_div n m \<equiv> if m \<noteq> 0 then Some (n div m) else None"
+definition "checked_mod n m \<equiv> if m \<noteq> 0 then Some (n mod m) else None"
 
 (* TODO
 definition "unsigned_checked_shl (a::'a::len word) b = Some (a << (unat b))"
 definition "unsigned_checked_shr (a::'a::len word) b = Some (a >> (unat b))"
 *)
-
-subsubsection {* Machine-Dependent Integer Types *}
-
-text {* We model the target system's native byte size as an axiomatic constant with a reasonable
-  lower bound (met by all target architectures currently supported by @{verbatim rustc}). *}
-
-consts native_bs :: nat
-
-specification (native_bs) native_bs_min: "native_bs \<ge> 32"
-by auto
-
-typedef native_bs = "UNIV :: unit set" ..
-
-instantiation native_bs :: len
-begin
-  definition "len_of_native_bs (_ :: native_bs itself) = native_bs"
-
-  instance 
-  using native_bs_min
-  by intro_classes (simp add: len_of_native_bs_def)
-end
-
-type_synonym usize = "native_bs word"
-
-abbreviation "usize n \<equiv> word_of_int n::usize"
 
 (*
 subsubsection {* Manually-Translated Types *}
@@ -115,9 +74,7 @@ subsection {* Functions *}
 
 subsubsection {* Intrinsics *}
 
-abbreviation "core_intrinsics_add_with_overflow n m \<equiv> Some (unsigned_with_overflow (op +) n m)"
-abbreviation "core_intrinsics_sub_with_overflow n m \<equiv> Some (unsigned_with_overflow (op -) n m)"
-abbreviation "core_intrinsics_mul_with_overflow n m \<equiv> Some (unsigned_with_overflow (op *) n m)"
+abbreviation "core_intrinsics_add_with_overflow n m \<equiv> Some (n + m, False)"
 
 subsubsection {* Manually-Translated Functions *}
 

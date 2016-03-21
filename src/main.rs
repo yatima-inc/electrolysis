@@ -486,8 +486,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ConstVal::Bool(true) => "True".to_string(),
             ConstVal::Bool(false) => "False".to_string(),
             ConstVal::Integral(i) => match i.int_type() {
-                Some(syntax::attr::IntType::UnsignedInt(uint_ty)) =>
-                    format!("({} {})", uint_ty, i.to_u64_unchecked()),
+                Some(syntax::attr::IntType::UnsignedInt(_)) =>
+                    i.to_u64_unchecked().to_string(),
                 _ => throw!("unimplemented: literal {:?}", val),
             },
             _ => throw!("unimplemented: literal {:?}", val),
@@ -511,35 +511,38 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> Result<MaybeValue, String> {
         Ok(MaybeValue::total(match *rv {
             Rvalue::Use(ref op) => try!(self.get_operand(op)),
-            Rvalue::UnaryOp(UnOp::Not, ref op) =>
-                format!("{} {}", if self.mir().operand_ty(self.tcx, op).is_bool() { "\\<not>" } else { "bitNOT_word" },
-                        try!(self.get_operand(op))),
-            Rvalue::UnaryOp(UnOp::Neg, ref op) =>
-                return Ok(MaybeValue::partial(format!("checked_neg {}", try!(self.get_operand(op))))),
+            Rvalue::UnaryOp(op, ref operand) =>
+                format!("{} {}", match op {
+                    UnOp::Not if self.mir().operand_ty(self.tcx, operand).is_bool() => "\\<not>",
+                    UnOp::Not => "NOT",
+                    UnOp::Neg => "-",
+                }, try!(self.get_operand(operand))),
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
-                let (o1, o2) = (try!(self.get_operand(o1)), try!(self.get_operand(o2)));
+                let (so1, so2) = (try!(self.get_operand(o1)), try!(self.get_operand(o2)));
                 return Ok(match op {
-                    BinOp::Add => MaybeValue::partial(format!("{} {} {}", "checked_add", o1, o2)),
-                    BinOp::Sub => MaybeValue::partial(format!("{} {} {}", "checked_sub", o1, o2)),
-                    BinOp::Mul => MaybeValue::partial(format!("{} {} {}", "checked_mul", o1, o2)),
-                    BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked_div", o1, o2)),
-                    BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked_mod", o1, o2)),
-                    BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked_shl", o1, o2)),
-                    BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked_shr", o1, o2)),
-                    BinOp::BitXor => MaybeValue::total(format!("{} {} {}", o1, "XOR", o2)),
-                    BinOp::BitAnd => MaybeValue::total(format!("{} {} {}", o1, "AND", o2)),
-                    BinOp::BitOr => MaybeValue::total(format!("{} {} {}", o1, "OR", o2)),
-                    BinOp::Eq => MaybeValue::total(format!("{} {} {}", o1, "=", o2)),
-                    BinOp::Lt => MaybeValue::total(format!("{} {} {}", o1, "<", o2)),
-                    BinOp::Le => MaybeValue::total(format!("{} {} {}", o1, "<=", o2)),
-                    BinOp::Ne => MaybeValue::total(format!("{} {} {}", o1, "\\<noteq>", o2)),
-                    BinOp::Ge => MaybeValue::total(format!("{} {} {}", o1, ">=", o2)),
-                    BinOp::Gt => MaybeValue::total(format!("{} {} {}", o1, ">", o2)),
+                    BinOp::Sub if !self.mir().operand_ty(self.tcx, o1).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked_sub", so1, so2)),
+                    BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked_div", so1, so2)),
+                    BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked_mod", so1, so2)),
+                    BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked_shl", so1, so2)),
+                    BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked_shr", so1, so2)),
+                    _ => MaybeValue::total(format!("{} {} {}", so1, match op {
+                        BinOp::Add => "+",
+                        BinOp::Sub => "-",
+                        BinOp::Mul => "*",
+                        BinOp::BitXor => "XOR",
+                        BinOp::BitAnd => "AND",
+                        BinOp::BitOr => "OR",
+                        BinOp::Eq => "=",
+                        BinOp::Lt => "<",
+                        BinOp::Le => "<=",
+                        BinOp::Ne => "\\<noteq>",
+                        BinOp::Ge => ">=",
+                        BinOp::Gt => ">",
+                        _ => unreachable!(),
+                    }, so2))
                 })
             }
-            Rvalue::Cast(CastKind::Misc, ref op, ty) =>
-                format!("{} {} :: {}", if self.mir().operand_ty(self.tcx, op).is_signed() { "scast" } else { "ucast" },
-                        try!(self.get_operand(op)), try!(self.transpile_ty(ty))),
+            Rvalue::Cast(CastKind::Misc, ref op, _) => try!(self.get_operand(op)),
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) => try!(self.get_lvalue(lv)),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 let mut ops = try!(ops.iter().map(|op| self.get_operand(op)).collect_results());
@@ -983,7 +986,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_item(&mut self, item: &hir::Item) -> TransResult {
         self.node_id = item.id;
-        let name = self.transpile_def_id(self.def_id());
+        let name = transpile_def_id(&self.tcx, self.def_id());
         Ok(match item.node {
             Item_::ItemFn(ref decl, _, _, _, _, _) =>
                 try!(self.transpile_fn(name, decl, false)),

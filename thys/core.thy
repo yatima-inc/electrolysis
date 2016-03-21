@@ -91,29 +91,8 @@ proof-
      (auto simp: loop'_def all_option_def pred_option_def Option.bind_def assms(1,2,6) intro: assms(3,4) split: option.splits)
 qed
 
-declare Let_def[simp] Option.bind_eq_None_conv[simp] semiring_numeral_class.power_numeral[simp del]
+declare Let_def[simp] Option.bind_eq_Some_conv[simp] Option.bind_eq_None_conv[simp]
 declare not_None_eq[iff del]
-
-subsection \<open> Arithmetic operations \<close>
-
-context
-  fixes a b c :: "'a::len word"
-begin
-  lemma checked_add [simp]: "checked_add a b = (if a \<le> a + b then Some (a+b) else None)"
-  apply (auto simp add: unsigned_checked_def unsigned_with_overflow_def uint_word_of_int int_mod_lem[symmetric] split: bool.splits)
-    apply uint_arith
-   apply uint_arith
-   apply (auto simp add: uint_word_of_int int_mod_lem[symmetric])[1]
-  apply uint_arith
-  done
-  
-  lemma checked_mul: "checked_mul a b = (if uint a * uint b < 2^len_of TYPE('a) then Some (a*b) else None)"
-    by (auto simp add: unsigned_checked_def unsigned_with_overflow_def uint_word_of_int int_mod_lem[symmetric] word_mult_def split: bool.splits)
-
-  lemma word_succ_no_overflow [simp]: "a < b \<Longrightarrow> a \<le> a + 1" by uint_arith
-
-  lemma word_le_succ_trans: "a < b \<Longrightarrow> c \<le> a \<Longrightarrow> c \<le> a + 1" by uint_arith
-end
 
 subsection \<open> Loops over @{verbatim u32} ranges \<close>
 
@@ -123,7 +102,7 @@ text \<open> Because the following lemmas reference specific trait implementatio
 lemma loop_range_u32:
   assumes "P l res\<^sub>0"
   assumes "\<And>i res iter. \<lbrakk>l \<le> i; i < r; P i res\<rbrakk> \<Longrightarrow> f i res iter = Some ((g i res, iter), Continue)"
-  assumes "\<And>i res iter. \<lbrakk>l \<le> i; i < r; P i res\<rbrakk> \<Longrightarrow> P (i + 1) (g i res)"
+  assumes "\<And>i res iter. \<lbrakk>l \<le> i; i < r; P i res\<rbrakk> \<Longrightarrow> P (Suc i) (g i res)"
   shows "all_option (P (max l r) \<circ> fst) (loop' (\<lambda>(res, iter).
                   do (t6, iter) \<leftarrow> (core_iter_ops_Range_A__Iterator_next (core_num_u32_One) (core_iter_u32_Step) (core_ops___b_u32_Add___a_u32) iter);
                   case t6 of core_option_Option_None \<Rightarrow> Some ((res, iter), Break)
@@ -134,12 +113,10 @@ apply (rule loop'_rule[where P="\<lambda>s. case s of (res, iter) \<Rightarrow>
     l \<le> i \<and> i \<le> max l r \<and> core_ops_Range_end iter = r \<and> P i res"])
      apply (auto simp: core_ops_Range.make_def assms(1,2))[1]
     apply (auto simp: assms(2) split: split_if_asm)[1]
-   apply (clarsimp split: option.splits if_splits)
-   apply (auto intro: word_le_succ_trans simp: max_absorb1 max_absorb2 Word.inc_le assms(2,3))[1]
+   apply (auto simp: max_absorb1 max_absorb2 assms(2,3) split: if_splits)[1]
   apply (auto simp: max_absorb1 max_absorb2 le_max_iff_disj assms(2) split: option.splits split_if_asm)[1]
- apply (rule wf_measure[of "\<lambda>s. case s of (_,iter) \<Rightarrow> unat (core_ops_Range_end iter - core_ops_Range_start iter)"])
-apply (clarsimp simp: assms(2) split: split_if_asm intro!: unat_mono)
-apply uint_arith
+ apply (rule wf_measure[of "\<lambda>s. case s of (_,iter) \<Rightarrow> core_ops_Range_end iter - core_ops_Range_start iter"])
+apply (auto simp: assms(2) split: split_if_asm)
 done
 
 text \<open> A variant of @{text loop_range_u32} that is easier to unify with a goal \<close>
@@ -149,7 +126,7 @@ lemma loop_range_u32':
                   do (t6, iter) \<leftarrow> core_iter_ops_Range_A__Iterator_next core_num_u32_One core_iter_u32_Step core_ops___b_u32_Add___a_u32 iter;
                   case t6 of core_option_Option_None \<Rightarrow> Some ((res, iter), Break)
                      | core_option_Option_Some i \<Rightarrow> f i res iter)"
-  assumes "\<And>i res iter. \<lbrakk>l \<le> i; i < r; P i res\<rbrakk> \<Longrightarrow> f i res iter = Some ((g i res, iter), Continue) \<and> P (i + 1) (g i res)"
+  assumes "\<And>i res iter. \<lbrakk>l \<le> i; i < r; P i res\<rbrakk> \<Longrightarrow> f i res iter = Some ((g i res, iter), Continue) \<and> P (Suc i) (g i res)"
   assumes "\<And>x. P (max l r) (fst x) \<Longrightarrow> P' (Some x)"
   assumes "P l res\<^sub>0"
   shows "P' (loop' body (res\<^sub>0, core_ops_Range.make l r))"
