@@ -91,7 +91,7 @@ proof-
      (auto simp: loop'_def all_option_def pred_option_def Option.bind_def assms(1,2,6) intro: assms(3,4) split: option.splits)
 qed
 
-declare Let_def[simp] Option.bind_eq_Some_conv[simp] Option.bind_eq_None_conv[simp]
+declare Let_def[simp] Option.bind_eq_None_conv[simp]
 declare not_None_eq[iff del]
 
 subsection \<open> Loops over @{verbatim u32} ranges \<close>
