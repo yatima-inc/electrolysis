@@ -42,7 +42,7 @@ use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
-use rustc::middle::subst::ParamSpace;
+use rustc::middle::subst::{ParamSpace, Subst};
 use rustc::middle::traits::*;
 use rustc::middle::ty::{self, Ty, TyCtxt};
 
@@ -182,6 +182,8 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     static_params: Vec<String>,
     refs: RefCell<HashMap<usize, &'a Lvalue<'tcx>>>,
 }
+
+enum TraitImplLookup { Static(DefId), Dynamic }
 
 fn transpile_def_id(tcx: &TyCtxt, did: DefId) -> String {
     mk_lean_name(&tcx.item_path_str(did))
@@ -565,6 +567,45 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
+    fn infer_trait_impl(&self, trait_ref: ty::TraitRef<'tcx>, callee_def_id: DefId) -> Result<TraitImplLookup, String> {
+        use rustc::middle::infer;
+
+        // FIXME
+        try!(self.transpile_trait_ref(trait_ref));
+
+        let span = syntax::codemap::DUMMY_SP;
+        let param_env = ty::ParameterEnvironment::for_item(self.tcx, self.node_id);
+        let pred = ty::Binder(trait_ref).to_poly_trait_predicate().subst(self.tcx, &param_env.free_substs);
+        let dbg_param_env = format!("{:?}", param_env.caller_bounds);
+        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), rustc::middle::traits::ProjectionMode::Any);
+        let mut selcx = SelectionContext::new(&infcx);
+        let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
+        let selection = match selcx.select(&obligation) {
+            Ok(x) => x.unwrap(),
+            Err(err) => throw!("obligation select: {:?} {:?} {:?}", obligation, err, dbg_param_env),
+        };
+
+        match selection {
+            Vtable::VtableImpl(data) => {
+                self.add_dep(data.impl_def_id);
+
+                // add dependencies for nested obligations
+                for obl in &data.nested {
+                    match obl.predicate {
+                        ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
+                            try!(self.infer_trait_impl(trait_pred.skip_binder().trait_ref, callee_def_id));
+                        }
+                        _ => {}
+                    }
+                }
+
+                Ok(TraitImplLookup::Static(data.impl_def_id))
+            },
+            Vtable::VtableParam(_) => Ok(TraitImplLookup::Dynamic),
+            vtable => throw!("unimplemented: vtable {:?}", vtable),
+        }
+    }
+
     fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
@@ -609,6 +650,25 @@ end
                     func: Operand::Constant(Constant { literal: Literal::Item { def_id, ref substs }, .. }),
                     ref args, destination: Some((_, target)), ..
                 } => {
+                    let target_def_id = match self.tcx.trait_of_item(def_id) {
+                        Some(trait_def_id) => {
+                            // from trans::meth::trans_method_callee
+                            let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
+                            match try!(self.infer_trait_impl(trait_ref, def_id)) {
+                                TraitImplLookup::Static(impl_def_id) => {
+                                    let method = match self.tcx.impl_or_trait_item(def_id) {
+                                        ty::MethodTraitItem(method) => method,
+                                        _ => unreachable!(),
+                                    };
+                                    let trait_def = self.tcx.lookup_trait_def(method.container.id());
+                                    let method = trait_def.ancestors(impl_def_id).fn_defs(&self.tcx, method.name).next().unwrap().item;
+                                    method.def_id
+                                }
+                                TraitImplLookup::Dynamic => def_id,
+                            }
+                        }
+                        _ => def_id
+                    };
                     let name = self.transpile_def_id(def_id);
                     if name.starts_with("intrinsics.") && !INTRINSICS.contains(&name) {
                         throw!("unimplemented intrinsics: {}", name);
@@ -820,6 +880,11 @@ end
         let mut trait_params = try!(self.trait_predicates_without_markers(self.def_id()).map(|trait_pred| -> TransResult {
                 Ok(format!(" [{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref))))
         }).collect_results());
+
+        // dependency edge to all supertrait impls
+        for trait_pred in self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs)) {
+            try!(self.infer_trait_impl(trait_pred.trait_ref, self.def_id()));
+        }
 
         let mut methods = try!(items.iter().map(|item| {
             let rhs = match item.node {
