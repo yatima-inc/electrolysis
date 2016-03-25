@@ -912,6 +912,7 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
 fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.expect("missing --crate-name rust arg");
+    let base = path::Path::new("thys").join(crate_name);
 
     let mut trans = Transpiler {
         tcx: tcx,
@@ -935,12 +936,12 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
 
     let mut crate_deps: Vec<String> = crate_deps.into_iter().collect();
     crate_deps.sort();
-    let has_pre = path::Path::new("thys").join(crate_name).join("pre.lean").exists();
+    let has_pre = base.join("pre.lean").exists();
     if has_pre {
         crate_deps.insert(0, format!("{}.pre", crate_name));
     }
 
-    let mut f = try!(File::create(path::Path::new("thys").join(format!("{}.lean", crate_name))));
+    let mut f = try!(File::create(base.join("export.lean")));
     for dep in crate_deps {
         try!(write!(f, "import {}\n", dep));
     }
