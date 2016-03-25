@@ -129,7 +129,7 @@ impl MaybeValue {
 
 fn mk_lean_name(s: &str) -> String {
     let s = s.replace("::", ".").replace(|c: char| c != '.' && !c.is_alphanumeric(), "_").trim_left_matches('_').to_owned();
-    if s.ends_with("end") { s + "_" } else { s }
+    if s.ends_with("end") || s.ends_with("by") { s + "_" } else { s }
 }
 
 fn unwrap_refs<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
@@ -219,7 +219,11 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let substs = try!(trait_ref.substs.types.iter().map(|ty| {
             self.transpile_ty(ty)
         }).collect_results());
-        Ok(iter::once(self.transpile_def_id(trait_ref.def_id)).chain(substs).join(" "))
+        let associated_types = self.trait_predicates_without_markers(trait_ref.def_id).flat_map(|trait_pred| {
+            let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
+            trait_def.associated_type_names.iter().map(|_| "_".to_owned())
+        });
+        Ok(iter::once(self.transpile_def_id(trait_ref.def_id)).chain(substs).chain(associated_types).join(" "))
     }
 
     fn transpile_ty(&self, ty: Ty<'tcx>) -> TransResult {
@@ -249,7 +253,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ),
             ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
-            ty::TypeVariants::TyProjection(ref proj) => format!("{}.{}", self.transpile_def_id(proj.trait_ref.def_id), proj.item_name),
+            ty::TypeVariants::TyProjection(ref proj) => try!(self.transpile_associated_type(proj.trait_ref, &proj.item_name.as_str())),
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", try!(self.transpile_ty(ty))),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
             _ => match ty.ty_to_def_id() {
@@ -656,7 +660,7 @@ end
             try_unwrap_mut_ref(ty).map(|_| name.clone())
         });
         let ret = if self.sig().output.unwrap().is_nil() { "()" } else { "ret" };
-        Ok(format!("some ({})", iter::once(ret.to_string()).chain(muts).join(", ")))
+        Ok(format!("some ({})\n", iter::once(ret.to_string()).chain(muts).join(", ")))
     }
 
     fn transpile_fn(&mut self, name: String, decl: &FnDecl, ty_params: Vec<&hir::TyParam>, suppress_type_predicates: bool) -> TransResult {
@@ -755,6 +759,20 @@ end
                    try!(variants.join_results("\n"))))
     }
 
+    fn transpile_associated_type(&self, trait_ref: ty::TraitRef<'tcx>, name: &str) -> TransResult {
+        let prefix = mk_lean_name(&try!(self.transpile_trait_ref(trait_ref))).replace('.', "_");
+        Ok(format!("{}_{}", prefix, name))
+    }
+
+    fn transpile_associated_types(&self, def_id: DefId) -> Result<Vec<String>, String> {
+        self.trait_predicates_without_markers(def_id).map(|trait_pred| {
+            let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
+            trait_def.associated_type_names.iter().map(|name| {
+                Ok(format!("({} : Type)", try!(self.transpile_associated_type(trait_pred.trait_ref, &name.as_str()))))
+            }).collect_results()
+        }).collect_results().map(|tys| tys.flat_map(|x| x).collect::<Vec<_>>())
+    }
+
     fn transpile_trait(&self, trait_def_id: DefId, generics: &hir::Generics, items: &[hir::TraitItem]) -> TransResult {
         let trait_name = self.transpile_def_id(trait_def_id);
 
@@ -768,28 +786,28 @@ end
         };
 
         let mut items = try!(items.into_iter().filter(|item| match item.node {
+            hir::TraitItem_::TypeTraitItem(..) => false,
             // FIXME: Do something more clever than ignoring default method overrides
             hir::TraitItem_::MethodTraitItem(_, Some(_)) => false,
             _ => true
         })
         .map(|item| match item.node {
             hir::TraitItem_::TypeTraitItem(..) =>
-                Ok(format!("({} : Type)", item.name)),
+                unreachable!(),
             hir::TraitItem_::MethodTraitItem(_, _) => {
                 let ty = try!(self.transpile_ty(self.tcx.node_id_to_type(item.id)));
-                // HACK: remove absolute paths from associated type references
-                let ty = ty.replace(&format!("{}.", trait_name), "");
                 Ok(format!("({} : {})", item.name, ty))
             }
             hir::TraitItem_::ConstTraitItem(..) =>
                 throw!("unimplemented: const trait items"),
         }).collect_results());
-        Ok(format!("structure {} (Self : Type){} :=\n{}",
+        Ok(format!("structure {} (Self : Type) {}{} :=\n{}",
                    Transpiler::transpile_generic_ty_def(
                        &format!("{} [class]", trait_name),
                        generics),
-                    extends,
-                    items.join("\n")))
+                   try!(self.transpile_associated_types(trait_def_id)).join(" "),
+                   extends,
+                   items.join("\n")))
     }
 
     fn transpile_trait_impl(&self, generics: &hir::Generics, items: &[hir::ImplItem]) -> TransResult {
@@ -817,7 +835,9 @@ end
         }).collect_results()).filter_map(|x| x);
 
         Ok(format!("noncomputable definition {}{} := ⦃\n  {},\n{}\n⦄",
-                   Transpiler::transpile_generic_ty_def(&self.transpile_node_id(self.node_id), generics),
+                   Transpiler::transpile_generic_ty_def(
+                       &format!("{} [instance]", &self.transpile_node_id(self.node_id)),
+                       generics),
                    trait_params.join(""),
                    try!(self.transpile_trait_ref(trait_ref)),
                    methods.join(",\n")))
