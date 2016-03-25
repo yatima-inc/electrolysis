@@ -200,14 +200,17 @@ lazy_static! {
 }
 
 impl<'a, 'tcx> Transpiler<'a, 'tcx> {
-    fn transpile_def_id(&self, did: DefId) -> String {
+    fn add_dep(&self, did: DefId) {
         if let Some(node_id) = self.tcx.map.as_local_node_id(did) {
             self.deps.borrow_mut().add_dep(node_id, self.node_id);
         } else {
             let crate_name = self.tcx.sess.cstore.crate_name(did.krate);
             self.deps.borrow_mut().crate_deps.insert(crate_name.clone());
         }
+    }
 
+    fn transpile_def_id(&self, did: DefId) -> String {
+        self.add_dep(did);
         transpile_def_id(self.tcx, did)
     }
 
@@ -503,8 +506,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 format!("({})", ops.join(", "))
             }
             Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _), ref ops) => {
-                // explicit dep edge
-                self.transpile_def_id(adt_def.did);
+                self.add_dep(adt_def.did);
 
                 let variant = &adt_def.variants[variant_idx];
                 let ops = try!(ops.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
@@ -612,6 +614,9 @@ end
                         throw!("unimplemented intrinsics: {}", name);
                     }
                     let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
+                    if let Some(trait_def_id) = self.tcx.trait_of_item(def_id) {
+                        self.add_dep(trait_def_id);
+                    }
                     let call = match self.tcx.trait_item_of_item(def_id) {
                         Some(_) if self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap().explicit_self == ty::ExplicitSelfCategory::Static =>
                             format!("{} {}", name, try!(self.transpile_ty(substs.self_ty().unwrap()))),
@@ -627,16 +632,16 @@ end
                     let arms: TransResult = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
                         let vars = (0..var.fields.len()).into_iter().map(|i| format!("{}_{}", value, i));
                         Ok(format!("| {} :=\n{}", iter::once(self.transpile_def_id(var.did)).chain(vars).join(" "), rec!(target)))
-                    }).join_results("\n");
+                    }).join_results("");
                     format!("match {} with\n{}end\n", value, try!(arms))
                 },
                 Terminator::SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
                     let arms: Result<_, String> = values.iter().zip(targets).map(|(val, &target)| {
-                        Ok(format!("| {} := {}", try!(self.transpile_constval(val)), rec!(target)))
+                        Ok(format!("| {} :=\n{}", try!(self.transpile_constval(val)), rec!(target)))
                     }).collect_results();
-                    let fallback = format!("| _ := {}", rec!(*targets.last().unwrap()));
+                    let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap()));
                     format!("match {} with\n{}\nend\n", try!(self.get_lvalue(discr)),
-                        try!(arms).chain(iter::once(fallback)).join("\n"))
+                        try!(arms).chain(iter::once(fallback)).join(""))
                 },
                 Terminator::Drop { target, .. } => rec!(target),
                 Terminator::Resume => String::new(),
@@ -721,7 +726,7 @@ end
                 let fields = try!(fields.iter().map(|f| -> TransResult {
                     Ok(format!("({} : {})", mk_lean_name(&f.name.as_str()), try!(self.transpile_hir_ty(&*f.ty))))
                 }).join_results("\n"));
-                Ok(format!("structure {} :=\n{}",
+                Ok(format!("structure {} :=\nmk {{}} :: {}",
                            Transpiler::transpile_generic_ty_def(name, generics),
                            fields))
             }
@@ -729,7 +734,7 @@ end
                 let fields = try!(fields.iter().map(|f| {
                     self.transpile_hir_ty(&*f.ty)
                 }).join_results(" × "));
-                Ok(format!("inductive {} :=\nmk {}",
+                Ok(format!("inductive {} :=\nmk {{}} : {}",
                            Transpiler::transpile_generic_ty_def(name, generics),
                            fields))
             }
@@ -784,7 +789,7 @@ end
             format!(" extends {}", supertraits.into_iter().join(", "))
         };
 
-        let mut items = try!(items.into_iter().filter(|item| match item.node {
+        let items = try!(items.into_iter().filter(|item| match item.node {
             hir::TraitItem_::TypeTraitItem(..) => false,
             // FIXME: Do something more clever than ignoring default method overrides
             hir::TraitItem_::MethodTraitItem(_, Some(_)) => false,
@@ -799,14 +804,15 @@ end
             }
             hir::TraitItem_::ConstTraitItem(..) =>
                 throw!("unimplemented: const trait items"),
-        }).collect_results());
-        Ok(format!("structure {} (Self : Type) {}{} :=\n{}",
+        }).collect_results()).collect_vec();
+        Ok(format!("structure {} (Self : Type) {}{} {}",
                    Transpiler::transpile_generic_ty_def(
                        &format!("{} [class]", trait_name),
                        generics),
                    try!(self.transpile_associated_types(trait_def_id)).join(" "),
                    extends,
-                   items.join("\n")))
+                   if items.is_empty() { "".to_owned() }
+                   else { format!(":=\n{}", items.join("\n")) }))
     }
 
     fn transpile_trait_impl(&self, generics: &hir::Generics, items: &[hir::ImplItem]) -> TransResult {
@@ -939,7 +945,8 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
         try!(write!(f, "import {}\n", dep));
     }
     try!(write!(f, "
-open bool
+open classical
+open nat
 open option
 open prod.ops
 
