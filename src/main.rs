@@ -228,7 +228,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_ty(&self, ty: Ty<'tcx>) -> TransResult {
         Ok(match ty.sty {
-            ty::TypeVariants::TyBool => "bool".to_string(),
+            ty::TypeVariants::TyBool => "Prop".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
@@ -438,8 +438,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_constval(&self, val: &ConstVal) -> TransResult {
         Ok(match *val {
-            ConstVal::Bool(true) => "tt".to_string(),
-            ConstVal::Bool(false) => "ff".to_string(),
+            ConstVal::Bool(b) => b.to_string(),
             ConstVal::Integral(i) => match i.int_type() {
                 Some(syntax::attr::IntType::UnsignedInt(_)) =>
                     i.to_u64_unchecked().to_string(),
@@ -600,7 +599,7 @@ end
                 Terminator::Goto { target } =>
                     rec!(target),
                 Terminator::If { ref cond, targets: (bb_if, bb_else) } =>
-                    format!("if {} = tt then\n{}else\n{}", try!(self.get_operand(cond)),
+                    format!("if {} then\n{}else\n{}", try!(self.get_operand(cond)),
                     rec!(bb_if),
                     rec!(bb_else)),
                 Terminator::Return => try!(self.return_expr()),
