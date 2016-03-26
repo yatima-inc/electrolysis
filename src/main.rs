@@ -220,15 +220,37 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         self.transpile_def_id(self.tcx.map.local_def_id(node_id))
     }
 
-    fn transpile_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult {
+    fn name_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult {
         let substs = try!(trait_ref.substs.types.iter().map(|ty| {
             self.transpile_ty(ty)
         }).collect_results());
+        Ok(iter::once(self.transpile_def_id(trait_ref.def_id)).chain(substs).join(" "))
+    }
+
+    fn transpile_associated_type(&self, trait_ref: ty::TraitRef<'tcx>, name: &ast::Name) -> TransResult {
+        let prefix = mk_lean_name(&try!(self.name_trait_ref(trait_ref))).replace('.', "_");
+        Ok(format!("{}_{}", prefix, name))
+    }
+
+    fn get_assoc_ty_substs(&self, def_id: DefId) -> Result<HashMap<String, String>, String> {
+        self.tcx.lookup_predicates(def_id).predicates.into_iter().map(|trait_pred| Ok(match trait_pred {
+            ty::Predicate::Projection(ty::Binder(proj_pred)) => {
+                let assoc_ty = try!(self.transpile_associated_type(proj_pred.projection_ty.trait_ref, &proj_pred.projection_ty.item_name));
+                Some((assoc_ty, try!(self.transpile_ty(&proj_pred.ty))))
+            }
+            _ => None,
+        })).collect_results().map(|xs| xs.filter_map(|x| x).collect())
+    }
+
+    fn transpile_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>, assoc_ty_substs: &HashMap<String, String>) -> TransResult {
         let associated_types = self.trait_predicates_without_markers(trait_ref.def_id).flat_map(|trait_pred| {
             let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
-            trait_def.associated_type_names.iter().map(|_| "_".to_owned())
+            trait_def.associated_type_names.iter().map(|name| {
+                let assoc_ty = self.transpile_associated_type(trait_ref, name).unwrap();
+                assoc_ty_substs.get(&assoc_ty).unwrap_or(&assoc_ty).to_owned()
+            })
         });
-        Ok(iter::once(self.transpile_def_id(trait_ref.def_id)).chain(substs).chain(associated_types).join(" "))
+        Ok(iter::once(try!(self.name_trait_ref(trait_ref))).chain(associated_types).join(" "))
     }
 
     fn transpile_ty(&self, ty: Ty<'tcx>) -> TransResult {
@@ -258,7 +280,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ),
             ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
-            ty::TypeVariants::TyProjection(ref proj) => try!(self.transpile_associated_type(proj.trait_ref, &proj.item_name.as_str())),
+            ty::TypeVariants::TyProjection(ref proj) => try!(self.transpile_associated_type(proj.trait_ref, &proj.item_name)),
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", try!(self.transpile_ty(ty))),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
             _ => match ty.ty_to_def_id() {
@@ -571,7 +593,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         use rustc::middle::infer;
 
         // FIXME
-        try!(self.transpile_trait_ref(trait_ref));
+        try!(self.name_trait_ref(trait_ref));
 
         let span = syntax::codemap::DUMMY_SP;
         let param_env = ty::ParameterEnvironment::for_item(self.tcx, self.node_id);
@@ -674,15 +696,7 @@ end
                         throw!("unimplemented intrinsics: {}", name);
                     }
                     let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
-                    if let Some(trait_def_id) = self.tcx.trait_of_item(def_id) {
-                        self.add_dep(trait_def_id);
-                    }
-                    let call = match self.tcx.trait_item_of_item(def_id) {
-                        Some(_) if self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap().explicit_self == ty::ExplicitSelfCategory::Static =>
-                            format!("{} {}", name, try!(self.transpile_ty(substs.self_ty().unwrap()))),
-                        _ => name,
-                    };
-                    let call = iter::once(call).chain(args).join(" ");
+                    let call = iter::once(name).chain(args).join(" ");
                     try!(self.set_lvalues_option(try!(self.call_return_dests(&terminator)), &call, &rec!(target)))
                 }
                 Terminator::Call { .. } =>
@@ -760,8 +774,9 @@ end
         let ty_params = if suppress_type_predicates {
             iter::once("{Self : Type}".to_owned()).chain(ty_params).collect()
         } else { ty_params };
+        let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
         let trait_params = try!(trait_predicates.into_iter().map(|trait_pred| -> TransResult {
-                Ok(format!("[{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref))))
+                Ok(format!("[{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))))
         }).collect_results());
         self.static_params = ty_params.into_iter().chain(trait_params).collect();
 
@@ -786,7 +801,7 @@ end
                 let fields = try!(fields.iter().map(|f| -> TransResult {
                     Ok(format!("({} : {})", mk_lean_name(&f.name.as_str()), try!(self.transpile_hir_ty(&*f.ty))))
                 }).join_results("\n"));
-                Ok(format!("structure {} :=\nmk {{}} :: {}",
+                Ok(format!("structure {} := mk {{}} ::\n{}",
                            Transpiler::transpile_generic_ty_def(name, generics),
                            fields))
             }
@@ -823,16 +838,11 @@ end
                    try!(variants.join_results("\n"))))
     }
 
-    fn transpile_associated_type(&self, trait_ref: ty::TraitRef<'tcx>, name: &str) -> TransResult {
-        let prefix = mk_lean_name(&try!(self.transpile_trait_ref(trait_ref))).replace('.', "_");
-        Ok(format!("{}_{}", prefix, name))
-    }
-
     fn transpile_associated_types(&self, def_id: DefId) -> Result<Vec<String>, String> {
         self.trait_predicates_without_markers(def_id).map(|trait_pred| {
             let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
             trait_def.associated_type_names.iter().map(|name| {
-                Ok(format!("({} : Type)", try!(self.transpile_associated_type(trait_pred.trait_ref, &name.as_str()))))
+                Ok(format!("({} : Type)", try!(self.transpile_associated_type(trait_pred.trait_ref, &name))))
             }).collect_results()
         }).collect_results().map(|tys| tys.flat_map(|x| x).collect::<Vec<_>>())
     }
@@ -840,10 +850,11 @@ end
     fn transpile_trait(&self, trait_def_id: DefId, generics: &hir::Generics, items: &[hir::TraitItem]) -> TransResult {
         let trait_name = self.transpile_def_id(trait_def_id);
 
+        let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
         let supertraits = try!(
             self.trait_predicates_without_markers(trait_def_id)
             .filter(|trait_pred| trait_pred.def_id() != trait_def_id)
-            .map(|trait_pred| self.transpile_trait_ref(trait_pred.trait_ref))
+            .map(|trait_pred| self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))
             .collect::<Result<Vec<_>, _>>());
         let extends = if supertraits.is_empty() { "".to_owned() } else {
             format!(" extends {}", supertraits.into_iter().join(", "))
@@ -872,13 +883,14 @@ end
                    try!(self.transpile_associated_types(trait_def_id)).join(" "),
                    extends,
                    if items.is_empty() { "".to_owned() }
-                   else { format!(":=\n{}", items.join("\n")) }))
+                   else { format!(":= mk {{}} ::\n{}", items.join("\n")) }))
     }
 
     fn transpile_trait_impl(&self, generics: &hir::Generics, items: &[hir::ImplItem]) -> TransResult {
         let trait_ref = self.tcx.impl_trait_ref(self.def_id()).unwrap();
+        let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
         let mut trait_params = try!(self.trait_predicates_without_markers(self.def_id()).map(|trait_pred| -> TransResult {
-                Ok(format!(" [{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref))))
+                Ok(format!(" [{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))))
         }).collect_results());
 
         // dependency edge to all supertrait impls
@@ -909,7 +921,7 @@ end
                        &format!("{} [instance]", &self.transpile_node_id(self.node_id)),
                        generics),
                    trait_params.join(""),
-                   try!(self.transpile_trait_ref(trait_ref)),
+                   try!(self.transpile_trait_ref(trait_ref, &assoc_ty_substs)),
                    methods.join(",\n")))
     }
 
