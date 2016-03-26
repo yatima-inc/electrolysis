@@ -227,7 +227,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn transpile_associated_type(&self, trait_ref: ty::TraitRef<'tcx>, name: &ast::Name) -> TransResult {
-        let prefix = iter::once(self.transpile_def_id(trait_ref.def_id).replace('.', "_")).chain(try!(self.transpile_trait_ref_args(trait_ref))).join("_");
+        let prefix = iter::once(self.transpile_def_id(trait_ref.def_id).replace('.', "_")).join("_");
         let prefix = mk_lean_name(&prefix);
         Ok(format!("{}_{}", prefix, name))
     }
@@ -278,10 +278,10 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 inputs.chain(iter::once(format!("option ({})", outputs))).join(" → ")
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
-            ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format_generic_ty(
+            ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format!("({})", format_generic_ty(
                 &self.transpile_def_id(adt_def.did),
                 try!(substs.types.iter().map(|ty| self.transpile_ty(ty)).collect_results())
-            ),
+            )),
             ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
             ty::TypeVariants::TyProjection(ref proj) => try!(self.transpile_associated_type(proj.trait_ref, &proj.item_name)),
@@ -593,7 +593,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn infer_trait_impl(&self, trait_ref: ty::TraitRef<'tcx>, callee_def_id: DefId) -> Result<TraitImplLookup, String> {
+    fn infer_trait_impl(&self, trait_ref: ty::TraitRef<'tcx>, callee_def_id: DefId, add_dep: bool) -> Result<TraitImplLookup, String> {
         use rustc::middle::infer;
 
         // FIXME
@@ -613,13 +613,15 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         match selection {
             Vtable::VtableImpl(data) => {
-                self.add_dep(data.impl_def_id);
+                if add_dep {
+                    self.add_dep(data.impl_def_id);
+                }
 
                 // add dependencies for nested obligations
                 for obl in &data.nested {
                     match obl.predicate {
                         ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
-                            try!(self.infer_trait_impl(trait_pred.skip_binder().trait_ref, callee_def_id));
+                            try!(self.infer_trait_impl(trait_pred.skip_binder().trait_ref, callee_def_id, true));
                         }
                         _ => {}
                     }
@@ -680,7 +682,7 @@ end
                         Some(trait_def_id) => {
                             // from trans::meth::trans_method_callee
                             let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
-                            match try!(self.infer_trait_impl(trait_ref, def_id)) {
+                            match try!(self.infer_trait_impl(trait_ref, def_id, false)) {
                                 TraitImplLookup::Static(impl_def_id) => {
                                     let method = match self.tcx.impl_or_trait_item(def_id) {
                                         ty::MethodTraitItem(method) => method,
@@ -778,10 +780,12 @@ end
             self.trait_predicates_without_markers(self.def_id()).collect_vec()
         };
 
-        let ty_params: Vec<_> = ty_params.iter().map(|p| format!("({} : Type)", p.name)).collect();
+        let ty_params = ty_params.iter().map(|p| format!("{} : Type", p.name));
         let ty_params = if suppress_type_predicates {
-            iter::once("(Self : Type)".to_owned()).chain(ty_params).collect()
-        } else { ty_params };
+            iter::once("(Self : Type)".to_owned()).chain(ty_params.map(|p| format!("({})", p))).collect_vec()
+        } else {
+            ty_params.map(|p| format!("{{{}}}", p)).collect_vec()
+        };
         let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
         let trait_params = try!(trait_predicates.into_iter().map(|trait_pred| -> TransResult {
                 Ok(format!("[{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))))
@@ -896,41 +900,47 @@ end
 
     fn transpile_trait_impl(&self, generics: &hir::Generics, items: &[hir::ImplItem]) -> TransResult {
         let trait_ref = self.tcx.impl_trait_ref(self.def_id()).unwrap();
-        let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
+
+        let mut assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
+        for item in items {
+            if let hir::ImplItemKind::Type(ref ty) = item.node {
+                assoc_ty_substs.insert(try!(self.transpile_associated_type(trait_ref, &item.name)), try!(self.transpile_hir_ty(ty)));
+            }
+        }
         let mut trait_params = try!(self.trait_predicates_without_markers(self.def_id()).map(|trait_pred| -> TransResult {
                 Ok(format!(" [{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))))
         }).collect_results());
 
-        // dependency edge to all supertrait impls
-        for trait_pred in self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs)) {
-            try!(self.infer_trait_impl(trait_pred.trait_ref, self.def_id()));
-        }
-
-        let mut methods = try!(items.iter().map(|item| {
-            let rhs = match item.node {
-                hir::ImplItemKind::Type(ref ty) =>
-                    try!(self.transpile_hir_ty(ty)),
-                hir::ImplItemKind::Method(..) => {
-                    // FIXME: Do something more clever than ignoring default method overrides
-                    if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
-                        return Ok(None)
-                    }
-
-                    self.transpile_node_id(item.id)
-                }
-                hir::ImplItemKind::Const(..) =>
-                    throw!("unimplemented: associated const"),
-            };
-            Ok(Some(format!("  {} := {}", item.name, rhs)))
+        let supertraits = try!(self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs)).map(|trait_pred| -> Result<_, String> {
+            if trait_pred.def_id() == trait_ref.def_id {
+                return Ok(None);
+            }
+            // explicit dependency edge
+            try!(self.infer_trait_impl(trait_pred.trait_ref, self.def_id(), true));
+            Ok(Some(format!("(_ : {})", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs)))))
         }).collect_results()).filter_map(|x| x);
 
-        Ok(format!("noncomputable definition {}{} := ⦃\n  {},\n{}\n⦄",
+        let methods = try!(items.iter().map(|item| Ok(match item.node {
+            hir::ImplItemKind::Type(_) =>
+                None,
+            hir::ImplItemKind::Method(..) => {
+                // FIXME: Do something more clever than ignoring default method overrides
+                if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
+                    None
+                } else {
+                    Some(format!("{} := {}", item.name, self.transpile_node_id(item.id)))
+                }
+            }
+            hir::ImplItemKind::Const(..) =>
+                throw!("unimplemented: associated const"),
+        })).collect_results()).filter_map(|x| x);
+
+        Ok(format!("noncomputable definition {}{} := ⦃\n  {}\n⦄",
                    Transpiler::transpile_generic_ty_def(
                        &format!("{} [instance]", &self.transpile_node_id(self.node_id)),
                        generics),
                    trait_params.join(""),
-                   try!(self.transpile_trait_ref(trait_ref, &assoc_ty_substs)),
-                   methods.join(",\n")))
+                   iter::once(try!(self.transpile_trait_ref(trait_ref, &assoc_ty_substs))).chain(supertraits).chain(methods).join(",\n  ")))
     }
 
     fn transpile_method(&mut self, node_id: NodeId, type_generics: &hir::Generics, sig: &hir::MethodSig, provided_method: bool) -> TransResult {
