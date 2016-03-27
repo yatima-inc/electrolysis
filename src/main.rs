@@ -159,15 +159,10 @@ fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
 }
 
 fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
-    // does not work if an element of pat is already in the context
-    //match pat {
-    //    [ref x] => format!("let {} := {} in\n{}", x, val, cont),
-    //    _ => format!("match {} with ({}) :=\n{}end\n", val, pat.into_iter().join(", "), cont),
-    //}
-    let pat = pat.into_iter().enumerate().map(|(i, x)| {
-        format!("let {} := {} in", x, get_tuple_elem(val, i, pat.len()))
-    });
-    pat.chain(iter::once(cont.to_owned())).join("\n")
+    match pat {
+        [ref x] => format!("let {} := {} in\n{}", x, val, cont),
+        _ => format!("match {} with ({}) :=\n{}end\n", val, pat.into_iter().join(", "), cont),
+    }
 }
 
 struct Deps {

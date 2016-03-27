@@ -5,7 +5,11 @@ open prod
 open option
 open prod.ops
 
-definition option.bind {A B : Type} (f : A → option B) : option A → option B
+definition option.all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
+| (some x) := P x
+| none     := false
+
+definition option.bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
 | (some x) := f x
 | none     := none
 
@@ -19,20 +23,24 @@ else none
 
 section
   parameters {A B : Type}
-  parameters (F : (A → option B) → option B)
+  parameters (F : (A → option B) → A → option B)
+  variable (R : A → A → Prop)
 
-  private noncomputable definition fix_opt.F (R : A → A → Prop) (x : A) (f : Π (y : A), R y x → option B) : option B :=
-  F (λy, if H : R y x then f y H else none)
+  noncomputable definition fix_opt.F (x : A) (f : Π (y : A), R y x → option B) : option B :=
+  F (λy, if H : R y x then f y H else none) x
 
-  private noncomputable definition fix_opt.fix (R : A → A → Prop) (Hwf: well_founded R) (x : A) : option B :=
+  noncomputable definition fix_opt.fix (Hwf: well_founded R) (x : A) : option B :=
   @well_founded.fix A (λx, option B) R Hwf (fix_opt.F R) x
 
+  noncomputable definition fix_opt.wf_R :=
+  if Hwf : well_founded R then ∀x : A, fix_opt.fix R Hwf x ≠ none else false
+
   noncomputable definition fix_opt (x : A) : option B :=
-  do R ← some_opt (λR, if Hwf : well_founded R then ∀x : A, fix_opt.fix R Hwf x ≠ none else false);
+  do R ← some_opt fix_opt.wf_R;
   if Hwf : well_founded R then fix_opt.fix R Hwf x else none
 
   theorem fix_opt_eq {R : A → A → Prop} [Hwf : well_founded R] (Hf_wf : ∀x : A, fix_opt.fix R Hwf x ≠ none) (x : A) :
-    fix_opt x = F (λx, fix_opt x) :=
+    fix_opt x = F (λx, fix_opt x) x :=
   sorry
 end
 
