@@ -1047,14 +1047,14 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
     let Transpiler { deps, trans_results, .. } = trans;
     let Deps { crate_deps, graph, .. } = deps.into_inner();
 
-    let mut crate_deps = crate_deps.into_iter().map(|c| format!("{}.export", c)).collect_vec();
+    let mut crate_deps = crate_deps.into_iter().map(|c| format!("{}.generated", c)).collect_vec();
     crate_deps.sort();
     let has_pre = base.join("pre.lean").exists();
     if has_pre {
         crate_deps.insert(0, format!("{}.pre", crate_name));
     }
 
-    let mut f = try!(File::create(base.join("export.lean")));
+    let mut f = try!(File::create(base.join("generated.lean")));
     for dep in crate_deps {
         try!(write!(f, "import {}\n", dep));
     }
