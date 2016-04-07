@@ -12,7 +12,7 @@ open prod.ops
 namespace option
   variables {A B : Type}
 
-  theorem all.intro (P : A → Prop) {x x'} (Hxx' : x = some x') (HPx' : P x') : all P x :=
+  theorem all.intro (P : A → Prop) {x x'} (Hxx' : x = some x') (HPx' : P x') : option.all P x :=
   begin
     cases x,
     { apply option.no_confusion Hxx' },
@@ -21,7 +21,7 @@ namespace option
       apply (a_eq⁻¹ ▸ HPx') }
   end
 
-  theorem bind_eq_some {f : A → option B} {x x' y} (Hxx' : x = some x') (Hfx' : f x' = some y) : bind f x = some y :=
+  theorem bind_eq_some {f : A → option B} {x x' y} (Hxx' : x = some x') (Hfx' : f x' = some y) : option.bind f x = some y :=
   begin
     cases x,
     { apply option.no_confusion Hxx' },

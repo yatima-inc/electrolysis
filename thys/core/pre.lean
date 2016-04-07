@@ -5,11 +5,11 @@ open prod
 open option
 open prod.ops
 
-definition option.all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
+protected definition option.all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
 | (some x) := P x
 | none     := false
 
-definition option.bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
+protected definition option.bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
 | (some x) := f x
 | none     := none
 
