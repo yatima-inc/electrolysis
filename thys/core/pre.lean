@@ -1,17 +1,47 @@
 import data.nat
 open bool
+open eq.ops
 open nat
 open prod
 open option
 open prod.ops
 
-protected definition option.all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
-| (some x) := P x
-| none     := false
+namespace option
+  variables {A B : Type}
 
-protected definition option.bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
-| (some x) := f x
-| none     := none
+  protected definition all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
+  | (some x) := P x
+  | none     := false
+
+  protected definition bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
+  | (some x) := f x
+  | none     := none
+
+  theorem all.intro (P : A → Prop) {x x'} (Hxx' : x = some x') (HPx' : P x') : option.all P x :=
+  begin
+    cases x,
+    { apply option.no_confusion Hxx' },
+    { esimp,
+      injection Hxx',
+      apply (a_eq⁻¹ ▸ HPx') }
+  end
+
+  theorem bind_eq_some {f : A → option B} {x x' y} (Hxx' : x = some x') (Hfx' : f x' = some y) : option.bind f x = some y :=
+  begin
+    cases x,
+    { apply option.no_confusion Hxx' },
+    { esimp,
+      injection Hxx',
+      apply (a_eq⁻¹ ▸ Hfx') }
+  end
+
+  theorem neq_none_of_eq_some {A : Type} {x : option A} {y : A} (H : x = some y) : x ≠ none :=
+  begin
+    cases x,
+    { apply option.no_confusion H },
+    { apply not.intro, apply option.no_confusion }
+  end
+end option
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
 
@@ -20,6 +50,14 @@ open [class] classical
 noncomputable definition some_opt {A : Type} (P : A → Prop) : option A :=
 if H : Exists P then some (classical.some H)
 else none
+
+theorem some_opt.ex {A : Type} {P : A → Prop} (x : A) (H : P x) : ∃y, some_opt P = some y ∧ P y :=
+begin
+  apply exists.intro (classical.some (exists.intro x H)),
+  apply and.intro,
+  { apply dif_pos },
+  { apply classical.some_spec }
+end
 
 section
   parameters {A B : Type}

@@ -1,6 +1,4 @@
-import data.option
-import .pre
-import .generated
+import core.generated
 
 open [class] classical
 open core
@@ -8,45 +6,6 @@ open eq.ops
 open nat
 open option
 open prod.ops
-
-namespace option
-  variables {A B : Type}
-
-  theorem all.intro (P : A → Prop) {x x'} (Hxx' : x = some x') (HPx' : P x') : option.all P x :=
-  begin
-    cases x,
-    { apply option.no_confusion Hxx' },
-    { esimp,
-      injection Hxx',
-      apply (a_eq⁻¹ ▸ HPx') }
-  end
-
-  theorem bind_eq_some {f : A → option B} {x x' y} (Hxx' : x = some x') (Hfx' : f x' = some y) : option.bind f x = some y :=
-  begin
-    cases x,
-    { apply option.no_confusion Hxx' },
-    { esimp,
-      injection Hxx',
-      apply (a_eq⁻¹ ▸ Hfx') }
-  end
-
-  theorem neq_none_of_eq_some {A : Type} {x : option A} {y : A} (H : x = some y) : x ≠ none :=
-  begin
-    cases x,
-    { apply option.no_confusion H },
-    { apply not.intro, apply option.no_confusion }
-  end
-end option 
-
-theorem some_opt.ex {A : Type} {P : A → Prop} (x : A) (H : P x) : ∃y, some_opt P = some y ∧ P y :=
-begin
-  apply exists.intro (classical.some (exists.intro x H)),
-  apply and.intro,
-  { apply dif_pos },
-  { apply classical.some_spec }
-end
-
-open option
 
 theorem loop
   {A : Type}
@@ -102,7 +61,7 @@ section
   include Hstart Hdoes_step Hstep
 
   private definition variant (s : State) := Range.end_ s.2 - Range.start s.2
-  
+
   inductive invariant (s : State) : Prop :=
   mk : Π(Hlo : l ≤ Range.start s.2)
   (Hhi : Range.start s.2 ≤ max l r)
@@ -136,39 +95,47 @@ section
     { intro s f Hinv,
       cases Hinv, cases s with res iter,
       esimp at *,
+      esimp [iter.ops.Range_A_.Iterator.next, cmp.PartialOrd.lt, mem.swap, num.u32.One.one, ops.u32.Add.add],
+      esimp [cmp.impls.u32.PartialOrd.partial_cmp, cmp.impls.u32.Ord.cmp],
       cases classical.em (Range.start iter = Range.end_ iter) with Hend Hnot_end,
-      { esimp [iter.ops.Range_A_.Iterator.next, cmp.PartialOrd.lt],
-        esimp [cmp.impls.u32.PartialOrd.partial_cmp, cmp.impls.u32.Ord.cmp],
-        rewrite [if_pos Hend],
-        esimp [num.u32.One.one, ops.u32.Add.add],
-        rewrite [decidable_eq_decidable (classical.prop_decidable false) decidable_false, if_false],
+      { rewrite [if_pos Hend],
         esimp,
+        rewrite [decidable_eq_decidable (classical.prop_decidable false) decidable_false, if_false],
         apply exists.intro,
         apply or.inl rfl,
       },
-      { esimp [iter.ops.Range_A_.Iterator.next, cmp.PartialOrd.lt],
-        esimp [cmp.impls.u32.PartialOrd.partial_cmp, cmp.impls.u32.Ord.cmp],
-        rewrite [if_neg Hnot_end],
+      { rewrite [if_neg Hnot_end],
         cases classical.em (Range.start iter < Range.end_ iter) with H₁ H₂,
         { rewrite [if_pos H₁],
-          esimp [mem.swap],
-          rewrite [decidable_eq_decidable (classical.prop_decidable true) decidable_true, if_true],
           esimp,
+          rewrite [decidable_eq_decidable (classical.prop_decidable true) decidable_true, if_true],
           apply exists.intro,
           apply or.inr,
           apply Hdoes_step Hlo (Hend_ ▸ H₁) HP
         },
         { rewrite [if_neg H₂],
-          esimp [num.u32.One.one, ops.u32.Add.add, mem.swap],
-          rewrite [decidable_eq_decidable (classical.prop_decidable false) decidable_false, if_false],
           esimp,
+          rewrite [decidable_eq_decidable (classical.prop_decidable false) decidable_false, if_false],
           apply exists.intro,
-          apply or.inl rfl
+          apply or.inl rfl,
         }
       }
     },
-    { }
-  end
+    { intro f s s' Hinv,
+      cases Hinv, cases s with res iter,
+      esimp at *,
+      esimp [iter.ops.Range_A_.Iterator.next, cmp.PartialOrd.lt, mem.swap, num.u32.One.one, ops.u32.Add.add],
+      esimp [cmp.impls.u32.PartialOrd.partial_cmp, cmp.impls.u32.Ord.cmp],
+      cases classical.em (Range.start iter = Range.end_ iter) with Hend Hnot_end,
+      { rewrite [if_pos Hend],
+        esimp,
+        rewrite [decidable_eq_decidable (classical.prop_decidable false) decidable_false, if_false],
+        esimp,
+        intro Hfs',
+      },
+      { rewrite [if_neg Hnot_end],
+      }
+    }
 end
 
 end core
