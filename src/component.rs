@@ -41,7 +41,7 @@ impl Component {
             }
         }
 
-        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) -> Result<(), String> {
+        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *rv {
                 Rvalue::Use(ref op) => operand(op, uses),
                 Rvalue::UnaryOp(_, ref op) => operand(op, uses),
@@ -56,9 +56,11 @@ impl Component {
                     }
                 }
                 Rvalue::Cast(_, ref op, _) => operand(op, uses),
-                _ => throw!("unimplemented: find_nonlocals rvalue {:?}", rv),
+                Rvalue::Repeat(ref op, _) => operand(op, uses),
+                Rvalue::Len(ref lv) => uses.push(lv),
+                Rvalue::Slice { ref input, .. } => uses.push(input),
+                Rvalue::Box(_) | Rvalue::InlineAsm(_) => {}
             }
-            Ok(())
         }
 
         let mut defs = Vec::new();
@@ -73,7 +75,7 @@ impl Component {
                     }
                     StatementKind::Assign(ref lv, ref rv) => {
                         defs.push(lv);
-                        try!(rvalue(rv, &mut uses));
+                        rvalue(rv, &mut uses);
                     }
                 }
             }

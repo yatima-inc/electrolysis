@@ -63,12 +63,11 @@ definition "unsigned_checked_shl (a::'a::len word) b = Some (a << (unat b))"
 definition "unsigned_checked_shr (a::'a::len word) b = Some (a >> (unat b))"
 *)
 
-(*
 subsubsection {* Manually-Translated Types *}
 
-typedef 'a slice = "{xs::'a list. length xs < 2^native_bs}"
-by (rule exI[where x="[]"], simp)
-*)
+type_synonym 'a slice = "'a list"
+
+datatype 'a core_slice_Iter = core_slice_Iter "'a slice"
 
 subsection {* Functions *}
 
@@ -83,6 +82,8 @@ text {* The original implementation of @{verbatim "core::mem::swap"} uses (via u
   give a straight-forward manual implementation. *}
 
 definition [simp]: "core_mem_swap x y = Some ((),y,x)"
+
+definition [simp]: "core_slice__T__SliceExt_len x = Some (length x)"
 
 end
 

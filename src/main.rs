@@ -548,7 +548,12 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         if adt_def.adt_kind() == ty::AdtKind::Struct && !adt_def.struct_variant().is_tuple_struct() { ".make" } else { "" },
                         ops.iter().join(" "))
             }
-            _ => return Err(format!("unimplemented: rvalue {:?}", rv)),
+            Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
+                let ops = try!(ops.into_iter().map(|op| self.get_operand(op)).collect_results());
+                iter::once(self.transpile_def_id(def_id)).chain(ops).join(" ")
+            }
+            Rvalue::Len(ref lv) => format!("length {}", try!(self.get_lvalue(lv))),
+            _ => throw!("unimplemented: rvalue {:?}", rv),
         }))
     }
 
@@ -738,19 +743,20 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     rec!(bb_if),
                     rec!(bb_else)),
                 Terminator::Return => try!(self.return_expr()),
-                Terminator::Call {
-                    func: Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }),
-                    ref args, destination: Some((_, target)), ..
-                } => {
-                    let call = match self.tcx.trait_of_item(def_id) {
-                        Some(_) => try!(self.transpile_trait_call(def_id, substs)),
-                        _ => {
-                            let name = self.transpile_def_id(def_id);
-                            if name.starts_with("core_intrinsics") && !INTRINSICS.contains(&name) {
-                                throw!("unimplemented intrinsics: {}", name);
+                Terminator::Call { ref func, ref args, destination: Some((_, target)), ..  } => {
+                    let call = match *func {
+                        Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => match self.tcx.trait_of_item(def_id) {
+                            Some(_) => try!(self.transpile_trait_call(def_id, substs)),
+                            _ => {
+                                let name = self.transpile_def_id(def_id);
+                                if name.starts_with("core_intrinsics") && !INTRINSICS.contains(&name) {
+                                    throw!("unimplemented intrinsics: {}", name);
+                                }
+                                name
                             }
-                            name
-                        }
+                        },
+                        Operand::Constant(_) => unreachable!(),
+                        Operand::Consume(ref lv) => try!(self.get_lvalue(lv)),
                     };
                     let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
                     let call = iter::once(call).chain(args).join(" ");
@@ -1080,6 +1086,7 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
 
     let ignored: HashSet<_> = vec![
         "core_mem_swap",
+        "core_slice_Iter",
     ].into_iter().collect();
 
     for idx in toposort(&condensed) {
