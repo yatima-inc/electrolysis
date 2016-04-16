@@ -1,1 +1,11 @@
 target
+.gdb_history
+TODO
+build.ninja
+.ninja_*
+#*
+*~
+*.d
+*.clean
+*.ilean
+*.olean

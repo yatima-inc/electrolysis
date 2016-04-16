@@ -49,27 +49,6 @@ notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
 
 open [class] classical
 
-noncomputable definition some_opt {A : Type} (P : A → Prop) : option A :=
-if H : Exists P then some (classical.some H)
-else none
-
-theorem some_opt.ex {A : Type} {P : A → Prop} (x : A) (H : P x) : ∃y, some_opt P = some y ∧ P y :=
-begin
-  apply exists.intro (classical.some (exists.intro x H)),
-  apply and.intro,
-  { apply dif_pos },
-  { apply classical.some_spec }
-end
-
-theorem dite_else_false {H : Prop} {t : H → Prop} (Hdite : if c : H then t c else false) : H :=
-begin
-  apply dite H,
-  { apply id },
-  { intro Hneg,
-    rewrite (dif_neg Hneg) at Hdite,
-    apply false.elim Hdite, }
-end
-
 section
   parameters {State : Type}
 
@@ -80,19 +59,21 @@ section
 
   noncomputable definition loop.F (s : State) (f : Π (s' : State), R s' s → option State) : option State :=
   match body s with
-  | (s', continue) := if H : R s' s then f s' H else none
-  | (s', break)    := some s'
+  | (s', loop.control.continue) := if H : R s' s then f s' H else none
+  | (s', loop.control.break)    := some s'
   end
 
   noncomputable definition loop.fix (Hwf: well_founded R) (s : State) : option State :=
   well_founded.fix (loop.F R) s
 
   noncomputable definition loop.wf_R :=
-  if Hwf : well_founded R then ∀s : State, loop.fix R Hwf s ≠ none else false
+  ∃Hwf : well_founded R, ∀s : State, loop.fix R Hwf s ≠ none
 
   noncomputable definition loop (s : State) : option State :=
-  do R ← some_opt loop.wf_R;
-  if Hwf : well_founded R then loop.fix R Hwf s else none
+  if Hex : ∃R, loop.wf_R R then
+    let R := classical.some Hex in
+    loop.fix R (classical.some (classical.some_spec Hex)) s
+  else none
 
   /-theorem loop_inv
     {A : Type}
@@ -114,19 +95,39 @@ section
     | (s', continue) := loop s'
     | (s', break)    := some s'
     end :=
-  have ∀(s : State), loop.fix R Hwf_R s ≠ none, from sorry,
-  obtain R' (HR' : some_opt loop.wf_R = some R') (Hloop_wf_R' : loop.wf_R R'),
-  from some_opt.ex R (decidable.rec_on_true _ this),
+  have Hex : ∃R, loop.wf_R R,
   begin
-    clear H_obtain_from,
-    note Hwf_R' := dite_else_false Hloop_wf_R',
+    apply exists.intro R,
+    apply exists.intro Hwf_R,
+    intro s,
+    exact @well_founded.induction State R Hwf_R _ s
+    (begin
+      intro s' Hind,
+      rewrite [↑loop.fix, well_founded.fix_eq, ↑loop.F],
+      note HR' := HR s',
+      revert HR',
+      cases body s' with s'' c,
+      intro HR',
+      cases c,
+      { rewrite [dif_pos (HR' s'' rfl)],
+        apply Hind _ (HR' s'' rfl) },
+      { contradiction }
+    end)
+  end,
+  /-obtain R' (HR' : some_opt loop.wf_R = some R') (Hloop_wf_R' : loop.wf_R R'),
+  from some_opt.ex R (decidable.rec_on_true _ this),-/
+  begin
+    cases body s,
+    rewrite [↑loop, ↑loop.fix, dif_pos Hex, dif_pos Hex],
+  end
+    /-note Hwf_R' := dite_else_false Hloop_wf_R',
     rewrite [↑loop, HR', ▸*, dif_pos Hwf_R'],
     rewrite [↑loop.fix, well_founded.fix_eq, ↑loop.F],
     apply (congr_arg (prod.cases_on (body s))),
     apply funext, intro s',
     have R' s' s, from sorry,
     rewrite [dif_pos this, dif_pos Hwf_R'],
-  end
+  end-/
 end
 
 abbreviation u8 := nat
