@@ -1,0 +1,7 @@
+rustc_args = "../rust/src/libcore/lib.rs"
+ignore = [
+  "core_mem_swap",
+]
+targets = [
+  "core_slice__T__SliceExt_binary_search",
+]

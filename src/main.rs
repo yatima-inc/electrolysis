@@ -4,11 +4,9 @@
 
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 
-extern crate clap;
 extern crate itertools;
-#[macro_use]
-extern crate lazy_static;
 extern crate petgraph;
+extern crate toml;
 
 #[macro_use]
 extern crate rustc;
@@ -71,21 +69,29 @@ trait StringResultIterator<E> : Iterator<Item=Result<String, E>> where Self: Siz
 impl<T, E> StringResultIterator<E> for T where T: Iterator<Item=Result<String, E>> { }
 
 fn main() {
-    let matches = clap::App::new("rustabelle")
-        .arg(clap::Arg::with_name("only")
-             .help("only export the listed items and their dependencies")
-             .long("only")
-             .takes_value(true))
-        .arg(clap::Arg::with_name("RUSTC_ARGS")
-             .help("arguments forwarded to rustc")
-             .multiple(true)
-             .use_delimiter(false))
-        .get_matches();
+    let crate_name = match &std::env::args().collect_vec()[..] {
+        [_, ref crate_name] => crate_name.clone(),
+        _ => panic!("Expected crate name as single cmdline argument"),
+    };
+    let sysroot = std::process::Command::new("rustc")
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        .unwrap()
+        .stdout;
+    let sysroot = path::PathBuf::from(String::from_utf8(sysroot).unwrap().trim());
 
-    let targets = matches.values_of("only").map(|targets| targets.map(str::to_string).collect_vec());
-    let rustc_args = iter::once("rustc").chain(matches.values_of("RUSTC_ARGS").unwrap()).map(str::to_string).collect_vec();
-    let rustc_matches = rustc_driver::handle_options(rustc_args).expect("error parsing rustc args");
-    let options = session::config::build_session_options(&rustc_matches);
+    let mut config = String::new();
+    let mut config_file = File::open(path::Path::new("thys").join(format!("{}.toml", crate_name))).unwrap();
+    config_file.read_to_string(&mut config).unwrap();
+    let config: toml::Value = config.parse().unwrap();
+
+    let rustc_args = config.lookup("rustc_args").expect("Missing config item 'rustc_args'");
+    let rustc_args = iter::once("rustc").chain(rustc_args.as_str().unwrap().split(" ")).map(|s| s.to_string());
+    let rustc_matches = rustc_driver::handle_options(rustc_args.collect()).expect("error parsing rustc args");
+    let mut options = session::config::build_session_options(&rustc_matches);
+    options.crate_name = Some(crate_name);
+    options.maybe_sysroot = Some(sysroot);
     let input = match &rustc_matches.free[..] {
         [ref file] => path::PathBuf::from(file),
         _ => panic!("expected input file"),
@@ -96,14 +102,18 @@ fn main() {
         diagnostics::registry::Registry::new(&rustc::DIAGNOSTICS),
         cstore.clone()
     );
-    let cfg = session::config::build_configuration(&sess);
+    let rustc_cfg = session::config::build_configuration(&sess);
     println!("Compiling up to MIR...");
-    driver::compile_input(&sess, &cstore, cfg,
+    let _ = driver::compile_input(&sess, &cstore, rustc_cfg,
         &session::config::Input::File(input),
         &None, &None, None, &driver::CompileController {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
-                callback: Box::new(|state| transpile_crate(&state, targets.as_ref()).unwrap()),
+                callback: Box::new(|state| {
+                    if !sess.has_errors() {
+                        transpile_crate(&state, &config).unwrap();
+                    }
+                }),
                 run_callback_on_error: false,
             },
             .. driver::CompileController::basic()
@@ -120,11 +130,10 @@ struct MaybeValue {
 impl MaybeValue {
     fn total<T: Into<String>>(val: T) -> MaybeValue { MaybeValue { val: val.into(), total: true } }
     fn partial<T: Into<String>>(val: T) -> MaybeValue { MaybeValue { val: val.into(), total: false } }
+}
 
-    fn map<F>(self, f: F) -> MaybeValue
-        where F: Fn(String) -> String {
-        MaybeValue { val: f(self.val), ..self }
-    }
+fn toml_value_as_str_array(val: &toml::Value) -> Vec<&str> {
+    val.as_slice().unwrap().iter().map(|t| t.as_str().unwrap()).collect()
 }
 
 fn mk_isabelle_name(s: &str) -> String {
@@ -187,6 +196,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     mir_map: &'a MirMap<'tcx>,
     trans_results: HashMap<NodeId, TransResult>,
     deps: RefCell<Deps>,
+    config: &'a toml::Value,
 
     // inside of fns
     node_id: ast::NodeId,
@@ -233,14 +243,6 @@ fn transpile_node_id(tcx: &TyCtxt, node_id: ast::NodeId) -> String {
     transpile_def_id(tcx, tcx.map.local_def_id(node_id))
 }
 
-lazy_static! {
-    static ref INTRINSICS: HashSet<String> = vec![
-        "core_intrinsics_add_with_overflow",
-        "core_intrinsics_sub_with_overflow",
-        "core_intrinsics_mul_with_overflow",
-    ].into_iter().map(str::to_string).collect();
-}
-
 impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn add_dep(&self, did: DefId) {
         if let Some(node_id) = self.tcx.map.as_local_node_id(did) {
@@ -265,7 +267,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn transpile_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult {
-        let substs = try!(trait_ref.substs.types.iter().map(|ty| {
+        // FIXME
+        let _ = try!(trait_ref.substs.types.iter().map(|ty| {
             self.transpile_ty(ty).map(|s| mk_isabelle_name(&s))
         }).collect_results());
         Ok(self.transpile_def_id(trait_ref.def_id))
@@ -747,13 +750,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     let call = match *func {
                         Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => match self.tcx.trait_of_item(def_id) {
                             Some(_) => try!(self.transpile_trait_call(def_id, substs)),
-                            _ => {
-                                let name = self.transpile_def_id(def_id);
-                                if name.starts_with("core_intrinsics") && !INTRINSICS.contains(&name) {
-                                    throw!("unimplemented intrinsics: {}", name);
-                                }
-                                name
-                            }
+                            _ => self.transpile_def_id(def_id),
                         },
                         Operand::Constant(_) => unreachable!(),
                         Operand::Consume(ref lv) => try!(self.get_lvalue(lv)),
@@ -1036,9 +1033,9 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     }
 }
 
-fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) -> io::Result<()> {
+fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
-    let crate_name = state.crate_name.expect("missing --crate-name rust arg");
+    let crate_name = state.crate_name.unwrap();
 
     let mut trans = Transpiler {
         tcx: tcx,
@@ -1049,6 +1046,7 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
             def_idcs: HashMap::new(),
             graph: Graph::new(),
         }),
+        config: config,
         node_id: 0,
         param_names: Vec::new(),
         trait_param_names: Vec::new(),
@@ -1070,10 +1068,15 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
     try!(write!(f, "theory {}_export\nimports\n{}\nbegin\n\n", crate_name,
                 crate_deps.into_iter().map(|file| format!("  {}", file)).join("\n")));
 
-    let targets: Option<HashSet<NodeId>> = targets.map(|targets| {
+    let ignored: HashSet<_> = match config.lookup("ignore") {
+        Some(ignored) => toml_value_as_str_array(ignored).into_iter().collect(),
+        None => HashSet::new(),
+    };
+    let targets: Option<HashSet<NodeId>> = config.lookup("targets").map(|targets| {
+        let targets: HashSet<_> = toml_value_as_str_array(targets).into_iter().collect();
         let targets = graph.node_indices().filter(|&ni| {
             let name = transpile_node_id(tcx, graph[ni]);
-            targets.iter().any(|t| t == &name)
+            targets.contains(&name as &str)
         });
         let rev = petgraph::visit::Reversed(&graph);
         targets.flat_map(|ni| petgraph::visit::DfsIter::new(&rev, ni)).map(|ni| graph[ni]).collect()
@@ -1083,11 +1086,6 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
     let condensed = condensation(graph, /* make_acyclic */ true);
     //try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
     let mut failed = HashSet::new();
-
-    let ignored: HashSet<_> = vec![
-        "core_mem_swap",
-        "core_slice_Iter",
-    ].into_iter().collect();
 
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
