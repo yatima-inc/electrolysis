@@ -278,8 +278,9 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(match ty.sty {
             ty::TypeVariants::TyBool => "bool".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
-            //ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
+            ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
+            ty::TypeVariants::TyStr => "string".to_string(),
             ty::TypeVariants::TyTuple(ref tys) => match &tys[..] {
                 [] => "unit".to_string(),
                 _ => format!("({})", try!(tys.iter().map(|ty| self.transpile_ty(ty)).join_results(" \\<times> "))),
@@ -300,9 +301,10 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 &self.transpile_def_id(adt_def.did)
             ),
             ty::TypeVariants::TyRef(_, ref data) => try!(self.transpile_ty(data.ty)),
+            ty::TypeVariants::TyRawPtr(ref data) => format!("{} pointer", try!(self.transpile_ty(data.ty))),
             ty::TypeVariants::TyParam(ref param) => format!("'{}", param.name),
             ty::TypeVariants::TyProjection(ref proj) => format!("'{}_{}", try!(self.transpile_trait_ref(proj.trait_ref)), proj.item_name),
-            ty::TypeVariants::TySlice(ref ty) => format_generic_ty(iter::once(try!(self.transpile_ty(ty))), "slice"),
+            ty::TypeVariants::TySlice(ref ty) => format!("{} slice", try!(self.transpile_ty(ty))),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
@@ -420,6 +422,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     }
                     ref ty => throw!("unimplemented: accessing field of {:?}", ty),
                 }),
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
+                Ok(format!("({} ! {})", try!(self.get_lvalue(base)), try!(self.get_operand(idx)))),
             _ => Err(format!("unimplemented: loading {:?}", lv)),
         }
     }
@@ -478,11 +482,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(match *val {
             ConstVal::Bool(true) => "True".to_string(),
             ConstVal::Bool(false) => "False".to_string(),
-            ConstVal::Integral(i) => match i.int_type() {
-                Some(syntax::attr::IntType::UnsignedInt(_)) =>
+            ConstVal::Integral(i) => match i.int_type().unwrap() {
+                syntax::attr::IntType::SignedInt(_) =>
+                    (i.to_u64_unchecked() as i64).to_string(),
+                syntax::attr::IntType::UnsignedInt(_) =>
                     i.to_u64_unchecked().to_string(),
-                _ => throw!("unimplemented: literal {:?}", val),
             },
+            ConstVal::Str(ref s) => format!("''{}''", s),
             _ => throw!("unimplemented: literal {:?}", val),
         })
     }
@@ -522,20 +528,25 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         BinOp::Add => "+",
                         BinOp::Sub => "-",
                         BinOp::Mul => "*",
-                        BinOp::BitXor => "XOR",
-                        BinOp::BitAnd => "AND",
-                        BinOp::BitOr => "OR",
                         BinOp::Eq => "=",
                         BinOp::Lt => "<",
                         BinOp::Le => "<=",
                         BinOp::Ne => "\\<noteq>",
                         BinOp::Ge => ">=",
                         BinOp::Gt => ">",
-                        _ => unreachable!(),
+                        _ => throw!("unimplemented: operator {:?}", op),
                     }, so2))
                 })
             }
-            Rvalue::Cast(CastKind::Misc, ref op, _) => try!(self.get_operand(op)),
+            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if self.mir().operand_ty(self.tcx, op).is_integral() && ty.is_integral() => {
+                let sop = try!(self.get_operand(op));
+                match (self.mir().operand_ty(self.tcx, op).is_signed(), ty.is_signed()) {
+                    (false, false) => sop,
+                    (false, true) => format!("(int {})", sop),
+                    (true, false) => format!("(nat {})", sop),
+                    (true, true) => sop,
+                }
+            }
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) => try!(self.get_lvalue(lv)),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 let mut ops = try!(ops.iter().map(|op| self.get_operand(op)).collect_results());
@@ -759,8 +770,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     let call = iter::once(call).chain(args).join(" ");
                     try!(self.set_lvalues_option(try!(self.call_return_dests(&terminator)), &call)) + &&rec!(target)
                 }
-                Terminator::Call { .. } =>
-                    throw!("unimplemented: call {:?}", terminator),
+                Terminator::Call { destination: None, .. } =>
+                    "None\n".to_string(),
                 Terminator::Switch { ref discr, ref adt_def, ref targets } => {
                     let value = try!(self.get_lvalue(discr));
                     let arms: TransResult = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
@@ -852,24 +863,25 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn transpile_struct(&self, name: &str, data: &hir::VariantData, generics: &hir::Generics) -> TransResult {
-        match *data {
+        Ok(match *data {
             hir::VariantData::Struct(ref fields, _) => {
                 let fields: TransResult = fields.iter().map(|f| {
                     Ok(format!("  {}_{} :: \"{}\"", name, f.name,
                                try!(self.transpile_hir_ty(&*f.ty))))
                 }).join_results("\n");
-                Ok(format!("record {} =\n{}",
-                           self.transpile_generics(generics, name),
-                           try!(fields)))
+                format!("record {} =\n{}",
+                        self.transpile_generics(generics, name),
+                        try!(fields))
             }
             hir::VariantData::Tuple(ref fields, _) => {
                 let fields = try!(fields.iter().map(|f| {
                     self.transpile_hir_ty(&*f.ty)
                 }).join_results(" \\<times> "));
-                Ok(format!("datatype {} =\n{} \"{}\"", self.transpile_generics(generics, name), name, fields))
+                format!("datatype {} =\n{} \"{}\"", self.transpile_generics(generics, name), name, fields)
             }
-            _ => throw!("unimplemented: struct {:?}", data)
-        }
+            hir::VariantData::Unit(_) =>
+                format!("datatype {} = {}", self.transpile_generics(generics, name), name)
+        })
     }
 
     fn transpile_enum(&self, name: &str, def: &hir::EnumDef, generics: &hir::Generics) -> TransResult {
@@ -903,7 +915,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let trait_name = self.transpile_def_id(trait_def_id);
 
         let assoc_ty_params = try!(self.transpile_associated_types(trait_def_id));
-        let supertraits = try!(
+        let supertraits: Vec<_> = try!(
             self.trait_predicates_without_markers(trait_def_id)
             .filter(|trait_pred| trait_pred.def_id() != trait_def_id)
             .map(|trait_pred| -> Result<_, String> {
@@ -914,22 +926,28 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                             format_generic_ty(try!(trait_pred.trait_ref.substs.types.iter().map(|ty| self.transpile_ty(ty)).collect_results()).chain(ty_params.clone()),
                             &self.transpile_def_id(trait_pred.def_id()))))
             })
-            .collect_results());
+            .collect());
 
-        let fns = try!(items.into_iter().filter_map(|item| match item.node {
+        let only_path = format!("traits.{}.only", &trait_name);
+        let only: Option<HashSet<_>> = self.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
+        let fns: Vec<_> = try!(items.into_iter().filter_map(|item| match item.node {
             // FIXME: Do something more clever than ignoring default method overrides
-            hir::TraitItem_::MethodTraitItem(_, None) => {
+            hir::TraitItem_::MethodTraitItem(_, None) if (|| only.iter().all(|only| only.contains(&item.name.to_string() as &str)))() => {
                 Some(self.transpile_ty(self.tcx.node_id_to_type(item.id)).map(|ty| {
                     (format!("{}_{}", trait_name, item.name), ty)
                 }))
             }
             _ => None,
-        }).collect_results());
+        }).collect());
+        if supertraits.is_empty() && fns.is_empty() {
+            return Ok(String::new())
+        }
+
         Ok(format!("record {} =\n{}",
                    format_generic_ty(
                        generics.ty_params.iter().map(|p| format!("'{}", p.name)).chain(iter::once("'Self".to_string())).chain(assoc_ty_params),
                        &trait_name),
-                   supertraits.chain(fns).map(|(name, ty)| {
+                   supertraits.into_iter().chain(fns).map(|(name, ty)| {
                        format!("  {} :: \"{}\"", name, ty)
                    }).join("\n")))
     }
@@ -949,12 +967,15 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let field_name = try!(self.transpile_trait_ref(trait_pred.trait_ref));
             let trait_impl = try!(self.infer_trait_impl(trait_pred.trait_ref));
             Ok(Some(format!("  {}_{} = {}", trait_name, field_name, try!(trait_impl.to_string(self)))))
-        }).collect_results()).filter_map(|x| x);
+        }).collect_results()).filter_map(|x| x).collect_vec();
 
-        let methods = try!(items.iter().map(|item| match item.node {
+        let only_path = format!("traits.{}.only", &trait_name);
+        let only: Option<HashSet<_>> = self.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
+        let fns = try!(items.iter().map(|item| match item.node {
             hir::ImplItemKind::Method(..) => {
                 // FIXME: Do something more clever than ignoring default method overrides
-                if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
+                if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) ||
+                    !only.iter().all(|only| only.contains(&item.name.to_string() as &str)) {
                     return Ok(None)
                 }
 
@@ -965,11 +986,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             hir::ImplItemKind::Type(..) => Ok(None),
             hir::ImplItemKind::Const(..) =>
                 throw!("unimplemented: associated const"),
-        }).collect_results()).filter_map(|x| x);
+        }).collect_results()).filter_map(|x| x).collect_vec();
+        if supertrait_impls.is_empty() && fns.is_empty() {
+            return Ok(String::new())
+        }
 
         Ok(format!("definition[simp]: \"{} = \\<lparr>\n{}\n\\<rparr>\"",
                    iter::once(&self.transpile_node_id(self.node_id)).chain(&trait_params).join(" "),
-                   supertrait_impls.chain(methods).join(",\n")))
+                   supertrait_impls.into_iter().chain(fns).join(",\n")))
     }
 
     fn transpile_method(&mut self, node_id: NodeId, sig: &hir::MethodSig, provided_method: bool) -> TransResult {

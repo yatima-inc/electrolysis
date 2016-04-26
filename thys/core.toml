@@ -5,3 +5,7 @@ ignore = [
 targets = [
   "core_slice__T__SliceExt_binary_search",
 ]
+
+[traits.core_slice_SliceExt]
+# only method called from default methods, everything else should be static calls
+only = ["len"]

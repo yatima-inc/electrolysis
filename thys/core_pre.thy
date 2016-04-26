@@ -3,7 +3,6 @@ section {* Language Primitives *}
 theory core_pre
 imports
   Main
-  "~~/src/HOL/Word/Word"
   "~~/src/HOL/Library/While_Combinator"
 begin
 
@@ -52,22 +51,30 @@ type_synonym u32 = nat
 type_synonym u64 = nat
 type_synonym usize = nat
 
-definition checked_sub :: "nat \<Rightarrow> nat \<Rightarrow> nat option" where
-  "checked_sub n m \<equiv> if n \<ge> m then Some (n - m) else None"
-
+definition "checked_sub n m \<equiv> if n \<ge> m then Some (n - m) else None"
 definition "checked_div n m \<equiv> if m \<noteq> 0 then Some (n div m) else None"
 definition "checked_mod n m \<equiv> if m \<noteq> 0 then Some (n mod m) else None"
 
-(* TODO
-definition "unsigned_checked_shl (a::'a::len word) b = Some (a << (unat b))"
-definition "unsigned_checked_shr (a::'a::len word) b = Some (a >> (unat b))"
-*)
+(* TODO: actually check something *)
+definition "checked_shl n m = n * 2^m"
+definition "checked_shr n m = n div 2^m"
+
+type_synonym i8 = int
+type_synonym i16 = int
+type_synonym i32 = int
+type_synonym i64 = int
+type_synonym isize = int
 
 subsubsection {* Manually-Translated Types *}
 
-type_synonym 'a slice = "'a list"
+type_synonym 'a mem = "'a list"
+type_synonym 'a slice = "'a mem"
 
-datatype 'a core_slice_Iter = core_slice_Iter "'a slice"
+record 'a pointer =
+  pointer_data :: "'a mem"
+  pointer_pos  :: nat
+
+(* datatype 'a core_slice_Iter = core_slice_Iter "'a slice" *)
 
 subsection {* Functions *}
 
