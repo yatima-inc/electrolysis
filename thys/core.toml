@@ -1,8 +1,12 @@
 rustc_args = "../rust/src/libcore/lib.rs"
 ignore = [
   "core_mem_swap",
+  "core_raw_Slice",
+  "core_slice__T__SliceExt_len",
+  "core_slice__T__SliceExt_as_ptr",
 ]
 targets = [
+  "core_slice__T__SliceExt_get_unchecked",
   "core_slice__T__SliceExt_binary_search",
 ]
 

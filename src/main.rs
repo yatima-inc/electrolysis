@@ -304,7 +304,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ty::TypeVariants::TyRawPtr(ref data) => format!("{} pointer", try!(self.transpile_ty(data.ty))),
             ty::TypeVariants::TyParam(ref param) => format!("'{}", param.name),
             ty::TypeVariants::TyProjection(ref proj) => format!("'{}_{}", try!(self.transpile_trait_ref(proj.trait_ref)), proj.item_name),
-            ty::TypeVariants::TySlice(ref ty) => format!("{} slice", try!(self.transpile_ty(ty))),
+            ty::TypeVariants::TySlice(ref ty) => format!("{} core_raw_Slice", try!(self.transpile_ty(ty))),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
@@ -423,7 +423,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     ref ty => throw!("unimplemented: accessing field of {:?}", ty),
                 }),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
-                Ok(format!("({} ! {})", try!(self.get_lvalue(base)), try!(self.get_operand(idx)))),
+                Ok(format!("(core_slice__T__SliceExt_get_unchecked {} {})", try!(self.get_lvalue(base)), try!(self.get_operand(idx)))),
             _ => Err(format!("unimplemented: loading {:?}", lv)),
         }
     }
@@ -566,7 +566,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 let ops = try!(ops.into_iter().map(|op| self.get_operand(op)).collect_results());
                 iter::once(self.transpile_def_id(def_id)).chain(ops).join(" ")
             }
-            Rvalue::Len(ref lv) => format!("length {}", try!(self.get_lvalue(lv))),
+            Rvalue::Len(ref lv) => format!("core_raw_Slice_len {}", try!(self.get_lvalue(lv))),
             _ => throw!("unimplemented: rvalue {:?}", rv),
         }))
     }

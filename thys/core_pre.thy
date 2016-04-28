@@ -68,19 +68,43 @@ type_synonym isize = int
 subsubsection {* Manually-Translated Types *}
 
 type_synonym 'a mem = "'a list"
-type_synonym 'a slice = "'a mem"
 
 record 'a pointer =
   pointer_data :: "'a mem"
   pointer_pos  :: nat
 
-(* datatype 'a core_slice_Iter = core_slice_Iter "'a slice" *)
+record 'T core_raw_Slice =
+  core_raw_Slice_data :: "'T pointer"
+  core_raw_Slice_len :: "usize"
+
+definition[simp]: "core_ptr_read p \<equiv> if pointer_pos p < length (pointer_data p)
+  then Some (pointer_data p ! pointer_pos p)
+  else None"
+
+definition[simp]: "core_intrinsics_offset p n \<equiv>
+  let pos' = int (pointer_pos p) + n in
+  if 0 \<le> pos' \<and> nat pos' \<le> length (pointer_data p)
+  then Some (p\<lparr>pointer_pos := nat pos'\<rparr>)
+  else None"
+
+definition[simp]: "core_slice__T__SliceExt_as_ptr s =
+  core_intrinsics_offset (core_raw_Slice_data s) (int (core_raw_Slice_len s))"
+
+definition[simp]: "core_slice__T__SliceExt_len s \<equiv> Some (core_raw_Slice_len s)"
+
+(*definition[simp]: "read_slice s n \<equiv> if n < core_raw_Slice_len s
+  then
+    do p \<leftarrow> core_intrinsics_offset (core_raw_Slice_data s) (int n);
+    core_ptr_read p
+  else None"*)
 
 subsection {* Functions *}
 
 subsubsection {* Intrinsics *}
 
 abbreviation "core_intrinsics_add_with_overflow n m \<equiv> Some (n + m, False)"
+
+abbreviation "core_intrinsics_transmute x \<equiv> Some x"
 
 subsubsection {* Manually-Translated Functions *}
 
@@ -89,8 +113,6 @@ text {* The original implementation of @{verbatim "core::mem::swap"} uses (via u
   give a straight-forward manual implementation. *}
 
 definition [simp]: "core_mem_swap x y = Some ((),y,x)"
-
-definition [simp]: "core_slice__T__SliceExt_len x = Some (length x)"
 
 end
 
