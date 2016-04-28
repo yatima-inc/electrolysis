@@ -15,6 +15,7 @@ pub struct Component {
     pub exits: HashSet<usize>,
     pub live_defs: HashSet<String>,
     pub ret_val: String,
+    pub state_val: String,
 }
 
 impl Component {
@@ -33,7 +34,7 @@ impl Component {
         }
     }
 
-    pub fn defs_uses(&mut self, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
+    pub fn defs_uses<'a, It: Iterator<Item=&'a BasicBlock>>(blocks: It, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
@@ -66,7 +67,7 @@ impl Component {
         let mut defs = Vec::new();
         let mut uses = Vec::new();
 
-        for &bb in &self.blocks {
+        for &bb in blocks {
             for stmt in &trans.mir().basic_block_data(bb).statements {
                 match stmt.kind {
                     StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {

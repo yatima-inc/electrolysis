@@ -25,20 +25,22 @@ subsubsection {* Generalized While Combinator *}
 text {* In the Rust intermediate representation, every loop is represented by the unconditional
   @{verbatim loop} control structure. We accordingly generalize Isabelle's While combinator. *}
 
-datatype loop_control = Continue | Break
+definition loop :: "('state \<Rightarrow> 'state + 'res) \<Rightarrow> 'state \<Rightarrow> 'res option" where
+  "loop l s \<equiv> map_option (\<lambda>x. case x of Inr r \<Rightarrow> r)
+    (while_option (\<lambda>x. case x of Inl _ \<Rightarrow> True | _ \<Rightarrow> False) (\<lambda>x. case x of Inl s \<Rightarrow> l s) (Inl s))"
 
-definition loop :: "('state \<Rightarrow> 'state \<times> loop_control) \<Rightarrow> 'state \<Rightarrow> 'state option" where
-  "loop l s \<equiv> map_option (\<lambda>(s,s',c). s')
-    (while_option (\<lambda>(s,s',c). c = Continue) (\<lambda>(s,s',c). (s',(l s'))) (s,(l s)))"
+value "loop (\<lambda>i. if i < 10 then Inl (i + 1) else Inr (-int i)) 0"
 
-text {* Extend @{term loop} to partial loop body functions. *}
+text {* Extend @{term loop} to partial loop body functions and additional output. *}
 
-definition loop' :: "('state \<Rightarrow> ('state \<times> loop_control) option) \<Rightarrow> 'state \<Rightarrow> 'state option" where
+definition loop' :: "('state \<Rightarrow> ('state + 'res) option) \<Rightarrow> 'state \<Rightarrow> 'res option" where
   "loop' l s = Option.bind (
-    loop (\<lambda>s. case l (the s) of
-        None \<Rightarrow> (Some (the s), Break)
-      | Some (s',c) \<Rightarrow> (Some s',c))
-    (Some s)
+    loop (\<lambda>s.
+      case l s of
+        None \<Rightarrow> Inr None
+      | Some (Inl s) \<Rightarrow> Inl s
+      | Some (Inr r) \<Rightarrow> Inr (Some r))
+    s
   ) id"
 
 subsection {* Types *}

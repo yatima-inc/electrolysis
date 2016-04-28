@@ -172,6 +172,10 @@ fn get_tuple_elem(value: String, idx: usize, len: usize) -> String {
     format!("({}) {}", fst.into_iter().chain(snds).join(" \\<circ> "), value)
 }
 
+fn construct_nat(n: usize) -> String {
+    (0..n).into_iter().fold("0".to_string(), |s, _| format!("Suc ({})", s))
+}
+
 struct Deps {
     crate_deps: HashSet<String>,
     def_idcs: HashMap<NodeId, graph::NodeIndex>,
@@ -598,7 +602,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
         if comp.header == Some(bb) {
-            Ok(format!("Some ({}, Continue)", comp.ret_val))
+            Ok(format!("Some (Inl {})\n", comp.state_val))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -724,26 +728,27 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
         if !comp.blocks.contains(&bb) {
+            let idx = comp.exits.len();
             comp.exits.insert(bb.index());
-            return Ok(format!("Some ({}, Break)\n", comp.ret_val))
+            return Ok(format!("Some (Inr ({}::nat, {}))\n", idx, comp.ret_val))
         }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
-            let (l_defs, l_uses) = try!(l_comp.defs_uses(self));
-            let nonlocal_defs = format!("({})", self.locals().into_iter().filter(|v| comp.live_defs.contains(v) && l_defs.contains(v)).join(", "));
-            let nonlocal_uses = self.locals().into_iter().filter(|v| comp.live_defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
+            let (defs, uses) = try!(Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self));
+            let (l_defs, l_uses) = try!(Component::defs_uses(l_comp.blocks.iter(), self));
+            l_comp.state_val = format!("({})", self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).join(", "));
+            l_comp.ret_val = format!("({})", self.locals().into_iter().filter(|v| l_defs.contains(v) && uses.contains(v)).join(", "));
+            let nonlocal_uses = self.locals().into_iter().filter(|v| defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
             let params = self.trait_param_names.iter().chain(nonlocal_uses.iter()).join(" ");
-            l_comp.ret_val = nonlocal_defs.clone();
             let body = try!(self.transpile_basic_block(bb, &mut l_comp));
             let name = format!("{}_loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
-            let exit = match &l_comp.exits.iter().collect_vec()[..] {
-                [exit] => BasicBlock::new(*exit),
-                _ => throw!("Oops, multiple loop exits: {:?}", l_comp)
-            };
-            comp.prelude.push(format!("definition \"{name} {params} =\n(\\<lambda>{defs}.\n{body})\"",
-                                      name=name, params=params, defs=nonlocal_defs, body=body));
-            return Ok(format!("do {defs} \\<leftarrow> loop' ({name} {params}) {defs};\n{cont}",
-                              defs=nonlocal_defs, name=name, params=params, cont=rec!(exit)));
+            comp.prelude.push(format!("definition \"{name} {params} =\n(\\<lambda>{state}.\n{body})\"",
+                                      name=name, params=params, state=l_comp.state_val, body=body));
+            let conts = try!(l_comp.exits.iter().clone().enumerate().map(|(i, exit)| -> TransResult {
+                Ok(format!("{} => {}", construct_nat(i), rec!(BasicBlock::new(*exit))))
+            }).join_results("| "));
+            return Ok(format!("do (rusta_exit, {ret}) \\<leftarrow> loop' ({name} {params}) {state};\ncase rusta_exit of\n{conts}",
+                              ret=l_comp.ret_val, state=l_comp.state_val, name=name, params=params, conts=conts));
         }
 
         let data = self.mir().basic_block_data(bb);
@@ -818,19 +823,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             return Ok("".into())
         }
 
-        self.refs.borrow_mut().clear();
-        self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-            PatKind::Ident(_, ref ident, _) => mk_isabelle_name(&ident.node.name.to_string()),
-            _ => format!("p{}", i),
-        }).collect();
-
-        let params: Vec<_> = try!(self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| -> TransResult {
-            Ok(format!("({} :: {})", name, try!(self.transpile_ty(&arg.ty))))
-        }).collect());
-
-        let mut comp = Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), None);
-        let body = try!(self.transpile_basic_block(START_BLOCK, &mut comp));
-
         let trait_predicates = if suppress_type_predicates {
             let predicates = self.tcx.lookup_predicates(self.def_id()).predicates;
             predicates.get_slice(ParamSpace::SelfSpace).iter().chain(predicates.get_slice(ParamSpace::FnSpace)).filter_map(|pred| match pred {
@@ -848,6 +840,19 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         if self.trait_param_names.iter().collect::<HashSet<_>>().len() != self.trait_param_names.len() {
             throw!("unimplemented: multiple parameters of the same trait");
         }
+
+        self.refs.borrow_mut().clear();
+        self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
+            PatKind::Ident(_, ref ident, _) => mk_isabelle_name(&ident.node.name.to_string()),
+            _ => format!("p{}", i),
+        }).collect();
+
+        let params: Vec<_> = try!(self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| -> TransResult {
+            Ok(format!("({} :: {})", name, try!(self.transpile_ty(&arg.ty))))
+        }).collect());
+
+        let mut comp = Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), None);
+        let body = try!(self.transpile_basic_block(START_BLOCK, &mut comp));
 
         let idx = self.deps.borrow_mut().get_def_idx(self.node_id);
         let is_rec = self.deps.borrow().graph.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx);
