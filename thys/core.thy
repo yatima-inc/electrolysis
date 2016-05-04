@@ -57,43 +57,41 @@ theorem while_opt_rule:
 
 subsection \<open> Lemmas about @{term loop} \<close>
 
-lemma not_loop_control [simp]: "l \<noteq> Continue \<Longrightarrow> l = Break" "l \<noteq> Break \<Longrightarrow> l = Continue"
-  by (cases l, simp_all)+
-
 lemma loop_rule:
   assumes "P s"
-  assumes "\<And>s s'. P s \<Longrightarrow> l s = (s',Continue) \<Longrightarrow> P s'" "\<And>s s'. P s \<Longrightarrow> l s = (s',Break) \<Longrightarrow> Q s'"
-  assumes "wf r" "\<And>s s'. P s \<Longrightarrow> l s = (s',Continue) \<Longrightarrow> (s', s) \<in> r"
+  assumes "\<And>s s'. P s \<Longrightarrow> l s = Inl s' \<Longrightarrow> P s'" "\<And>s r. P s \<Longrightarrow> l s = Inr r \<Longrightarrow> Q r"
+  assumes "wf R" "\<And>s s'. P s \<Longrightarrow> l s = Inl s' \<Longrightarrow> (s', s) \<in> R"
   shows "all_option Q (loop l s)"
 proof-
-  let ?r' = "{((s\<^sub>1, l s\<^sub>1), (s\<^sub>2, l s\<^sub>2)) | s\<^sub>1 s\<^sub>2. (s\<^sub>1,s\<^sub>2) \<in> r}"
-  have "wf ?r'"
-    by (rule compat_wf[where f=fst, OF _ assms(4)]) (auto simp: compat_def)
+  let ?R' = "{(Inr r, Inl s) | r s. True} \<union> {(Inl s\<^sub>1, Inl s\<^sub>2) | s\<^sub>1 s\<^sub>2. (s\<^sub>1,s\<^sub>2) \<in> R}"
+  have "wf ?R'"
+  apply (rule wf_Un)
+    apply (rule wfI_pf; auto)
+   apply (rule compat_wf[where f="\<lambda>x. case x of Inl y \<Rightarrow> y", OF _ assms(4)])
+  by (auto simp: compat_def)
 
   show ?thesis
   unfolding loop_def all_option_comp[symmetric]
-  by (rule while_opt_rule[where P="\<lambda>(s,s'). P s \<and> l s = s'", OF _ _ _ `wf ?r'`])
-     (auto simp: assms pred_option_def)
+  apply (rule while_opt_rule[where P="\<lambda>x. case x of Inl s' \<Rightarrow> P s' | Inr r \<Rightarrow> Q r", OF _ _ _ `wf ?R'`])
+     apply (auto simp: assms pred_option_def split: sum.splits)[3]
+  apply (case_tac s)
+   apply (rename_tac s')
+   apply (case_tac "l s'")
+  by (auto simp: assms(5))
 qed
 
 lemma loop'_rule:
   assumes "P s"
-  assumes "\<And>s. P s \<Longrightarrow> l s \<noteq> None" "\<And>s s'. P s \<Longrightarrow> l s = Some (s',Continue) \<Longrightarrow> P s'" "\<And>s s'. P s \<Longrightarrow> l s = Some (s',Break) \<Longrightarrow> Q s'"
-  assumes "wf r" "\<And>s s'. P s \<Longrightarrow> l s = Some (s',Continue) \<Longrightarrow> (s', s) \<in> r"
+  assumes "\<And>s. P s \<Longrightarrow> l s \<noteq> None" "\<And>s s'. P s \<Longrightarrow> l s = Some (Inl s') \<Longrightarrow> P s'" "\<And>s r. P s \<Longrightarrow> l s = Some (Inr r) \<Longrightarrow> Q r"
+  assumes "wf R" "\<And>s s'. P s \<Longrightarrow> l s = Some (Inl s') \<Longrightarrow> (s', s) \<in> R"
   shows "all_option Q (loop' l s)"
-proof-
-  let ?r' = "{(Some s\<^sub>1, Some s\<^sub>2) | s\<^sub>1 s\<^sub>2. (s\<^sub>1,s\<^sub>2) \<in> r}"
-  have "wf ?r'"
-    by (rule compat_wf[where f=the, OF _ assms(5)]) (auto simp: compat_def)
-
-  show ?thesis
-  by (cut_tac loop_rule[where P="all_option P" and Q="all_option Q" and s="Some s", OF _ _ _ `wf ?r'`])
-     (auto simp: loop'_def all_option_def pred_option_def Option.bind_def assms(1,2,6) intro: assms(3,4) split: option.splits)
-qed
+by (cut_tac loop_rule[where P="P" and Q="all_option Q" and s="s", OF _ _ _ `wf R`])
+   (auto simp: loop'_def all_option_def pred_option_def Option.bind_def assms(1,2,6) intro: assms(3,4) split: option.splits sum.splits)
 
 declare Let_def[simp] Option.bind_eq_Some_conv[simp] Option.bind_eq_None_conv[simp]
 declare not_None_eq[iff del]
 
+(*
 subsection \<open> Loops over @{verbatim u32} ranges \<close>
 
 text \<open> Because the following lemmas reference specific trait implementations for @{verbatim u32}, it is not
@@ -131,6 +129,38 @@ lemma loop_range_u32':
   assumes "P l res\<^sub>0"
   shows "P' (loop' body (res\<^sub>0, core_ops_Range.make l r))"
 by (cut_tac loop_range_u32[of P l res\<^sub>0 r f g]) (auto simp: assms[unfolded assms(2)])
+*)
+
+section \<open> core::slice \<close>
+
+lemma option_all[simp]: "all_option (\<lambda>x. True) x \<longleftrightarrow> x \<noteq> None"
+by (auto simp: all_option_def split: option.split)
+
+declare core_ops_Range.defs[simp] core_ops_RangeFrom.defs[simp] core_ops_RangeTo.defs[simp]
+declare core_slice__T__SliceExt_def[simp]
+
+lemma binarySearch_by_terminates:
+  assumes "\<And>f x. core_ops_FnMut_call_mut f_impl f x \<noteq> None"
+  assumes "length (pointer_data (core_raw_Slice_data s)) \<ge> core_raw_Slice_len s + pointer_pos (core_raw_Slice_data s)"
+  shows "core_slice__T__SliceExt_binary_search_by f_impl s f \<noteq> None"
+proof-
+  note div_le_dividend[simplified not_less[symmetric], simp]
+  have[simp]: "\<And>b s. (if b then Some s else None) = None \<longleftrightarrow> \<not>b"
+    by (auto split: split_if_asm)
+
+  show ?thesis
+  apply (simp add: core_slice__T__SliceExt_binary_search_by_def)
+  apply (rule loop'_rule[where P="\<lambda>(f,base,s). length (pointer_data (core_raw_Slice_data s)) \<ge> core_raw_Slice_len s + pointer_pos (core_raw_Slice_data s)" and Q="\<lambda>x. True", simplified])
+     apply (auto simp: assms(2))[1]
+    apply safe
+    apply (simp add: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def
+           core_slice__T__ops_Index_ops_Range_usize___index_def nat_int_add core_ptr__const_T_offset_def checked_sub_def core_slice_from_raw_parts_def
+           core_slice__T__ops_Index_ops_RangeFrom_usize___index_def core_slice_SliceExt_is_empty_def core_raw_Slice.defs
+           split: split_if_asm)
+     apply (simp add: core_slice__T__SliceExt_get_unchecked_def core_ptr__const_T_offset_def assms(1))
+     apply safe
+qed
+
 
 end
 

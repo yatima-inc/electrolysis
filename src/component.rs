@@ -7,34 +7,30 @@ use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
 #[derive(Default, Debug)]
-pub struct Component {
+pub struct Component<'a> {
     pub prelude: Vec<String>,
+    pub outer: Option<&'a Component<'a>>,
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
     pub loops: Vec<Vec<BasicBlock>>,
     pub exits: HashSet<usize>,
-    pub live_defs: HashSet<String>,
-    pub ret_val: String,
     pub state_val: String,
 }
 
-impl Component {
-    pub fn new(trans: &Transpiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&Component>)
-        -> Component {
+impl<'a> Component<'a> {
+    pub fn new(trans: &Transpiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&'a Component<'a>>)
+        -> Component<'a> {
         let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         Component {
+            outer: outer,
             header: outer.map(|_| start),
-            live_defs: match outer {
-                Some(comp) => comp.live_defs.clone(),
-                None => HashSet::new(),
-            },
             blocks: blocks, loops: loops,
             .. Default::default()
         }
     }
 
-    pub fn defs_uses<'a, It: Iterator<Item=&'a BasicBlock>>(blocks: It, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
+    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),

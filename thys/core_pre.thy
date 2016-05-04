@@ -58,8 +58,8 @@ definition "checked_div n m \<equiv> if m \<noteq> 0 then Some (n div m) else No
 definition "checked_mod n m \<equiv> if m \<noteq> 0 then Some (n mod m) else None"
 
 (* TODO: actually check something *)
-definition "checked_shl n m = n * 2^m"
-definition "checked_shr n m = n div 2^m"
+definition[simp]: "checked_shl n m = Some (n * 2^m)"
+definition[simp]: "checked_shr n m = Some (n div 2^nat m)"
 
 type_synonym i8 = int
 type_synonym i16 = int
@@ -104,9 +104,9 @@ subsection {* Functions *}
 
 subsubsection {* Intrinsics *}
 
-abbreviation "core_intrinsics_add_with_overflow n m \<equiv> Some (n + m, False)"
+definition[simp]: "core_intrinsics_add_with_overflow n m \<equiv> Some (n + m, False)"
 
-abbreviation "core_intrinsics_transmute x \<equiv> Some x"
+definition[simp]: "core_intrinsics_transmute x \<equiv> Some x"
 
 subsubsection {* Manually-Translated Functions *}
 

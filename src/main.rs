@@ -172,10 +172,6 @@ fn get_tuple_elem(value: String, idx: usize, len: usize) -> String {
     format!("({}) {}", fst.into_iter().chain(snds).join(" \\<circ> "), value)
 }
 
-fn construct_nat(n: usize) -> String {
-    (0..n).into_iter().fold("0".to_string(), |s, _| format!("Suc ({})", s))
-}
-
 struct Deps {
     crate_deps: HashSet<String>,
     def_idcs: HashMap<NodeId, graph::NodeIndex>,
@@ -205,7 +201,6 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     // inside of fns
     node_id: ast::NodeId,
     param_names: Vec<String>,
-    trait_param_names: Vec<String>,
     refs: RefCell<HashMap<usize, &'a Lvalue<'tcx>>>,
 }
 
@@ -426,8 +421,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     }
                     ref ty => throw!("unimplemented: accessing field of {:?}", ty),
                 }),
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
-                Ok(format!("(core_slice__T__SliceExt_get_unchecked {} {})", try!(self.get_lvalue(base)), try!(self.get_operand(idx)))),
             _ => Err(format!("unimplemented: loading {:?}", lv)),
         }
     }
@@ -488,9 +481,9 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ConstVal::Bool(false) => "False".to_string(),
             ConstVal::Integral(i) => match i.int_type().unwrap() {
                 syntax::attr::IntType::SignedInt(_) =>
-                    (i.to_u64_unchecked() as i64).to_string(),
+                    format!("({}::int)", i.to_u64_unchecked() as i64),
                 syntax::attr::IntType::UnsignedInt(_) =>
-                    i.to_u64_unchecked().to_string(),
+                    format!("({}::nat)", i.to_u64_unchecked()),
             },
             ConstVal::Str(ref s) => format!("''{}''", s),
             _ => throw!("unimplemented: literal {:?}", val),
@@ -513,6 +506,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> Result<MaybeValue, String> {
         Ok(MaybeValue::total(match *rv {
+            Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
+                return Ok(MaybeValue::partial(format!("core_slice__T__SliceExt_get_unchecked {} {}", try!(self.get_lvalue(base)), try!(self.get_operand(idx))))),
             Rvalue::Use(ref op) => try!(self.get_operand(op)),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
@@ -551,7 +546,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     (true, true) => sop,
                 }
             }
-            Rvalue::Ref(_, BorrowKind::Shared, ref lv) => try!(self.get_lvalue(lv)),
+            Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
+                return self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 let mut ops = try!(ops.iter().map(|op| self.get_operand(op)).collect_results());
                 format!("({})", ops.join(", "))
@@ -575,7 +571,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }))
     }
 
-    fn transpile_statement(&self, stmt: &'a Statement<'tcx>, comp: &mut Component) -> TransResult {
+    fn transpile_statement(&self, stmt: &'a Statement<'tcx>) -> TransResult {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
@@ -587,10 +583,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     return Ok("".to_string())
                 }
 
-                if let Some(name) = self.lvalue_name(lv) {
-                    comp.live_defs.insert(name);
-                }
-
                 match try!(self.get_rvalue(rv)) {
                     MaybeValue { val, total: true } => self.set_lvalue(lv, &val),
                     MaybeValue { val, total: false } =>
@@ -600,9 +592,12 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
+    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &Component) -> TransResult {
         if comp.header == Some(bb) {
             Ok(format!("Some (Inl {})\n", comp.state_val))
+        } else if !comp.blocks.contains(&bb) {
+            // leaving a loop
+            Ok(format!("do do_tmp \\<leftarrow> {};\nSome (Inr do_tmp)", try!(self.transpile_basic_block(bb, &comp.outer.unwrap()))))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -724,35 +719,21 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
+    fn transpile_basic_block(&self, bb: BasicBlock, comp: &Component) -> TransResult {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
-        if !comp.blocks.contains(&bb) {
-            let idx = comp.exits.len();
-            comp.exits.insert(bb.index());
-            return Ok(format!("Some (Inr ({}::nat, {}))\n", idx, comp.ret_val))
-        }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
-            let (defs, uses) = try!(Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self));
-            let (l_defs, l_uses) = try!(Component::defs_uses(l_comp.blocks.iter(), self));
+            let (defs, _) = try!(Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self));
+            let (l_defs, _) = try!(Component::defs_uses(l_comp.blocks.iter(), self));
             l_comp.state_val = format!("({})", self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).join(", "));
-            l_comp.ret_val = format!("({})", self.locals().into_iter().filter(|v| l_defs.contains(v) && uses.contains(v)).join(", "));
-            let nonlocal_uses = self.locals().into_iter().filter(|v| defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
-            let params = self.trait_param_names.iter().chain(nonlocal_uses.iter()).join(" ");
-            let body = try!(self.transpile_basic_block(bb, &mut l_comp));
-            let name = format!("{}_loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
-            comp.prelude.push(format!("definition \"{name} {params} =\n(\\<lambda>{state}.\n{body})\"",
-                                      name=name, params=params, state=l_comp.state_val, body=body));
-            let conts = try!(l_comp.exits.iter().clone().enumerate().map(|(i, exit)| -> TransResult {
-                Ok(format!("{} => {}", construct_nat(i), rec!(BasicBlock::new(*exit))))
-            }).join_results("| "));
-            return Ok(format!("do (rusta_exit, {ret}) \\<leftarrow> loop' ({name} {params}) {state};\ncase rusta_exit of\n{conts}",
-                              ret=l_comp.ret_val, state=l_comp.state_val, name=name, params=params, conts=conts));
+            return Ok(format!("loop' (\\<lambda>{state}. {body}) {state}",
+                              body=try!(self.transpile_basic_block(bb, &mut l_comp)),
+                              state=l_comp.state_val));
         }
 
         let data = self.mir().basic_block_data(bb);
-        let stmts = try!(data.statements.iter().map(|s| self.transpile_statement(s, comp)).collect::<Result<Vec<_>, _>>());
+        let stmts = try!(data.statements.iter().map(|s| self.transpile_statement(s)).collect::<Result<Vec<_>, _>>());
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match *terminator {
                 Terminator::Goto { target } =>
@@ -833,11 +814,11 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             self.trait_predicates_without_markers(self.def_id()).collect_vec()
         };
 
-        self.trait_param_names = try!(trait_predicates.into_iter().map(|trait_pred| {
+        let trait_params: Vec<_> = try!(trait_predicates.into_iter().map(|trait_pred| {
                 self.transpile_trait_ref(trait_pred.trait_ref)
         }).collect());
 
-        if self.trait_param_names.iter().collect::<HashSet<_>>().len() != self.trait_param_names.len() {
+        if trait_params.iter().collect::<HashSet<_>>().len() != trait_params.len() {
             throw!("unimplemented: multiple parameters of the same trait");
         }
 
@@ -860,10 +841,10 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             format!("function {} :: \"{}\" where\n  ",
                     name, try!(self.transpile_ty(self.tcx.node_id_to_type(self.node_id))))
         } else {
-            "definition [simp]: ".to_string()
+            "definition ".to_string()
         };
         let def = format!("{header} \"{name} {params} = ({body})\"{footer}",
-                          header= header, name=name, params=self.trait_param_names.iter().chain(params.iter()).join(" "), body=body, footer=if is_rec {" by auto"} else {""});
+                          header= header, name=name, params=trait_params.iter().chain(params.iter()).join(" "), body=body, footer=if is_rec {" by auto"} else {""});
         Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
     }
 
@@ -996,7 +977,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             return Ok(String::new())
         }
 
-        Ok(format!("definition[simp]: \"{} = \\<lparr>\n{}\n\\<rparr>\"",
+        Ok(format!("definition \"{} = \\<lparr>\n{}\n\\<rparr>\"",
                    iter::once(&self.transpile_node_id(self.node_id)).chain(&trait_params).join(" "),
                    supertrait_impls.into_iter().chain(fns).join(",\n")))
     }
@@ -1078,7 +1059,6 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
         config: config,
         node_id: 0,
         param_names: Vec::new(),
-        trait_param_names: Vec::new(),
         refs: RefCell::new(HashMap::new()),
     };
     println!("Transpiling...");
