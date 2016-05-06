@@ -89,9 +89,7 @@ definition[simp]: "core_intrinsics_offset p n \<equiv>
   then Some (p\<lparr>pointer_pos := nat pos'\<rparr>)
   else None"
 
-definition[simp]: "core_slice__T__SliceExt_as_ptr s =
-  core_intrinsics_offset (core_raw_Slice_data s) (int (core_raw_Slice_len s))"
-
+definition[simp]: "core_slice__T__SliceExt_as_ptr s = Some (core_raw_Slice_data s)"
 definition[simp]: "core_slice__T__SliceExt_len s \<equiv> Some (core_raw_Slice_len s)"
 
 (*definition[simp]: "read_slice s n \<equiv> if n < core_raw_Slice_len s
