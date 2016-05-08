@@ -1,14 +1,37 @@
 rustc_args = "rust/src/libcore/lib.rs"
+
+# unsafe functions axiomatized in core_pre.thy
 ignore = [
   "core_mem_swap",
-  "core_raw_Slice",
   "core_slice__T__SliceExt_len",
-  "core_slice__T__SliceExt_as_ptr",
 ]
+
+# Surprisingly, Isabelle doesn't handle files with >10000 LOC well
 targets = [
-  "core_slice__T__SliceExt_get_unchecked",
   "core_slice__T__SliceExt_binary_search",
 ]
+
+# unsafe functions that rely on other definitions and thus have to be replaced inline
+[replace]
+core_slice__T__ops_Index_ops_Range_usize___index = '''
+(*
+/// Implements slicing with syntax `&self[begin .. end]`.
+///
+/// Returns a slice of self for the index range [`begin`..`end`).
+///
+/// This operation is `O(1)`.
+///
+/// # Panics
+///
+/// Requires that `begin <= end` and `end <= self.len()`,
+/// otherwise slicing will panic.
+*)
+
+definition "core_slice__T__ops_Index_ops_Range_usize___index (self :: 'T slice) (index :: usize core_ops_Range) = (
+  if core_ops_Range_start index ≤ core_ops_Range_end index ∧ core_ops_Range_end index ≤ length self
+  then Some (take (core_ops_Range_end index - core_ops_Range_start index) (drop (core_ops_Range_start index) self))
+  else None
+)"'''
 
 [traits.core_slice_SliceExt]
 # only method called from default methods, everything else should be static calls

@@ -139,34 +139,8 @@ by (auto simp: all_option_def split: option.split)
 declare core_ops_Range.defs[simp] core_ops_RangeFrom.defs[simp] core_ops_RangeTo.defs[simp]
 declare core_slice__T__SliceExt_def[simp] core_slice__T__ops_Index_ops_RangeFrom_usize___index_def[simp]
 
-definition "valid_slice s \<equiv> length (pointer_data (core_raw_Slice_data s)) \<ge> core_raw_Slice_len s + pointer_pos (core_raw_Slice_data s)"
-
-(*
-/// Implements slicing with syntax `&self[begin .. end]`.
-///
-/// Returns a slice of self for the index range [`begin`..`end`).
-///
-/// This operation is `O(1)`.
-///
-/// # Panics
-///
-/// Requires that `begin <= end` and `end <= self.len()`,
-/// otherwise slicing will panic.
-*)
-
-lemma core_slice__T__ops_Index_ops_Range_usize___index:
-  assumes "valid_slice self"
-  shows "core_slice__T__ops_Index_ops_Range_usize___index self index =
-  (if core_ops_Range_start index \<le> core_ops_Range_end index \<and> core_ops_Range_end index \<le> core_raw_Slice_len self
-  then Some \<lparr>core_raw_Slice_data = (core_raw_Slice_data self)\<lparr>pointer_pos := pointer_pos (core_raw_Slice_data self) + core_ops_Range_start index\<rparr>,
-             core_raw_Slice_len = core_ops_Range_end index - core_ops_Range_start index\<rparr>
-  else None)"
-  using assms by (auto simp: core_slice__T__ops_Index_ops_Range_usize___index_def core_ptr__const_T_offset_def checked_sub_def
-                  core_slice_from_raw_parts_def nat_int_add core_raw_Slice.defs valid_slice_def)
-
 lemma binarySearch_by_terminates:
   assumes "\<And>f x. core_ops_FnMut_call_mut f_impl f x \<noteq> None"
-  assumes "valid_slice s"
   shows "core_slice__T__SliceExt_binary_search_by f_impl s f \<noteq> None"
 proof-
   note div_le_dividend[simplified not_less[symmetric], simp]
@@ -175,30 +149,17 @@ proof-
 
   show ?thesis
   apply (simp add: core_slice__T__SliceExt_binary_search_by_def)
-  apply (rule loop'_rule[where P="\<lambda>(f,base,s). valid_slice s" and Q="\<lambda>x. True", simplified])
-     apply (auto simp: assms(2))[1]
-    apply safe
-    apply (simp add: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def core_slice__T__ops_Index_ops_Range_usize___index
-           core_slice_SliceExt_is_empty_def core_slice__T__SliceExt_get_unchecked_def core_ptr__const_T_offset_def assms(1)
-           split: split_if_asm prod.splits core_cmp_Ordering.splits)
-      apply (subst(asm) core_slice__T__ops_Index_ops_Range_usize___index)
-       apply (auto simp: valid_slice_def)[4]
-    apply (simp add: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def core_slice__T__ops_Index_ops_Range_usize___index
-           core_slice_SliceExt_is_empty_def core_slice__T__SliceExt_get_unchecked_def core_ptr__const_T_offset_def assms(1)
-           split: split_if_asm prod.splits core_cmp_Ordering.splits)
-    apply safe
-      apply (case_tac ad; simp)
-     apply (simp add: valid_slice_def)
-    apply (subst(asm) core_slice__T__ops_Index_ops_Range_usize___index)
-     apply (auto simp: valid_slice_def split: split_if_asm)[3]
-   apply (rule wf_measure[of "\<lambda>(f,base,s). core_raw_Slice_len s"])
-   apply (simp split: split_if_asm prod.splits core_cmp_Ordering.splits)
-   apply safe
-      apply (case_tac ae; simp)
-     apply (auto simp: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def core_slice__T__ops_Index_ops_Range_usize___index)[1]
-    apply (simp add: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def core_slice__T__ops_Index_ops_Range_usize___index)
-    apply (subst(asm) core_slice__T__ops_Index_ops_Range_usize___index)
-     apply (auto simp: valid_slice_def split: split_if_asm)[3]
+  apply (rule loop'_rule[where P="\<lambda>x. True" and Q="\<lambda>x. True", simplified])
+    apply (auto simp add: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def core_slice__T__ops_Index_ops_Range_usize___index_def
+           core_slice_SliceExt_is_empty_def core_slice__T__SliceExt_get_unchecked_def assms(1)
+           split: split_if_asm prod.splits core_cmp_Ordering.splits)[1]
+   apply (rule wf_measure[of "\<lambda>(f,base,s). length s"])
+  apply (simp split: split_if_asm prod.splits core_cmp_Ordering.splits)
+  apply safe
+     apply (case_tac ag; simp)
+    apply (auto simp add: core_slice__T__SliceExt_split_at_def core_slice__T__ops_Index_ops_RangeTo_usize___index_def core_slice__T__ops_Index_ops_Range_usize___index_def
+           core_slice_SliceExt_is_empty_def core_slice__T__SliceExt_get_unchecked_def
+           split: split_if_asm)
   done
 qed
 

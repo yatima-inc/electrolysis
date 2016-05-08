@@ -69,34 +69,14 @@ type_synonym isize = int
 
 subsubsection {* Manually-Translated Types *}
 
-type_synonym 'a mem = "'a list"
+type_synonym 'a slice = "'a list"
 
-record 'a pointer =
-  pointer_data :: "'a mem"
-  pointer_pos  :: nat
+definition[simp]: "core_slice__T__SliceExt_len s \<equiv> Some (length s)"
 
-record 'T core_raw_Slice =
-  core_raw_Slice_data :: "'T pointer"
-  core_raw_Slice_len :: "usize"
-
-definition[simp]: "core_ptr_read p \<equiv> if pointer_pos p < length (pointer_data p)
-  then Some (pointer_data p ! pointer_pos p)
+definition  "core_slice__T__SliceExt_get_unchecked (self :: 'T slice) (index :: usize) \<equiv>
+  if index < length self
+  then Some (self ! index)
   else None"
-
-definition[simp]: "core_intrinsics_offset p n \<equiv>
-  let pos' = int (pointer_pos p) + n in
-  if 0 \<le> pos' \<and> nat pos' \<le> length (pointer_data p)
-  then Some (p\<lparr>pointer_pos := nat pos'\<rparr>)
-  else None"
-
-definition[simp]: "core_slice__T__SliceExt_as_ptr s = Some (core_raw_Slice_data s)"
-definition[simp]: "core_slice__T__SliceExt_len s \<equiv> Some (core_raw_Slice_len s)"
-
-(*definition[simp]: "read_slice s n \<equiv> if n < core_raw_Slice_len s
-  then
-    do p \<leftarrow> core_intrinsics_offset (core_raw_Slice_data s) (int n);
-    core_ptr_read p
-  else None"*)
 
 subsection {* Functions *}
 

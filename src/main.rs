@@ -303,7 +303,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ty::TypeVariants::TyRawPtr(ref data) => format!("{} pointer", try!(self.transpile_ty(data.ty))),
             ty::TypeVariants::TyParam(ref param) => format!("'{}", param.name),
             ty::TypeVariants::TyProjection(ref proj) => format!("'{}_{}", try!(self.transpile_trait_ref(proj.trait_ref)), proj.item_name),
-            ty::TypeVariants::TySlice(ref ty) => format!("{} core_raw_Slice", try!(self.transpile_ty(ty))),
+            ty::TypeVariants::TySlice(ref ty) => format!("{} slice", try!(self.transpile_ty(ty))),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
@@ -566,7 +566,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 let ops = try!(ops.into_iter().map(|op| self.get_operand(op)).collect_results());
                 iter::once(self.transpile_def_id(def_id)).chain(ops).join(" ")
             }
-            Rvalue::Len(ref lv) => format!("core_raw_Slice_len {}", try!(self.get_lvalue(lv))),
+            Rvalue::Len(ref lv) => format!("length {}", try!(self.get_lvalue(lv))),
             _ => throw!("unimplemented: rvalue {:?}", rv),
         }))
     }
@@ -1081,6 +1081,12 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
         Some(ignored) => toml_value_as_str_array(ignored).into_iter().collect(),
         None => HashSet::new(),
     };
+    let replaced: HashMap<_, _> = match config.lookup("replace") {
+        Some(replaced) => replaced.as_table().unwrap().iter().map(|(k, v)| {
+            (k.clone(), v.as_str().unwrap().to_string())
+        }).collect(),
+        None => HashMap::new(),
+    };
     let targets: Option<HashSet<NodeId>> = config.lookup("targets").map(|targets| {
         let targets: HashSet<_> = toml_value_as_str_array(targets).into_iter().collect();
         let targets = graph.node_indices().filter(|&ni| {
@@ -1106,7 +1112,12 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
                 }
 
                 let name = transpile_node_id(tcx, node_id);
-                if ignored.contains(&name as &str) {
+                let name = &name as &str;
+                if ignored.contains(name) {
+                    continue;
+                }
+                if let Some(ref trans) = replaced.get(name) {
+                    try!(write!(f, "{}\n\n", trans));
                     continue;
                 }
 
