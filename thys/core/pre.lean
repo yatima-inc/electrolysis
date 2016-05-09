@@ -1,10 +1,18 @@
-import data.nat
+import data.nat data.list
+
 open bool
 open eq.ops
 open nat
-open prod
 open option
+open prod
 open prod.ops
+open sum
+
+namespace nat
+  definition of_int : ℤ → ℕ
+  | (int.of_nat n) := n
+  | _              := 0
+end nat
 
 namespace option
   variables {A B : Type}
@@ -46,33 +54,49 @@ end option
 open option
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
+definition sum.inl_opt {A B : Type} : sum A B → option A
+| (inl a) := some a
+| (inr _) := none
+
+definition sum.inr_opt {A B : Type} : sum A B → option B
+| (inl _) := none
+| (inr b) := some b
+
 
 open [class] classical
 
 section
-  parameters {State : Type}
+  parameters {State Res : Type}
+  parameters (body : State → sum State Res)
 
-  inductive loop.control := continue | break
+  section
+    parameter (R : State → State → Prop)
 
-  parameters (body : State → State × loop.control)
-  variable (R : State → State → Prop)
+    private definition State' := sum State Res
 
-  noncomputable definition loop.F (s : State) (f : Π (s' : State), R s' s → option State) : option State :=
-  match body s with
-  | (s', loop.control.continue) := if H : R s' s then f s' H else none
-  | (s', loop.control.break)    := some s'
+    private definition R' : State' → State' → Prop
+    | (inl s') (inl s) := R s' s
+    | _        _       := false
+
+    private noncomputable definition F (x : State') (f : Π (x' : State'), R' x' x → option State') : option State' :=
+    do s ← sum.inl_opt x;
+    match body s with
+    | inr r := some (inr r)
+    | x'    := if H : R' x' x then f x' H else none
+    end
+
+    private noncomputable definition fix (Hwf: well_founded R) (s : State) : option Res :=
+    have well_founded R', from sorry,
+    do x ← well_founded.fix F (inl s);
+    sum.inr_opt x
+
+    private noncomputable definition wf_R :=
+    ∃Hwf : well_founded R, ∀s : State, fix Hwf s ≠ none
   end
 
-  noncomputable definition loop.fix (Hwf: well_founded R) (s : State) : option State :=
-  well_founded.fix (loop.F R) s
-
-  noncomputable definition loop.wf_R :=
-  ∃Hwf : well_founded R, ∀s : State, loop.fix R Hwf s ≠ none
-
-  noncomputable definition loop (s : State) : option State :=
-  if Hex : ∃R, loop.wf_R R then
-    let R := classical.some Hex in
-    loop.fix R (classical.some (classical.some_spec Hex)) s
+  noncomputable definition loop (s : State) : option Res :=
+  if Hex : ∃R, wf_R R then
+    fix (classical.some Hex) (classical.some (classical.some_spec Hex)) s
   else none
 
   /-theorem loop_inv
@@ -87,6 +111,7 @@ section
     (HR : ∀f s s', P s → l f s = some s' → R s' s) :
     option.all Q (fix_opt l s) :=-/
 
+  /-
   theorem loop_eq
     [Hwf_R : well_founded R]
     (HR : ∀s s', body s = (s', loop.control.continue) → R s' s)
@@ -128,6 +153,20 @@ section
     have R' s' s, from sorry,
     rewrite [dif_pos this, dif_pos Hwf_R'],
   end-/
+  -/
+end
+
+section
+  parameters {State Res : Type}
+  parameters (body : State → option (sum State Res))
+
+  noncomputable definition loop' (s : State) : option Res :=
+  do res ← loop (λs, match body s with
+  | some (inl s') := inl s'
+  | some (inr r)  := inr (some r)
+  | none          := inr none
+  end) s;
+  res
 end
 
 abbreviation u8 := nat
@@ -135,6 +174,9 @@ abbreviation u16 := nat
 abbreviation u32 := nat
 abbreviation u64 := nat
 abbreviation usize := nat
+
+abbreviation slice := list
+
 
 definition checked.sub (n : nat) (m : nat) :=
 if n ≥ m then some (n-m) else none
@@ -145,6 +187,16 @@ if m ≠ 0 then some (mod n m) else none
 definition checked.mod (n : nat) (m : nat) :=
 if m ≠ 0 then some (mod n m) else none
 
-definition intrinsics.add_with_overflow (n : nat) (m : nat) := some (n + m, false)
+/- TODO: actually check something -/
+definition checked.shl (n : nat) (m : nat) := n * 2^m
+definition checked.shr (n : nat) (m : int) := div n (2^nat.of_int m)
 
-definition core.mem.swap {A : Type} (x y : A) := some (unit.star,y,x)
+namespace core
+  definition intrinsics.add_with_overflow (n : nat) (m : nat) := some (n + m, false)
+
+  definition mem.swap {T : Type} (x y : T) := some (unit.star,y,x)
+
+  definition  slice._T_.SliceExt.len {T : Type} (self : slice T) := some (list.length self)
+  definition  slice._T__SliceExt.get_unchecked {T : Type} (self : slice T) (index : usize) :=
+  list.nth self index
+end core

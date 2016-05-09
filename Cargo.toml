@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Sebastian Ullrich <sebasti@nullri.ch>"]
 
 [dependencies]
-clap = "2.2.1"
 itertools = "0.4.0"
-lazy_static = "0.1.15"
-petgraph = { path = "petulant-avenger-graphlibrary/" } #"0.2.2"
+petgraph = "0.2.5"
+toml = { git = "https://github.com/alexcrichton/toml-rs" }  # for https://github.com/alexcrichton/toml-rs/pull/89

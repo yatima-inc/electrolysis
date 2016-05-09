@@ -4,11 +4,9 @@
 
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 
-extern crate clap;
 extern crate itertools;
-#[macro_use]
-extern crate lazy_static;
 extern crate petgraph;
+extern crate toml;
 
 #[macro_use]
 extern crate rustc;
@@ -24,7 +22,6 @@ mod mir_graph;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::convert::AsRef;
 use std::io;
 use std::io::prelude::*;
 use std::iter;
@@ -43,7 +40,7 @@ use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
-use rustc::middle::subst::{ParamSpace, Subst};
+use rustc::middle::subst::{Subst, ParamSpace};
 use rustc::middle::traits::*;
 use rustc::middle::ty::{self, Ty, TyCtxt};
 
@@ -72,21 +69,29 @@ trait StringResultIterator<E> : Iterator<Item=Result<String, E>> where Self: Siz
 impl<T, E> StringResultIterator<E> for T where T: Iterator<Item=Result<String, E>> { }
 
 fn main() {
-    let matches = clap::App::new("rustabelle")
-        .arg(clap::Arg::with_name("only")
-             .help("only export the listed items and their dependencies")
-             .long("only")
-             .takes_value(true))
-        .arg(clap::Arg::with_name("RUSTC_ARGS")
-             .help("arguments forwarded to rustc")
-             .multiple(true)
-             .use_delimiter(false))
-        .get_matches();
+    let crate_name = match &std::env::args().collect_vec()[..] {
+        [_, ref crate_name] => crate_name.clone(),
+        _ => panic!("Expected crate name as single cmdline argument"),
+    };
+    let sysroot = std::process::Command::new("rustc")
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        .unwrap()
+        .stdout;
+    let sysroot = path::PathBuf::from(String::from_utf8(sysroot).unwrap().trim());
 
-    let targets = matches.values_of("only").map(|targets| targets.map(str::to_string).collect_vec());
-    let rustc_args = iter::once("rustc").chain(matches.values_of("RUSTC_ARGS").unwrap()).map(str::to_string).collect_vec();
-    let rustc_matches = rustc_driver::handle_options(rustc_args).expect("error parsing rustc args");
-    let options = session::config::build_session_options(&rustc_matches);
+    let mut config = String::new();
+    let mut config_file = File::open(path::Path::new("thys").join(&crate_name).join("config.toml")).unwrap();
+    config_file.read_to_string(&mut config).unwrap();
+    let config: toml::Value = config.parse().unwrap();
+
+    let rustc_args = config.lookup("rustc_args").expect("Missing config item 'rustc_args'");
+    let rustc_args = iter::once("rustc").chain(rustc_args.as_str().unwrap().split(" ")).map(|s| s.to_string());
+    let rustc_matches = rustc_driver::handle_options(rustc_args.collect()).expect("error parsing rustc args");
+    let mut options = session::config::build_session_options(&rustc_matches);
+    options.crate_name = Some(crate_name);
+    options.maybe_sysroot = Some(sysroot);
     let input = match &rustc_matches.free[..] {
         [ref file] => path::PathBuf::from(file),
         _ => panic!("expected input file"),
@@ -97,14 +102,18 @@ fn main() {
         diagnostics::registry::Registry::new(&rustc::DIAGNOSTICS),
         cstore.clone()
     );
-    let cfg = session::config::build_configuration(&sess);
+    let rustc_cfg = session::config::build_configuration(&sess);
     println!("Compiling up to MIR...");
-    driver::compile_input(&sess, &cstore, cfg,
+    let _ = driver::compile_input(&sess, &cstore, rustc_cfg,
         &session::config::Input::File(input),
         &None, &None, None, &driver::CompileController {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
-                callback: Box::new(|state| transpile_crate(&state, targets.as_ref()).unwrap()),
+                callback: Box::new(|state| {
+                    if !sess.has_errors() {
+                        transpile_crate(&state, &config).unwrap();
+                    }
+                }),
                 run_callback_on_error: false,
             },
             .. driver::CompileController::basic()
@@ -121,11 +130,10 @@ struct MaybeValue {
 impl MaybeValue {
     fn total<T: Into<String>>(val: T) -> MaybeValue { MaybeValue { val: val.into(), total: true } }
     fn partial<T: Into<String>>(val: T) -> MaybeValue { MaybeValue { val: val.into(), total: false } }
+}
 
-    fn map<F>(self, f: F) -> MaybeValue
-        where F: Fn(String) -> String {
-        MaybeValue { val: f(self.val), ..self }
-    }
+fn toml_value_as_str_array(val: &toml::Value) -> Vec<&str> {
+    val.as_slice().unwrap().iter().map(|t| t.as_str().unwrap()).collect()
 }
 
 fn mk_lean_name(s: &str) -> String {
@@ -189,11 +197,11 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     mir_map: &'a MirMap<'tcx>,
     trans_results: HashMap<NodeId, TransResult>,
     deps: RefCell<Deps>,
+    config: &'a toml::Value,
 
     // inside of fns
     node_id: ast::NodeId,
     param_names: Vec<String>,
-    static_params: Vec<String>,
     refs: RefCell<HashMap<usize, &'a Lvalue<'tcx>>>,
 }
 
@@ -207,21 +215,13 @@ fn transpile_node_id(tcx: &TyCtxt, node_id: ast::NodeId) -> String {
     transpile_def_id(tcx, tcx.map.local_def_id(node_id))
 }
 
-lazy_static! {
-    static ref INTRINSICS: HashSet<String> = vec![
-        "intrinsics.add_with_overflow",
-        "intrinsics.sub_with_overflow",
-        "intrinsics.mul_with_overflow",
-    ].into_iter().map(str::to_string).collect();
-}
-
 impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn add_dep(&self, did: DefId) {
         if let Some(node_id) = self.tcx.map.as_local_node_id(did) {
             self.deps.borrow_mut().add_dep(node_id, self.node_id);
         } else {
             let crate_name = self.tcx.sess.cstore.crate_name(did.krate);
-            self.deps.borrow_mut().crate_deps.insert(crate_name.clone());
+            self.deps.borrow_mut().crate_deps.insert(crate_name.to_string());
         }
     }
 
@@ -284,7 +284,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         Ok(match ty.sty {
             ty::TypeVariants::TyBool => "Prop".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
-            //ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
+            ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
             ty::TypeVariants::TyTuple(ref tys) => match &tys[..] {
                 [] => "unit".to_string(),
@@ -487,11 +487,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn transpile_constval(&self, val: &ConstVal) -> TransResult {
         Ok(match *val {
             ConstVal::Bool(b) => b.to_string(),
-            ConstVal::Integral(i) => match i.int_type() {
-                Some(syntax::attr::IntType::UnsignedInt(_)) =>
-                    i.to_u64_unchecked().to_string(),
-                _ => throw!("unimplemented: literal {:?}", val),
+            ConstVal::Integral(i) => match i.int_type().unwrap() {
+                syntax::attr::IntType::SignedInt(_) =>
+                    format!("({} : int)", i.to_u64_unchecked() as i64),
+                syntax::attr::IntType::UnsignedInt(_) =>
+                    format!("({} : nat)", i.to_u64_unchecked()),
             },
+            ConstVal::Str(ref s) => format!("\"{}\"", s),
             _ => throw!("unimplemented: literal {:?}", val),
         })
     }
@@ -512,6 +514,8 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> Result<MaybeValue, String> {
         Ok(MaybeValue::total(match *rv {
+            Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
+                return Ok(MaybeValue::partial(format!("slice._T__SliceExt.get_unchecked {} {}", try!(self.get_lvalue(base)), try!(self.get_operand(idx))))),
             Rvalue::Use(ref op) => try!(self.get_operand(op)),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
@@ -531,21 +535,23 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         BinOp::Add => "+",
                         BinOp::Sub => "-",
                         BinOp::Mul => "*",
-                        BinOp::BitXor => "XOR",
-                        BinOp::BitAnd => "AND",
-                        BinOp::BitOr => "OR",
                         BinOp::Eq => "=",
                         BinOp::Lt => "<",
                         BinOp::Le => "<=",
                         BinOp::Ne => "≠",
                         BinOp::Ge => ">=",
                         BinOp::Gt => ">",
-                        _ => unreachable!(),
+                        _ => throw!("unimplemented: operator {:?}", op),
                     }, so2))
                 })
             }
-            Rvalue::Cast(CastKind::Misc, ref op, _) => try!(self.get_operand(op)),
-            Rvalue::Ref(_, BorrowKind::Shared, ref lv) => try!(self.get_lvalue(lv)),
+            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if self.mir().operand_ty(self.tcx, op).is_integral() && ty.is_integral() => {
+                format!("({}.of_num {})",
+                        if ty.is_signed() { "int" } else { "nat" },
+                        try!(self.get_operand(op)))
+            }
+            Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
+                return self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 let mut ops = try!(ops.iter().map(|op| self.get_operand(op)).collect_results());
                 format!("({})", ops.join(", "))
@@ -560,11 +566,16 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         if adt_def.adt_kind() == ty::AdtKind::Struct && !adt_def.struct_variant().is_tuple_struct() { ".mk" } else { "" },
                         ops.iter().join(" "))
             }
-            _ => return Err(format!("unimplemented: rvalue {:?}", rv)),
+            Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
+                let ops = try!(ops.into_iter().map(|op| self.get_operand(op)).collect_results());
+                iter::once(self.transpile_def_id(def_id)).chain(ops).join(" ")
+            }
+            Rvalue::Len(ref lv) => format!("list.length {}", try!(self.get_lvalue(lv))),
+            _ => throw!("unimplemented: rvalue {:?}", rv),
         }))
     }
 
-    fn transpile_statement(&self, stmt: &'a Statement<'tcx>, comp: &mut Component) -> TransResult {
+    fn transpile_statement(&self, stmt: &'a Statement<'tcx>) -> TransResult {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
@@ -576,10 +587,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                     return Ok("".to_string())
                 }
 
-                if let Some(name) = self.lvalue_name(lv) {
-                    comp.live_defs.insert(name);
-                }
-
                 match try!(self.get_rvalue(rv)) {
                     MaybeValue { val, total: true } => self.set_lvalue(lv, &val),
                     MaybeValue { val, total: false } =>
@@ -589,9 +596,12 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
+    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &Component) -> TransResult {
         if comp.header == Some(bb) {
-            Ok(format!("rec__ {}\n", comp.ret_val))
+            Ok(format!("some (inl {})\n", comp.state_val))
+        } else if !comp.blocks.contains(&bb) {
+            // leaving a loop
+            Ok(format!("do tmp__ ← {};\nsome (inr tmp__)", try!(self.transpile_basic_block(bb, &comp.outer.unwrap()))))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -651,80 +661,67 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block(&self, bb: BasicBlock, comp: &mut Component) -> TransResult {
+    fn transpile_basic_block(&self, bb: BasicBlock, comp: &Component) -> TransResult {
         macro_rules! rec { ($bb:expr) => { try!(self.transpile_basic_block_rec($bb, comp)) } }
 
-        if !comp.blocks.contains(&bb) {
-            comp.exits.insert(bb.index());
-            return Ok(format!("some {}\n", comp.ret_val))
-        }
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
-            let (l_defs, l_uses) = try!(l_comp.defs_uses(self));
-            let nonlocal_defs = self.locals().into_iter().filter(|v| comp.live_defs.contains(v) && l_defs.contains(v)).collect_vec();
-            let nonlocal_uses = self.locals().into_iter().filter(|v| comp.live_defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
-            let params = self.static_params.iter().chain(nonlocal_uses.iter()).join(" ");
-            l_comp.ret_val = format!("({})", nonlocal_defs.iter().join(", "));
-            let body = try!(self.transpile_basic_block(bb, &mut l_comp));
-            let name = format!("{}.loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
-            let exit = match &l_comp.exits.iter().collect_vec()[..] {
-                [exit] => BasicBlock::new(*exit),
-                _ => throw!("Oops, multiple loop exits: {:?}", l_comp)
-            };
-            comp.prelude.push(format!("noncomputable definition {name} {params} rec__ tmp__ :=\n{body}",
-                                      name=name, params=params, body=detuplize("tmp__", &nonlocal_defs[..], &body)));
-            return Ok(format!("do tmp__ ← fix_opt ({name} {params}) {defs};\n{cont}",
-                              defs=l_comp.ret_val, name=name, params=params, cont=detuplize("tmp__", &nonlocal_defs[..], &rec!(exit))));
+            let (defs, _) = try!(Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self));
+            let (l_defs, _) = try!(Component::defs_uses(l_comp.blocks.iter(), self));
+            let state_vars = self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).collect_vec();
+            l_comp.state_val = format!("({})", state_vars.iter().join(", "));
+            return Ok(format!("loop' (λstate__, {body}) {state}",
+                              body=detuplize("state__", &state_vars, &try!(self.transpile_basic_block(bb, &mut l_comp))),
+                              state=l_comp.state_val));
         }
 
         let data = self.mir().basic_block_data(bb);
-        let stmts = try!(data.statements.iter().map(|s| self.transpile_statement(s, comp)).collect::<Result<Vec<_>, _>>());
+        let stmts = try!(data.statements.iter().map(|s| self.transpile_statement(s)).collect::<Result<Vec<_>, _>>());
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match *terminator {
                 Terminator::Goto { target } =>
                     rec!(target),
                 Terminator::If { ref cond, targets: (bb_if, bb_else) } =>
-                    format!("if {} then\n{}else\n{}", try!(self.get_operand(cond)),
+                    format!("if {} then\n{} else\n{}", try!(self.get_operand(cond)),
                     rec!(bb_if),
                     rec!(bb_else)),
                 Terminator::Return => try!(self.return_expr()),
-                Terminator::Call {
-                    func: Operand::Constant(Constant { literal: Literal::Item { def_id, ref substs }, .. }),
-                    ref args, destination: Some((_, target)), ..
-                } => {
-                    let (target_def_id, ty_args) = match self.tcx.trait_of_item(def_id) {
-                        Some(trait_def_id) => {
-                            // from trans::meth::trans_method_callee
-                            let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
-                            match try!(self.infer_trait_impl(trait_ref, def_id, false)) {
-                                TraitImplLookup::Static(impl_def_id) => {
-                                    let method = match self.tcx.impl_or_trait_item(def_id) {
-                                        ty::MethodTraitItem(method) => method,
-                                        _ => unreachable!(),
-                                    };
-                                    let trait_def = self.tcx.lookup_trait_def(method.container.id());
-                                    let method = trait_def.ancestors(impl_def_id).fn_defs(&self.tcx, method.name).next().unwrap().item;
-                                    (method.def_id, vec![])
-                                }
-                                TraitImplLookup::Dynamic => {
-                                    let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
-                                    (def_id, try!(self.transpile_trait_ref_args(trait_ref)).into_iter()
-                                     .chain(self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs).0).collect())
+                Terminator::Call { ref func, ref args, destination: Some((_, target)), ..  } => {
+                    let call = match *func {
+                        Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => match self.tcx.trait_of_item(def_id) {
+                            Some(trait_def_id) => {
+                                // from trans::meth::trans_method_callee
+                                let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
+                                match try!(self.infer_trait_impl(trait_ref, def_id, false)) {
+                                    TraitImplLookup::Static(impl_def_id) => {
+                                        let method = match self.tcx.impl_or_trait_item(def_id) {
+                                            ty::MethodTraitItem(method) => method,
+                                            _ => unreachable!(),
+                                        };
+                                        let trait_def = self.tcx.lookup_trait_def(method.container.id());
+                                        let method = trait_def.ancestors(impl_def_id).fn_defs(&self.tcx, method.name).next().unwrap().item;
+                                        self.transpile_def_id(method.def_id)
+                                    }
+                                    TraitImplLookup::Dynamic => {
+                                        let assoc_ty_substs = try!(self.get_assoc_ty_substs(self.def_id()));
+                                        iter::once(self.transpile_def_id(def_id))
+                                            .chain(try!(self.transpile_trait_ref_args(trait_ref)))
+                                            .chain(self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs).0)
+                                            .join(" ")
+                                    }
                                 }
                             }
-                        }
-                        _ => (def_id, vec![])
+                            _ => self.transpile_def_id(def_id),
+                        },
+                        Operand::Constant(_) => unreachable!(),
+                        Operand::Consume(ref lv) => try!(self.get_lvalue(lv)),
                     };
-                    let name = self.transpile_def_id(target_def_id);
-                    if name.starts_with("intrinsics.") && !INTRINSICS.contains(&name) {
-                        throw!("unimplemented intrinsics: {}", name);
-                    }
                     let args = try!(args.iter().map(|op| self.get_operand(op)).collect::<Result<Vec<_>, _>>());
-                    let call = iter::once(name).chain(ty_args).chain(args).join(" ");
+                    let call = iter::once(call).chain(args).join(" ");
                     try!(self.set_lvalues_option(try!(self.call_return_dests(&terminator)), &call, &rec!(target)))
                 }
-                Terminator::Call { .. } =>
-                    throw!("unimplemented: call {:?}", terminator),
+                Terminator::Call { destination: None, .. } =>
+                    "none\n".to_string(),
                 Terminator::Switch { ref discr, ref adt_def, ref targets } => {
                     let value = try!(self.get_lvalue(discr));
                     let arms: TransResult = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
@@ -807,15 +804,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let trait_param = format!("[{}]", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs)));
             Ok(free_assoc_tys.chain(iter::once(trait_param)))
         }).collect_results()).flat_map(|x| x);
-        self.static_params = ty_params.into_iter().chain(trait_params).collect();
 
         let idx = self.deps.borrow_mut().get_def_idx(self.node_id);
         let is_rec = self.deps.borrow().graph.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx);
         let body = if is_rec {
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
-        let def = format!("noncomputable definition {} :=\n{}",
-                          iter::once(name).chain(self.static_params.clone()).chain(params).join(" "),
+        let def = format!("definition {} :=\n{}",
+                          iter::once(name).chain(ty_params).chain(trait_params).chain(params).join(" "),
                           body);
         Ok(comp.prelude.into_iter().chain(iter::once(def)).join("\n\n"))
     }
@@ -825,25 +821,27 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn transpile_struct(&self, name: &str, data: &hir::VariantData, generics: &hir::Generics) -> TransResult {
-        match *data {
+        Ok(match *data {
             hir::VariantData::Struct(ref fields, _) => {
                 let fields = try!(fields.iter().map(|f| -> TransResult {
                     Ok(format!("({} : {})", mk_lean_name(&f.name.as_str()), try!(self.transpile_hir_ty(&*f.ty))))
                 }).join_results("\n"));
-                Ok(format!("structure {} := mk {{}} ::\n{}",
-                           Transpiler::transpile_generic_ty_def(name, generics),
-                           fields))
+                format!("structure {} := mk {{}} ::\n{}",
+                        Transpiler::transpile_generic_ty_def(name, generics),
+                        fields)
             }
             hir::VariantData::Tuple(ref fields, _) => {
                 let fields = try!(fields.iter().map(|f| {
                     self.transpile_hir_ty(&*f.ty)
                 }).join_results(" × "));
-                Ok(format!("inductive {} :=\nmk {{}} : {}",
-                           Transpiler::transpile_generic_ty_def(name, generics),
-                           fields))
+                format!("inductive {} :=\nmk {{}} : {}",
+                        Transpiler::transpile_generic_ty_def(name, generics),
+                        fields)
             }
-            _ => throw!("unimplemented: struct {:?}", data)
-        }
+            hir::VariantData::Unit(_) =>
+                format!("structure {} := mk {{}} ::",
+                        Transpiler::transpile_generic_ty_def(name, generics)),
+        })
     }
 
     fn transpile_enum(&self, name: &str, def: &hir::EnumDef, generics: &hir::Generics) -> TransResult {
@@ -857,7 +855,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         self.transpile_hir_ty(&*f.ty)
                     }).collect_results());
                     let ty = fields.chain(iter::once(applied_ty.clone())).join(" → ");
-                    format!("| {} : {}", variant.node.name, ty)
+                    format!("| {} {{}} : {}", variant.node.name, ty)
                 }
                 ref data => throw!("unimplemented: enum variant {:?}", data)
             })
@@ -889,11 +887,13 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             format!(" extends {}", supertraits.into_iter().join(", "))
         };
 
+        let only_path = format!("traits.\"{}\".only", &trait_name);
+        let only: Option<HashSet<_>> = self.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
         let items = try!(items.into_iter().filter(|item| match item.node {
             hir::TraitItem_::TypeTraitItem(..) => false,
             // FIXME: Do something more clever than ignoring default method overrides
             hir::TraitItem_::MethodTraitItem(_, Some(_)) => false,
-            _ => true
+            _ => only.iter().all(|only| only.contains(&*item.name.as_str()))
         })
         .map(|item| match item.node {
             hir::TraitItem_::TypeTraitItem(..) =>
@@ -937,12 +937,16 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             Ok(Some(format!("(_ : {})", try!(self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs)))))
         }).collect_results()).filter_map(|x| x);
 
-        let methods = try!(items.iter().map(|item| Ok(match item.node {
+        let only_path = format!("traits.\"{}\".only", &self.transpile_def_id(trait_ref.def_id));
+        let only: Option<HashSet<_>> = self.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
+        let items = try!(items.iter().map(|item| Ok(match item.node {
             hir::ImplItemKind::Type(_) =>
                 None,
             hir::ImplItemKind::Method(..) => {
                 // FIXME: Do something more clever than ignoring default method overrides
-                if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
+                if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) ||
+                    only.iter().all(|only| only.contains(&*item.name.as_str()))
+                {
                     None
                 } else {
                     Some(format!("{} := {}", item.name, self.transpile_node_id(item.id)))
@@ -957,7 +961,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                        &format!("{} [instance]", &self.transpile_node_id(self.node_id)),
                        generics),
                    trait_params.join(""),
-                   iter::once(try!(self.transpile_trait_ref(trait_ref, &assoc_ty_substs))).chain(supertraits).chain(methods).join(",\n  ")))
+                   iter::once(try!(self.transpile_trait_ref(trait_ref, &assoc_ty_substs))).chain(supertraits).chain(items).join(",\n  ")))
     }
 
     fn transpile_method(&mut self, node_id: NodeId, type_generics: &hir::Generics, sig: &hir::MethodSig, provided_method: bool) -> TransResult {
@@ -1021,9 +1025,9 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
     }
 }
 
-fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) -> io::Result<()> {
+fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
-    let crate_name = state.crate_name.expect("missing --crate-name rust arg");
+    let crate_name = state.crate_name.unwrap();
     let base = path::Path::new("thys").join(crate_name);
     try!(std::fs::create_dir_all(&base));
 
@@ -1036,9 +1040,9 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
             def_idcs: HashMap::new(),
             graph: Graph::new(),
         }),
+        config: config,
         node_id: 0,
         param_names: Vec::new(),
-        static_params: Vec::new(),
         refs: RefCell::new(HashMap::new()),
     };
     println!("Transpiling...");
@@ -1058,11 +1062,15 @@ fn transpile_crate(state: &driver::CompileState, targets: Option<&Vec<String>>) 
     for dep in crate_deps {
         try!(write!(f, "import {}\n", dep));
     }
-    try!(write!(f, "
+    try!(write!(f, "import data.nat data.list
+
+noncomputable theory
+
 open classical
 open nat
 open option
 open prod.ops
+open sum
 
 namespace {}
 ", crate_name));
@@ -1071,23 +1079,30 @@ namespace {}
     }
     try!(write!(f, "\n"));
 
-    let targets: Option<HashSet<NodeId>> = targets.map(|targets| {
+    let ignored: HashSet<_> = match config.lookup("ignore") {
+        Some(ignored) => toml_value_as_str_array(ignored).into_iter().collect(),
+        None => HashSet::new(),
+    };
+    let replaced: HashMap<_, _> = match config.lookup("replace") {
+        Some(replaced) => replaced.as_table().unwrap().iter().map(|(k, v)| {
+            (k.clone(), v.as_str().unwrap().to_string())
+        }).collect(),
+        None => HashMap::new(),
+    };
+    let targets: Option<HashSet<NodeId>> = config.lookup("targets").map(|targets| {
+        let targets: HashSet<_> = toml_value_as_str_array(targets).into_iter().collect();
         let targets = graph.node_indices().filter(|&ni| {
             let name = transpile_node_id(tcx, graph[ni]);
-            targets.iter().any(|t| t == &name)
+            targets.contains(&*name)
         });
         let rev = petgraph::visit::Reversed(&graph);
         targets.flat_map(|ni| petgraph::visit::DfsIter::new(&rev, ni)).map(|ni| graph[ni]).collect()
     });
 
     //try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
-    let condensed = condensation(graph, false);
+    let condensed = condensation(graph, /* make_acyclic */ true);
     //try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
     let mut failed = HashSet::new();
-
-    let ignored: HashSet<_> = vec![
-        "mem.swap",
-    ].into_iter().collect();
 
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
@@ -1099,7 +1114,11 @@ namespace {}
                 }
 
                 let name = transpile_node_id(tcx, node_id);
-                if ignored.contains(&name as &str) {
+                if ignored.contains(&*name) {
+                    continue;
+                }
+                if let Some(ref trans) = replaced.get(&*name) {
+                    try!(write!(f, "{}\n\n", trans));
                     continue;
                 }
 

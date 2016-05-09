@@ -1,0 +1,36 @@
+rustc_args = "rust/src/libcore/lib.rs"
+
+# unsafe functions axiomatized in core_pre.thy
+ignore = [
+  "mem.swap",
+  "slice._T_.SliceExt.len",
+]
+
+targets = [
+  "slice._T_.SliceExt.binary_search",
+]
+
+# unsafe functions that rely on other definitions and thus have to be replaced inline
+[replace]
+"slice._T_.ops.Index_ops.Range_usize__.index" = """
+/-
+/// Implements slicing with syntax `&self[begin .. end]`.
+///
+/// Returns a slice of self for the index range [`begin`..`end`).
+///
+/// This operation is `O(1)`.
+///
+/// # Panics
+///
+/// Requires that `begin <= end` and `end <= self.len()`,
+/// otherwise slicing will panic.
+-/
+
+definition slice._T_.ops.Index_ops.Range_usize__.index {T : Type} (self : slice T) (index : ops.Range usize) :=
+if ops.Range.start index ≤ ops.Range.end_ index ∧ ops.Range.end_ index ≤ list.length self
+then some (list.firstn (ops.Range.end_ index - ops.Range.start index) (list.dropn (ops.Range.start index) self))
+else none"""
+
+[traits."slice.SliceExt"]
+# only method called from default methods, everything else should be static calls
+only = ["len"]

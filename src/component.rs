@@ -7,33 +7,30 @@ use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
 #[derive(Default, Debug)]
-pub struct Component {
+pub struct Component<'a> {
     pub prelude: Vec<String>,
+    pub outer: Option<&'a Component<'a>>,
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
     pub loops: Vec<Vec<BasicBlock>>,
     pub exits: HashSet<usize>,
-    pub live_defs: HashSet<String>,
-    pub ret_val: String,
+    pub state_val: String,
 }
 
-impl Component {
-    pub fn new(trans: &Transpiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&Component>)
-        -> Component {
+impl<'a> Component<'a> {
+    pub fn new(trans: &Transpiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&'a Component<'a>>)
+        -> Component<'a> {
         let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
         Component {
+            outer: outer,
             header: outer.map(|_| start),
-            live_defs: match outer {
-                Some(comp) => comp.live_defs.clone(),
-                None => HashSet::new(),
-            },
             blocks: blocks, loops: loops,
             .. Default::default()
         }
     }
 
-    pub fn defs_uses(&mut self, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
+    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
@@ -41,7 +38,7 @@ impl Component {
             }
         }
 
-        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) -> Result<(), String> {
+        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *rv {
                 Rvalue::Use(ref op) => operand(op, uses),
                 Rvalue::UnaryOp(_, ref op) => operand(op, uses),
@@ -56,15 +53,17 @@ impl Component {
                     }
                 }
                 Rvalue::Cast(_, ref op, _) => operand(op, uses),
-                _ => throw!("unimplemented: find_nonlocals rvalue {:?}", rv),
+                Rvalue::Repeat(ref op, _) => operand(op, uses),
+                Rvalue::Len(ref lv) => uses.push(lv),
+                Rvalue::Slice { ref input, .. } => uses.push(input),
+                Rvalue::Box(_) | Rvalue::InlineAsm(_) => {}
             }
-            Ok(())
         }
 
         let mut defs = Vec::new();
         let mut uses = Vec::new();
 
-        for &bb in &self.blocks {
+        for &bb in blocks {
             for stmt in &trans.mir().basic_block_data(bb).statements {
                 match stmt.kind {
                     StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
@@ -73,7 +72,7 @@ impl Component {
                     }
                     StatementKind::Assign(ref lv, ref rv) => {
                         defs.push(lv);
-                        try!(rvalue(rv, &mut uses));
+                        rvalue(rv, &mut uses);
                     }
                 }
             }
