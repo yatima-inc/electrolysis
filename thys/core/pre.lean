@@ -54,6 +54,8 @@ end option
 open option
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
+notation `let` binder ` ← ` x `; ` r:(scoped f, f x) := r
+
 definition sum.inl_opt {A B : Type} : sum A B → option A
 | (inl a) := some a
 | (inr _) := none
@@ -188,8 +190,8 @@ definition checked.mod (n : nat) (m : nat) :=
 if m ≠ 0 then some (mod n m) else none
 
 /- TODO: actually check something -/
-definition checked.shl (n : nat) (m : nat) := n * 2^m
-definition checked.shr (n : nat) (m : int) := div n (2^nat.of_int m)
+definition checked.shl (n : nat) (m : nat) := some (n * 2^m)
+definition checked.shr (n : nat) (m : int) := some (div n (2^nat.of_int m))
 
 namespace core
   definition intrinsics.add_with_overflow (n : nat) (m : nat) := some (n + m, false)

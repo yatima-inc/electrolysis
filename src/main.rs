@@ -168,7 +168,7 @@ fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
 
 fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
     match pat {
-        [ref x] => format!("let {} := {} in\n{}", x, val, cont),
+        [ref x] => format!("let {} ← {};\n{}", x, val, cont),
         _ => format!("match {} with ({}) :=\n{}end\n", val, pat.into_iter().join(", "), cont),
     }
 }
@@ -261,7 +261,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let assoc_tys = self.trait_predicates_without_markers(trait_ref.def_id).flat_map(|trait_pred| {
             let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
             trait_def.associated_type_names.iter().map(|name| {
-                let assoc_ty = self.transpile_associated_type(trait_ref, name).unwrap();
+                let assoc_ty = self.transpile_associated_type(trait_pred.trait_ref, name).unwrap();
                 match assoc_ty_substs.get(&assoc_ty) {
                     Some(assoc_ty) => assoc_ty.to_owned(),
                     _ => {
@@ -453,7 +453,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             return self.set_lvalue(lv, val)
         }
         if let Some(name) = self.lvalue_name(lv) {
-            return Ok(format!("let {} := {} in\n", name, val));
+            return Ok(format!("let {} ← {};\n", name, val));
         }
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
@@ -463,7 +463,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
                         let field_name = adt_def.struct_variant().fields[field.index()].name;
-                        Ok(format!("let {} := ⦃ {}, {} := {}, {} ⦄ in\n", base_name, self.transpile_def_id(adt_def.did), field_name, val, base_name))
+                        Ok(format!("let {} ← ⦃ {}, {} := {}, {} ⦄;\n", base_name, self.transpile_def_id(adt_def.did), field_name, val, base_name))
                     },
                     ref ty => throw!("unimplemented: setting field of {:?}", ty),
                 }
@@ -1067,6 +1067,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
 noncomputable theory
 
 open classical
+open int
 open nat
 open option
 open prod.ops
