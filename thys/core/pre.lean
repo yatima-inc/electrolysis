@@ -65,6 +65,43 @@ definition sum.inr_opt {A B : Type} : sum A B → option B
 | (inr b) := some b
 
 
+namespace partial
+infixr `⇀`:100 := λA B, A → option B
+
+section
+  parameters {A B : Type} {R : B → B → Prop}
+  parameters (f : A ⇀ B)
+
+  private definition R' : option B → option B → Prop
+  | (some y) (some x) := R y x
+  | _        _        := false
+
+  private definition R'.wf (H : well_founded R) : well_founded R' :=
+  begin
+    apply well_founded.intro,
+    intro x, cases x with x',
+    { apply acc.intro,
+      intro y,
+      cases y; repeat contradiction },
+    { induction (well_founded.apply H x') with x' _ ih,
+      apply acc.intro,
+      intro y HR', cases y with y',
+      { contradiction },
+      { apply ih _ HR' }
+    }
+  end
+
+  parameter (R)
+  definition inv_image (f : A ⇀ B) : A → A → Prop := inv_image R' f
+
+  parameter {R}
+  definition inv_image.wf (H : well_founded R) : well_founded (inv_image f) :=
+  inv_image.wf f (R'.wf H)
+end
+
+end partial
+
+
 open [class] classical
 
 section
@@ -113,16 +150,16 @@ section
     (HR : ∀f s s', P s → l f s = some s' → R s' s) :
     option.all Q (fix_opt l s) :=-/
 
-  /-
   theorem loop_eq
+    {R : State → State → Prop}
     [Hwf_R : well_founded R]
-    (HR : ∀s s', body s = (s', loop.control.continue) → R s' s)
-    (s : State) :
+    (HR : ∀s s', body s = inl s' → R s' s)
+    {s : State} :
     loop s = match body s with
-    | (s', continue) := loop s'
-    | (s', break)    := some s'
-    end :=
-  have Hex : ∃R, loop.wf_R R,
+    | inl s' := loop s'
+    | inr r  := some r
+    end := sorry
+  /-have Hex : ∃R, wf_R R,
   begin
     apply exists.intro R,
     apply exists.intro Hwf_R,
@@ -130,7 +167,7 @@ section
     exact @well_founded.induction State R Hwf_R _ s
     (begin
       intro s' Hind,
-      rewrite [↑loop.fix, well_founded.fix_eq, ↑loop.F],
+      rewrite [↑fix, well_founded.fix_eq, ↑F],
       note HR' := HR s',
       revert HR',
       cases body s' with s'' c,
@@ -145,7 +182,7 @@ section
   from some_opt.ex R (decidable.rec_on_true _ this),-/
   begin
     cases body s,
-    rewrite [↑loop, ↑loop.fix, dif_pos Hex, dif_pos Hex],
+    rewrite [↑loop, ↑fix, dif_pos Hex, dif_pos Hex],
   end
     /-note Hwf_R' := dite_else_false Hloop_wf_R',
     rewrite [↑loop, HR', ▸*, dif_pos Hwf_R'],
@@ -179,7 +216,6 @@ abbreviation usize := nat
 
 abbreviation slice := list
 
-
 definition checked.sub (n : nat) (m : nat) :=
 if n ≥ m then some (n-m) else none
 
@@ -198,7 +234,7 @@ namespace core
 
   definition mem.swap {T : Type} (x y : T) := some (unit.star,y,x)
 
-  definition  slice._T_.SliceExt.len {T : Type} (self : slice T) := some (list.length self)
-  definition  slice._T__SliceExt.get_unchecked {T : Type} (self : slice T) (index : usize) :=
+  definition slice._T_.SliceExt.len {T : Type} (self : slice T) := some (list.length self)
+  definition slice._T__SliceExt.get_unchecked {T : Type} (self : slice T) (index : usize) :=
   list.nth self index
 end core
