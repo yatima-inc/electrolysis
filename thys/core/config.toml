@@ -25,7 +25,6 @@ targets = [
 /// Requires that `begin <= end` and `end <= self.len()`,
 /// otherwise slicing will panic.
 -/
-
 definition slice._T_.ops.Index_ops.Range_usize__.index {T : Type} (self : slice T) (index : ops.Range usize) :=
 if ops.Range.start index ≤ ops.Range.end_ index ∧ ops.Range.end_ index ≤ list.length self
 then some (list.firstn (ops.Range.end_ index - ops.Range.start index) (list.dropn (ops.Range.start index) self))

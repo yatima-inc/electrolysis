@@ -33,6 +33,7 @@ use petgraph::algo::*;
 use syntax::ast::{self, NodeId};
 use rustc_front::hir::{self, FnDecl, Item_, PatKind};
 use rustc_front::intravisit;
+use rustc::front;
 use rustc::mir::mir_map::MirMap;
 use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
@@ -43,6 +44,7 @@ use rustc::middle::traits::*;
 use rustc::middle::ty::{self, Ty, TyCtxt};
 
 use rustc_driver::driver;
+use syntax::ast_util::IdVisitingOperation;
 use syntax::diagnostics;
 use rustc::session;
 
@@ -153,16 +155,21 @@ fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
     }
 }
 
+#[derive(Default)]
 struct Deps {
     crate_deps: HashSet<String>,
     def_idcs: HashMap<NodeId, graph::NodeIndex>,
+    new_deps: HashSet<NodeId>,
     graph: Graph<NodeId, ()>,
 }
 
 impl Deps {
     fn get_def_idx(&mut self, id: NodeId) -> graph::NodeIndex {
-        let Deps { ref mut def_idcs, ref mut graph, .. } = *self;
-        *def_idcs.entry(id).or_insert_with(|| graph.add_node(id))
+        let Deps { ref mut def_idcs, ref mut new_deps, ref mut graph, .. } = *self;
+        *def_idcs.entry(id).or_insert_with(|| {
+            new_deps.insert(id);
+            graph.add_node(id)
+        })
     }
 
     fn add_dep(&mut self, used: NodeId, user: NodeId) {
@@ -177,7 +184,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     mir_map: &'a MirMap<'tcx>,
     trans_results: HashMap<NodeId, Result<String, String>>,
     deps: RefCell<Deps>,
-    config: &'a toml::Value,
+    config: Config<'a>,
 
     // inside of fns
     node_id: ast::NodeId,
@@ -191,13 +198,13 @@ enum TraitImplLookup<'tcx> {
 }
 
 impl<'tcx> TraitImplLookup<'tcx> {
-    fn to_string(self, trans: &Transpiler) -> String {
+    fn to_string<'a>(self, trans: &Transpiler<'a, 'tcx>) -> String {
         match self {
-            TraitImplLookup::Static { impl_def_id, params, .. } =>
-                format!("({})", iter::once(trans.transpile_def_id(impl_def_id)).chain(params).join(" ")),
-            TraitImplLookup::Dynamic { param } => {
-                param
-            }
+            TraitImplLookup::Static { impl_def_id, params, substs } =>
+                format!("({})", iter::once(trans.transpile_def_id(impl_def_id)).chain(substs.types.iter().map(|ty| {
+                    trans.transpile_ty(ty)
+                })).chain(params).join(" ")),
+            TraitImplLookup::Dynamic { param } => param,
         }
     }
 }
@@ -308,6 +315,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             ty::TypeVariants::TyProjection(ref proj) => self.transpile_associated_type(proj.trait_ref, &proj.item_name),
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)),
             ty::TypeVariants::TyTrait(_) => panic!("unimplemented: trait objects"),
+            ty::TypeVariants::TyInfer(_) => "_".to_string(), // FIXME
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.transpile_def_id(did),
                 None => panic!("unimplemented: ty {:?}", ty),
@@ -683,7 +691,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 Terminator::Call { ref func, ref args, destination: Some((_, target)), ..  } => {
                     let call = match *func {
                         Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
-                            println!("{:?}", substs);
                             let (def_id, substs) = match self.tcx.trait_of_item(def_id) {
                                 Some(trait_def_id) => {
                                     // from trans::meth::trans_method_callee
@@ -711,8 +718,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                             let trait_params = self.trait_predicates_without_markers(def_id).flat_map(|trait_pred| {
                                 let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
                                 let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
-                                println!("{:?} {:?} {:?}", self.def_id(), def_id, trait_pred);
-                                let trait_param = format!("({})", self.infer_trait_impl(trait_pred.trait_ref.subst(self.tcx, substs)).to_string(self));
+                                let trait_param = self.infer_trait_impl(trait_pred.trait_ref.subst(self.tcx, substs)).to_string(self);
                                 free_assoc_tys.chain(iter::once(trait_param))
                             });
                             iter::once(format!("@{}", self.transpile_def_id(def_id))).chain(ty_params).chain(trait_params).join(" ")
@@ -888,7 +894,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         };
 
         let only_path = format!("traits.\"{}\".only", &trait_name);
-        let only: Option<HashSet<_>> = self.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
+        let only: Option<HashSet<_>> = self.config.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
         let items = items.into_iter().filter(|item| match item.node {
             hir::TraitItem_::TypeTraitItem(..) => false,
             // FIXME: Do something more clever than ignoring default method overrides
@@ -938,15 +944,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         });
 
         let only_path = format!("traits.\"{}\".only", &self.transpile_def_id(trait_ref.def_id));
-        let only: Option<HashSet<_>> = self.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
+        let only: Option<HashSet<_>> = self.config.config.lookup(&only_path).map(|only| toml_value_as_str_array(only).into_iter().collect());
         let items = items.iter().filter_map(|item| match item.node {
             hir::ImplItemKind::Type(_) =>
                 None,
             hir::ImplItemKind::Method(..) => {
                 // FIXME: Do something more clever than ignoring default method overrides
                 if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) ||
-                    only.iter().all(|only| only.contains(&*item.name.as_str()))
-                {
+                    only.iter().any(|only| !only.contains(&*item.name.as_str())) {
                     None
                 } else {
                     Some(format!("{} := {}", item.name, self.transpile_node_id(item.id)))
@@ -956,7 +961,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 panic!("unimplemented: associated const"),
         });
 
-        format!("noncomputable definition {}{} := ⦃\n  {}\n⦄",
+        format!("definition {}{} := ⦃\n  {}\n⦄",
                 Transpiler::transpile_generic_ty_def(
                     &format!("{} [instance]", &self.transpile_node_id(self.node_id)),
                     generics),
@@ -964,7 +969,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 iter::once(self.transpile_trait_ref(trait_ref, &assoc_ty_substs)).chain(supertraits).chain(items).join(",\n  "))
     }
 
-    fn transpile_method(&mut self, node_id: NodeId, sig: &hir::MethodSig) -> String {
+    fn transpile_method(&mut self, sig: &hir::MethodSig) -> String {
         let name = transpile_def_id(self.tcx, self.def_id());
         self.transpile_fn(name, &*sig.decl)
     }
@@ -995,30 +1000,92 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn try_transpile<F : FnOnce(&mut Transpiler<'a, 'tcx>) -> String>(&mut self, id: NodeId, f: F) {
-        self.node_id = id;
-        self.deps.borrow_mut().get_def_idx(id);
-        let res = std::panic::recover(std::panic::AssertRecoverSafe::new(|| { f(self) })).map_err(|err| {
-            format!("{:?}: {:?}", err, err.type_id())
-        });
-        self.trans_results.insert(id, res);
-    }
-}
-
-impl<'a, 'tcx> intravisit::Visitor<'a> for Transpiler<'a, 'tcx> {
-    fn visit_item(&mut self, item: &'a hir::Item) {
-        self.try_transpile(item.id, |trans| trans.transpile_item(item))
-    }
-
-    fn visit_impl_item(&mut self, ii: &'a hir::ImplItem) {
-        if let hir::ImplItemKind::Method(ref sig, _) = ii.node {
-            self.try_transpile(ii.id, |trans| trans.transpile_method(ii.id, sig))
+    fn visit_id(&mut self, id: NodeId) {
+        match self.tcx.map.find(id) {
+            Some(front::map::Node::NodeItem(item)) =>
+                self.try_transpile(item.id, |trans| trans.transpile_item(item)),
+            Some(front::map::Node::NodeImplItem(ii)) => {
+                if let hir::ImplItemKind::Method(ref sig, _) = ii.node {
+                    self.try_transpile(ii.id, |trans| trans.transpile_method(sig))
+                }
+            }
+            Some(front::map::Node::NodeTraitItem(trait_item)) => {
+                if let hir::TraitItem_::MethodTraitItem(ref sig, Some(_)) = trait_item.node {
+                    self.try_transpile(trait_item.id, |trans| trans.transpile_method(sig))
+                }
+            }
+            _ => {}
         }
     }
 
+    fn try_transpile<F : FnOnce(&mut Transpiler<'a, 'tcx>) -> String>(&mut self, id: NodeId, f: F) {
+        let name = transpile_node_id(self.tcx, id);
+
+        if self.trans_results.contains_key(&id) || self.config.ignored.contains(&name) {
+            return
+        }
+
+        self.node_id = id;
+        self.deps.borrow_mut().get_def_idx(id); // add to dependency graph
+        let res = self.config.replaced.get(&name).map(|res| Ok(res.to_string()));
+        let res = res.unwrap_or_else(|| {
+            std::panic::recover(std::panic::AssertRecoverSafe::new(|| { f(self) })).map_err(|err| {
+                match err.downcast_ref::<String>() {
+                    Some(msg) => msg.clone(),
+                    None => match err.downcast_ref::<&'static str>() {
+                        Some(msg) => msg,
+                        None      => "compiler error",
+                    }.to_string(),
+                }
+            })
+        });
+        self.trans_results.insert(id, res);
+        let new_deps = self.deps.borrow().def_idcs.keys().cloned().collect_vec(); // self.deps.borrow_mut().new_deps.drain()...
+        for dep in new_deps {
+            self.visit_id(dep)
+        }
+    }
+}
+
+struct IdCollector {
+    ids: Vec<NodeId>
+}
+
+impl<'a> intravisit::Visitor<'a> for IdCollector {
+    fn visit_item(&mut self, item: &'a hir::Item) {
+        self.ids.push(item.id);
+        intravisit::walk_item(self, item);
+    }
+
+    fn visit_impl_item(&mut self, ii: &'a hir::ImplItem) {
+        self.ids.push(ii.id);
+    }
+
     fn visit_trait_item(&mut self, trait_item: &'a hir::TraitItem) {
-        if let hir::TraitItem_::MethodTraitItem(ref sig, Some(_)) = trait_item.node {
-            self.try_transpile(trait_item.id, |trans| trans.transpile_method(trait_item.id, sig))
+        self.ids.push(trait_item.id);
+    }
+}
+
+struct Config<'a> {
+    ignored: HashSet<String>,
+    replaced: HashMap<String, String>,
+    config: &'a toml::Value,
+}
+
+impl<'a> Config<'a> {
+    fn new(config: &'a toml::Value) -> Config {
+        Config {
+            ignored: match config.lookup("ignore") {
+                Some(ignored) => toml_value_as_str_array(ignored).into_iter().map(str::to_string).collect(),
+                None => HashSet::new(),
+            },
+            replaced: match config.lookup("replace") {
+                Some(replaced) => replaced.as_table().unwrap().iter().map(|(k, v)| {
+                    (k.clone(), v.as_str().unwrap().to_string())
+                }).collect(),
+                None => HashMap::new(),
+            },
+            config: config,
         }
     }
 }
@@ -1033,18 +1100,27 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
         tcx: tcx,
         mir_map: &state.mir_map.unwrap(),
         trans_results: HashMap::new(),
-        deps: RefCell::new(Deps {
-            crate_deps: HashSet::new(),
-            def_idcs: HashMap::new(),
-            graph: Graph::new(),
-        }),
-        config: config,
+        deps: Default::default(),
+        config: Config::new(config),
         node_id: 0,
         param_names: Vec::new(),
         refs: RefCell::new(HashMap::new()),
     };
+
     println!("Transpiling...");
-    state.hir_crate.unwrap().visit_all_items(&mut trans);
+
+    let mut id_collector = IdCollector { ids: vec![] };
+    state.hir_crate.unwrap().visit_all_items(&mut id_collector);
+
+    let targets = config.lookup("targets").map(|targets| {
+        toml_value_as_str_array(targets).into_iter().collect::<HashSet<_>>()
+    });
+
+    for id in id_collector.ids {
+        if targets.iter().all(|targets| targets.contains(&*transpile_node_id(trans.tcx, id))) {
+            trans.visit_id(id);
+        }
+    }
 
     let Transpiler { deps, trans_results, .. } = trans;
     let Deps { crate_deps, graph, .. } = deps.into_inner();
@@ -1078,27 +1154,7 @@ namespace {}
     }
     try!(write!(f, "\n"));
 
-    let ignored: HashSet<_> = match config.lookup("ignore") {
-        Some(ignored) => toml_value_as_str_array(ignored).into_iter().collect(),
-        None => HashSet::new(),
-    };
-    let replaced: HashMap<_, _> = match config.lookup("replace") {
-        Some(replaced) => replaced.as_table().unwrap().iter().map(|(k, v)| {
-            (k.clone(), v.as_str().unwrap().to_string())
-        }).collect(),
-        None => HashMap::new(),
-    };
-    let targets: Option<HashSet<NodeId>> = config.lookup("targets").map(|targets| {
-        let targets: HashSet<_> = toml_value_as_str_array(targets).into_iter().collect();
-        let targets = graph.node_indices().filter(|&ni| {
-            let name = transpile_node_id(tcx, graph[ni]);
-            targets.contains(&*name)
-        });
-        let rev = petgraph::visit::Reversed(&graph);
-        targets.flat_map(|ni| petgraph::visit::DfsIter::new(&rev, ni)).map(|ni| graph[ni]).collect()
-    });
-
-    //try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
+    try!(write!(try!(File::create("deps-un.dot")), "{:?}", petgraph::dot::Dot::new(&graph.map(|_, nid| tcx.map.local_def_id(*nid), |_, e| e))));
     let condensed = condensation(graph, /* make_acyclic */ true);
     //try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
     let mut failed = HashSet::new();
@@ -1106,20 +1162,7 @@ namespace {}
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
             [node_id] => {
-                if let Some(ref targets) = targets {
-                    if !targets.contains(&node_id) {
-                        continue
-                    }
-                }
-
                 let name = transpile_node_id(tcx, node_id);
-                if ignored.contains(&*name) {
-                    continue;
-                }
-                if let Some(ref trans) = replaced.get(&*name) {
-                    try!(write!(f, "{}\n\n", trans));
-                    continue;
-                }
 
                 let failed_deps = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).filter(|idx| failed.contains(idx)).collect_vec();
                 if failed_deps.is_empty() {
@@ -1161,7 +1204,7 @@ namespace {}
                             try!(write!(f, "{}\n\n", trans));
                         }
                         Some(&Err(ref err)) => {
-                            try!(write!(f, "{}: {}", name, err.replace("/-", "/ -")))
+                            try!(write!(f, "{}: {}\n\n", name, err.replace("/-", "/ -")))
                         }
                         None => {}
                     }
