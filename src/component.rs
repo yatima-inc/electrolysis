@@ -30,7 +30,7 @@ impl<'a> Component<'a> {
         }
     }
 
-    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &Transpiler) -> Result<(HashSet<String>, HashSet<String>), String> {
+    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &Transpiler) -> (HashSet<String>, HashSet<String>) {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
@@ -83,14 +83,14 @@ impl<'a> Component<'a> {
                         for arg in args {
                             operand(arg, &mut uses);
                         }
-                        defs.extend(try!(trans.call_return_dests(term)));
+                        defs.extend(trans.call_return_dests(term));
                     }
                     _ => {}
                 }
             }
         }
 
-        Ok((defs.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect(),
-            uses.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect()))
+        (defs.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect(),
+         uses.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect())
     }
 }
