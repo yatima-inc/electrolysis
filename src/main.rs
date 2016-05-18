@@ -193,7 +193,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
 }
 
 enum TraitImplLookup<'tcx> {
-    Static { impl_def_id: DefId, params: Vec<String>, substs: &'tcx Substs<'tcx> },
+    Static { impl_def_id: DefId, params: Vec<String>, substs: Substs<'tcx> },
     Dynamic { param: String },
 }
 
@@ -639,7 +639,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let param_env = ty::ParameterEnvironment::for_item(self.tcx, self.node_id);
         let pred = ty::Binder(trait_ref).to_poly_trait_predicate().subst(self.tcx, &param_env.free_substs);
         let dbg_param_env = format!("{:?}", param_env.caller_bounds);
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), rustc::middle::traits::ProjectionMode::Any);
+        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), ProjectionMode::Any);
         let mut selcx = SelectionContext::new(&infcx);
         let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
         let selection = selcx.select(&obligation).unwrap_or_else(|err| {
@@ -648,21 +648,33 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         match selection {
             Vtable::VtableImpl(data) => {
-                let nested_traits = data.nested.into_iter().filter_map(|obl| match obl.predicate {
+                let nested_traits = data.nested.iter().filter_map(|obl| match obl.predicate {
                     ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) =>
                         Some(self.infer_trait_impl(trait_pred.skip_binder().trait_ref).to_string(self)),
                     _ => None,
                 }).collect();
+
+                let mut fulfill_cx = FulfillmentContext::new();
+                for obl in data.nested {
+                    fulfill_cx.register_predicate_obligation(&infcx, obl);
+                }
+                let substs = infer::drain_fulfillment_cx_or_panic(span, &infcx, &mut fulfill_cx, data.substs);
+
                 TraitImplLookup::Static {
                     impl_def_id: data.impl_def_id,
                     params: nested_traits,
-                    substs: &data.substs
+                    substs: substs
                 }
-           },
+            },
             Vtable::VtableParam(_) => {
                 let param = mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref)).replace('.', "_");
                 TraitImplLookup::Dynamic { param: param }
             }
+            Vtable::VtableClosure(_) => {
+                TraitImplLookup::Dynamic {
+                    param: "_".to_string()
+                }
+            },
             vtable => panic!("unimplemented: vtable {:?}", vtable),
         }
     }
@@ -695,6 +707,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 Terminator::Call { ref func, ref args, destination: Some((_, target)), ..  } => {
                     let call = match *func {
                         Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
+                            let substs = substs.clone();
                             let (def_id, substs) = match self.tcx.trait_of_item(def_id) {
                                 Some(trait_def_id) => {
                                     // from trans::meth::trans_method_callee
@@ -705,6 +718,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                                             let method = self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap();
                                             let trait_def = self.tcx.lookup_trait_def(method.container.id());
                                             let method = trait_def.ancestors(impl_def_id).fn_defs(&self.tcx, method.name).next().unwrap().item;
+                                            let impl_substs = impl_substs.with_method_from(&substs);
                                             (method.def_id, if method.container.id() == impl_def_id { impl_substs } else { substs })
                                         }
                                         TraitImplLookup::Dynamic { .. } =>
@@ -722,7 +736,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                             let trait_params = self.trait_predicates_without_markers(def_id).flat_map(|trait_pred| {
                                 let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
                                 let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
-                                let trait_param = self.infer_trait_impl(trait_pred.trait_ref.subst(self.tcx, substs)).to_string(self);
+                                let trait_param = self.infer_trait_impl(trait_pred.trait_ref.subst(self.tcx, &substs)).to_string(self);
                                 free_assoc_tys.chain(iter::once(trait_param))
                             });
                             iter::once(format!("@{}", self.transpile_def_id(def_id))).chain(ty_params).chain(trait_params).join(" ")
