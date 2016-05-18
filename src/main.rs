@@ -39,7 +39,7 @@ use rustc::mir::repr::*;
 use rustc::middle::cstore::CrateStore;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::def_id::DefId;
-use rustc::middle::subst::{Subst, Substs};
+use rustc::middle::subst::{ParamSpace, Subst, Substs};
 use rustc::middle::traits::*;
 use rustc::middle::ty::{self, Ty, TyCtxt};
 
@@ -328,7 +328,11 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     }
 
     fn trait_predicates(&self, def_id: DefId) -> std::vec::IntoIter<ty::TraitPredicate<'tcx>> {
-        self.tcx.lookup_predicates(def_id).predicates.into_iter().filter_map(|trait_pred| match trait_pred {
+        let mut predicates = self.tcx.lookup_predicates(def_id).predicates;
+        if self.tcx.trait_of_item(def_id).is_some() {
+            predicates.truncate(ParamSpace::TypeSpace, 0);
+        }
+        predicates.into_iter().filter_map(|trait_pred| match trait_pred {
             ty::Predicate::Trait(trait_pred) => Some(trait_pred.0),
             _ => None,
         }).collect_vec().into_iter()
