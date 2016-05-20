@@ -54,9 +54,8 @@ end option
 open option
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
-notation `let` binder ` ← ` x `; ` r:(scoped f, f x) := r
 
-definition sum.inl_opt {A B : Type} : sum A B → option A
+definition sum.inl_opt [unfold 3] {A B : Type} : sum A B → option A
 | (inl a) := some a
 | (inr _) := none
 
@@ -72,7 +71,7 @@ section
   parameters {A B : Type} {R : B → B → Prop}
   parameters (f : A ⇀ B)
 
-  private definition R' : option B → option B → Prop
+  definition R' [unfold 3] : option B → option B → Prop
   | (some y) (some x) := R y x
   | _        _        := false
 
@@ -95,12 +94,11 @@ section
   definition inv_image (f : A ⇀ B) : A → A → Prop := inv_image R' f
 
   parameter {R}
-  definition inv_image.wf (H : well_founded R) : well_founded (inv_image f) :=
+  lemma inv_image.wf (H : well_founded R) : well_founded (inv_image f) :=
   inv_image.wf f (R'.wf H)
 end
 
 end partial
-
 
 open [class] classical
 
@@ -113,9 +111,19 @@ section
 
     private definition State' := sum State Res
 
-    private definition R' : State' → State' → Prop
+    private definition R' [unfold 4] : State' → State' → Prop
     | (inl s') (inl s) := R s' s
     | _        _       := false
+
+    private definition R'.wf (H : well_founded R) : well_founded R' :=
+    let f := sum.rec some (λr, none) in
+    have subrelation R' (partial.inv_image R f),
+    begin
+      intro x y R'xy,
+      cases x, cases y,
+      repeat (apply R'xy),
+    end,
+    subrelation.wf this (partial.inv_image.wf f H)
 
     private noncomputable definition F (x : State') (f : Π (x' : State'), R' x' x → option State') : option State' :=
     do s ← sum.inl_opt x;
@@ -125,7 +133,7 @@ section
     end
 
     private noncomputable definition fix (Hwf: well_founded R) (s : State) : option Res :=
-    have well_founded R', from sorry,
+    have well_founded R', from R'.wf Hwf,
     do x ← well_founded.fix F (inl s);
     sum.inr_opt x
 
@@ -138,18 +146,6 @@ section
     fix (classical.some Hex) (classical.some (classical.some_spec Hex)) s
   else none
 
-  /-theorem loop_inv
-    {A : Type}
-    (P Q : A → Prop) {R : A → A → Prop}
-    {s : A} {l : (A → option A) → A → option A}
-    (Hstart : P s)
-    (Hdoes_step : ∀s f, P s → ∃s', l f s = some s' ∨ l f s = f s')
-    (Hstep : ∀f s s', P s → l f s = f s' → P s')
-    (Hstop : ∀f s s', P s → l f s = some s' → Q s')
-    (Hwf_R : well_founded R)
-    (HR : ∀f s s', P s → l f s = some s' → R s' s) :
-    option.all Q (fix_opt l s) :=-/
-
   theorem loop_eq
     {R : State → State → Prop}
     [Hwf_R : well_founded R]
@@ -158,8 +154,8 @@ section
     loop s = match body s with
     | inl s' := loop s'
     | inr r  := some r
-    end := sorry
-  /-have Hex : ∃R, wf_R R,
+    end :=
+  have Hwf_R : ∃R, wf_R R,
   begin
     apply exists.intro R,
     apply exists.intro Hwf_R,
@@ -167,32 +163,34 @@ section
     exact @well_founded.induction State R Hwf_R _ s
     (begin
       intro s' Hind,
-      rewrite [↑fix, well_founded.fix_eq, ↑F],
+      rewrite [↑fix, @well_founded.fix_eq, ↑F at {2}],
       note HR' := HR s',
       revert HR',
-      cases body s' with s'' c,
-      intro HR',
-      cases c,
-      { rewrite [dif_pos (HR' s'' rfl)],
+      cases body s' with s'',
+      { intro HR',
+        rewrite [dif_pos (HR' s'' rfl)],
         apply Hind _ (HR' s'' rfl) },
       { contradiction }
     end)
   end,
-  /-obtain R' (HR' : some_opt loop.wf_R = some R') (Hloop_wf_R' : loop.wf_R R'),
-  from some_opt.ex R (decidable.rec_on_true _ this),-/
   begin
-    cases body s,
-    rewrite [↑loop, ↑fix, dif_pos Hex, dif_pos Hex],
+    let R'₀ := R' (classical.some Hwf_R),
+    have well_founded R'₀, from R'.wf (classical.some Hwf_R)
+      (exists.elim (classical.some_spec Hwf_R) (λHwf_R₂ __, Hwf_R₂)),
+    exact (match body s with
+    | inl s' := λ(Heq : body s = inl s'),
+      begin
+        rewrite [↑loop, ↑fix, +dif_pos Hwf_R],
+        have Hin_R' : R'₀ (inl s') (inl s), from sorry,
+        rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*, dif_pos Hin_R']
+      end
+    | inr r  := λ(Heq : body s = inr r),
+      begin
+        rewrite [↑loop, ↑fix, dif_pos Hwf_R],
+        rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*]
+      end
+    end) rfl
   end
-    /-note Hwf_R' := dite_else_false Hloop_wf_R',
-    rewrite [↑loop, HR', ▸*, dif_pos Hwf_R'],
-    rewrite [↑loop.fix, well_founded.fix_eq, ↑loop.F],
-    apply (congr_arg (prod.cases_on (body s))),
-    apply funext, intro s',
-    have R' s' s, from sorry,
-    rewrite [dif_pos this, dif_pos Hwf_R'],
-  end-/
-  -/
 end
 
 section
@@ -238,3 +236,5 @@ namespace core
   definition slice._T__SliceExt.get_unchecked {T : Type} (self : slice T) (index : usize) :=
   list.nth self index
 end core
+
+notation `let` binder ` ← ` x `; ` r:(scoped f, f x) := r

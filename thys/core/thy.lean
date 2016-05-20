@@ -7,32 +7,23 @@ open nat
 open option
 open prod.ops
 
-theorem loop
-  {A : Type}
-  (P Q : A → Prop) {R : A → A → Prop}
-  {s : A} {l : (A → option A) → A → option A}
-  (Hstart : P s)
-  (Hdoes_step : ∀s f, P s → ∃s', l f s = some s' ∨ l f s = f s')
-  (Hstep : ∀f s s', P s → l f s = f s' → P s')
-  (Hstop : ∀f s s', P s → l f s = some s' → Q s')
-  (Hwf_R : well_founded R)
-  (HR : ∀f s s', P s → l f s = some s' → R s' s) :
-  option.all Q (fix_opt l s) :=
-have ∀(x : A), fix_opt.fix l R Hwf_R x ≠ none, from sorry,
-obtain R' (HR' : some_opt (fix_opt.wf_R l) = some R') (Hwf_R' : (fix_opt.wf_R l) R'),
-from some_opt.ex R (decidable.rec_on_true _ this),
-sorry /-
-begin
-clear H_obtain_from,
-apply option.all.intro,
-{ apply bind_eq_some,
-    { apply HR' },
-    { unfold dite, apply decidable.rec_on, },
-}
-end -/
-
 namespace core
 
+open ops
+
+namespace slice
+
+open _T_.SliceExt
+
+/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
+lemma binary_search_by_terminates {T F : Type} (s : slice T) (f : F) [f_impl : FnMut T F cmp.Ordering]
+  (Hf_impl_term: Πf x, @FnMut.call_mut _ _ _ f_impl f x ≠ none) :
+  binary_search_by s f ≠ none :=
+begin
+  esimp [binary_search_by]
+end
+
+/-
 theorem decidable_eq_decidable {A : Prop} (x y : decidable A) : x = y :=
 begin
   cases x,
@@ -137,5 +128,6 @@ section
       }
     }
 end
+-/
 
 end core

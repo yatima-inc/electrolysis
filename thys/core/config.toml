@@ -7,7 +7,8 @@ ignore = [
 ]
 
 targets = [
-  "slice._T_.SliceExt.binary_search",
+  "iter.Iterator.sum",
+  "slice._T_.SliceExt.binary_search_by",
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline
