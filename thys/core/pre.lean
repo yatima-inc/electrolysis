@@ -100,6 +100,8 @@ end
 
 end partial
 
+lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
+
 open [class] classical
 
 section
@@ -177,19 +179,13 @@ section
     let R'₀ := R' (classical.some Hwf_R),
     have well_founded R'₀, from R'.wf (classical.some Hwf_R)
       (exists.elim (classical.some_spec Hwf_R) (λHwf_R₂ __, Hwf_R₂)),
-    exact (match body s with
-    | inl s' := λ(Heq : body s = inl s'),
-      begin
-        rewrite [↑loop, ↑fix, +dif_pos Hwf_R],
-        have Hin_R' : R'₀ (inl s') (inl s), from sorry,
-        rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*, dif_pos Hin_R']
-      end
-    | inr r  := λ(Heq : body s = inr r),
-      begin
-        rewrite [↑loop, ↑fix, dif_pos Hwf_R],
-        rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*]
-      end
-    end) rfl
+    apply generalize_with_eq (body s),
+    intro b Heq, cases b with s' r,
+    { rewrite [↑loop, ↑fix, +dif_pos Hwf_R],
+      have Hin_R' : R'₀ (inl s') (inl s), from sorry,
+      rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*, dif_pos Hin_R'] },
+    { rewrite [↑loop, ↑fix, dif_pos Hwf_R],
+      rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*] }
   end
 end
 
