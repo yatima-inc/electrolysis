@@ -139,52 +139,34 @@ section
     do x ← well_founded.fix F (inl s);
     sum.inr_opt x
 
-    private noncomputable definition wf_R :=
-    ∃Hwf : well_founded R, ∀s : State, fix Hwf s ≠ none
+    private definition term_rel :=
+    well_founded R ∧ ∀s s' : State, body s = inl s' → R s' s
   end
 
   noncomputable definition loop (s : State) : option Res :=
-  if Hex : ∃R, wf_R R then
-    fix (classical.some Hex) (classical.some (classical.some_spec Hex)) s
+  if Hex : Exists term_rel then
+    fix (classical.some Hex) (and.left (classical.some_spec Hex)) s
   else none
 
   theorem loop_eq
     {R : State → State → Prop}
-    [Hwf_R : well_founded R]
+    [well_founded R]
     (HR : ∀s s', body s = inl s' → R s' s)
     {s : State} :
     loop s = match body s with
     | inl s' := loop s'
     | inr r  := some r
     end :=
-  have Hwf_R : ∃R, wf_R R,
+  have Hterm_rel : Exists term_rel, from exists.intro R (and.intro _ HR),
+  let R'₀ := R' (classical.some Hterm_rel) in
+  have well_founded R'₀, from R'.wf _ (and.left (classical.some_spec Hterm_rel)),
   begin
-    apply exists.intro R,
-    apply exists.intro Hwf_R,
-    intro s,
-    exact @well_founded.induction State R Hwf_R _ s
-    (begin
-      intro s' Hind,
-      rewrite [↑fix, @well_founded.fix_eq, ↑F at {2}],
-      note HR' := HR s',
-      revert HR',
-      cases body s' with s'',
-      { intro HR',
-        rewrite [dif_pos (HR' s'' rfl)],
-        apply Hind _ (HR' s'' rfl) },
-      { contradiction }
-    end)
-  end,
-  begin
-    let R'₀ := R' (classical.some Hwf_R),
-    have well_founded R'₀, from R'.wf (classical.some Hwf_R)
-      (exists.elim (classical.some_spec Hwf_R) (λHwf_R₂ __, Hwf_R₂)),
     apply generalize_with_eq (body s),
     intro b Heq, cases b with s' r,
-    { rewrite [↑loop, ↑fix, +dif_pos Hwf_R],
+    { rewrite [↑loop, ↑fix, +dif_pos Hterm_rel],
       have Hin_R' : R'₀ (inl s') (inl s), from sorry,
       rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*, dif_pos Hin_R'] },
-    { rewrite [↑loop, ↑fix, dif_pos Hwf_R],
+    { rewrite [↑loop, ↑fix, dif_pos Hterm_rel],
       rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*] }
   end
 end
