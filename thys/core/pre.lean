@@ -164,7 +164,8 @@ section
     apply generalize_with_eq (body s),
     intro b Heq, cases b with s' r,
     { rewrite [↑loop, ↑fix, +dif_pos Hterm_rel],
-      have Hin_R' : R'₀ (inl s') (inl s), from sorry,
+      have Hin_R' : R'₀ (inl s') (inl s), from
+        and.right (classical.some_spec Hterm_rel) s s' Heq,
       rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*, dif_pos Hin_R'] },
     { rewrite [↑loop, ↑fix, dif_pos Hterm_rel],
       rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*] }
