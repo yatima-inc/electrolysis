@@ -8,6 +8,8 @@ open prod
 open prod.ops
 open sum
 
+-- things that may or may not belong in the stdlib
+
 namespace nat
   definition of_int : ℤ → ℕ
   | (int.of_nat n) := n
@@ -55,17 +57,17 @@ open option
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
 
-definition sum.inl_opt [unfold 3] {A B : Type} : sum A B → option A
+definition sum.inl_opt [unfold 3] {A B : Type} : A + B → option A
 | (inl a) := some a
 | (inr _) := none
 
-definition sum.inr_opt {A B : Type} : sum A B → option B
+definition sum.inr_opt {A B : Type} : A + B → option B
 | (inl _) := none
 | (inr b) := some b
 
 
 namespace partial
-infixr `⇀`:100 := λA B, A → option B
+infixr ` ⇀ `:25 := λA B, A → option B
 
 section
   parameters {A B : Type} {R : B → B → Prop}
@@ -100,18 +102,22 @@ end
 
 end partial
 
+open [notation] partial
+
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
 open [class] classical
 
+-- a general loop combinator for separating tail-recursive definitions from their well-foundedness proofs
+
 section
   parameters {State Res : Type}
-  parameters (body : State → sum State Res)
+  parameters (body : State → State + Res)
 
   section
     parameter (R : State → State → Prop)
 
-    private definition State' := sum State Res
+    private definition State' := State + Res
 
     private definition R' [unfold 4] : State' → State' → Prop
     | (inl s') (inl s) := R s' s
@@ -148,6 +154,8 @@ section
     fix (classical.some Hex) (and.left (classical.some_spec Hex)) s
   else none
 
+  parameter {body}
+
   theorem loop_eq
     {R : State → State → Prop}
     [well_founded R]
@@ -172,9 +180,11 @@ section
   end
 end
 
+-- lifting loop to partial body functions
+
 section
   parameters {State Res : Type}
-  parameters (body : State → option (sum State Res))
+  parameters (body : State ⇀ State + Res)
 
   noncomputable definition loop' (s : State) : option Res :=
   do res ← loop (λs, match body s with
