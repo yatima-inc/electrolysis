@@ -186,13 +186,49 @@ section
   parameters {State Res : Type}
   parameters (body : State ⇀ State + Res)
 
-  noncomputable definition loop' (s : State) : option Res :=
-  do res ← loop (λs, match body s with
+  private definition body' (s : State) : State + option Res := match body s with
   | some (inl s') := inl s'
   | some (inr r)  := inr (some r)
   | none          := inr none
-  end) s;
+  end
+
+  noncomputable definition loop' (s : State) : option Res :=
+  do res ← loop body' s;
   res
+
+  theorem loop'_eq
+    {R : State → State → Prop}
+    [well_founded R]
+    (HR : ∀s s', body s = some (inl s') → R s' s)
+    {s : State} :
+    loop' s = match body s with
+    | some (inl s') := loop' s'
+    | some (inr r)  := some r
+    | none          := none
+    end :=
+  have ∀s s', body' s = inl s' → R s' s,
+  begin
+    intro s s' H,
+    apply HR s s',
+    esimp [body'] at H,
+    revert H,
+    cases body s with x,
+    { contradiction },
+    { cases x with s'₂ r,
+      { intro H,
+        injection H with s'_eq,
+        rewrite s'_eq },
+      { contradiction },
+    }
+  end,
+  begin
+    rewrite [↑loop', loop_eq this, ↑body'],
+    rewrite [↑body'], --?
+    apply generalize_with_eq (body s), -- I don't actually use Heq, but `cases body s` did not replace all occurences
+    intro b Heq, cases b with x,
+    { esimp },
+    { cases x, repeat esimp }
+  end
 end
 
 abbreviation u8 := nat
