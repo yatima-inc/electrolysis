@@ -189,8 +189,8 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     // inside of fns
     node_id: ast::NodeId,
     param_names: Vec<String>,
-    prelude: RefCell<Vec<String>>,
-    refs: RefCell<HashMap<usize, &'a Lvalue<'tcx>>>,
+    prelude: Vec<String>,
+    refs: HashMap<usize, &'a Lvalue<'tcx>>,
 }
 
 enum TraitImplLookup<'tcx> {
@@ -370,7 +370,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
     fn deref_mut(&self, lv: &Lvalue) -> Option<&Lvalue<'tcx>> {
         if let Some(lv_idx) = self.lvalue_idx(lv) {
-            if let Some(lv) = self.refs.borrow().get(&lv_idx) {
+            if let Some(lv) = self.refs.get(&lv_idx) {
                 return Some(lv)
             }
         }
@@ -586,13 +586,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         })
     }
 
-    fn transpile_statement(&self, stmt: &'a Statement<'tcx>) -> String {
+    fn transpile_statement(&mut self, stmt: &'a Statement<'tcx>) -> String {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
-                    self.refs.borrow_mut().insert(self.lvalue_idx(lv).unwrap_or_else(|| {
+                    let idx = self.lvalue_idx(lv).unwrap_or_else(|| {
                         panic!("unimplemented: storing {:?}", lv)
-                    }), lsource);
+                    });
+                    self.refs.insert(idx, lsource);
                     return "".to_string()
                 }
                 if *lv != Lvalue::ReturnPointer && self.lvalue_ty(lv).is_nil() {
@@ -609,7 +610,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block_rec(&self, bb: BasicBlock, comp: &Component) -> String {
+    fn transpile_basic_block_rec(&mut self, bb: BasicBlock, comp: &Component) -> String {
         if comp.header == Some(bb) {
             format!("some (inl {})\n", comp.state_val)
         } else if !comp.blocks.contains(&bb) {
@@ -680,7 +681,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_basic_block(&self, bb: BasicBlock, comp: &Component) -> String {
+    fn transpile_basic_block(&mut self, bb: BasicBlock, comp: &Component) -> String {
         macro_rules! rec { ($bb:expr) => { self.transpile_basic_block_rec($bb, comp) } }
 
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
@@ -691,9 +692,10 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let state_vars = self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).collect_vec();
             l_comp.state_val = format!("({})", state_vars.iter().join(", "));
             let name = format!("{}.loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
-            self.prelude.borrow_mut().push(format!("definition {name} {params} state__ :=\n{body}",
-                                                   name=name, params=nonlocal_uses,
-                                                   body=detuplize("state__", &state_vars, &self.transpile_basic_block(bb, &l_comp))));
+            let body = self.transpile_basic_block(bb, &l_comp);
+            self.prelude.push(format!("definition {name} {params} state__ :=\n{body}",
+                                      name=name, params=nonlocal_uses,
+                                      body=detuplize("state__", &state_vars, &body)));
             return format!("loop' ({name} {params}) {state}",
                            name=name, params=nonlocal_uses, state=l_comp.state_val);
         }
@@ -749,9 +751,9 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                         Operand::Constant(_) => unreachable!(),
                         Operand::Consume(ref lv) => self.get_lvalue(lv),
                     };
-                    let args = args.iter().map(|op| self.get_operand(op));
-                    let call = iter::once(call).chain(args).join(" ");
-                    self.set_lvalues_option(self.call_return_dests(&terminator), &call, &rec!(target))
+                    let call = iter::once(call).chain(args.iter().map(|op| self.get_operand(op))).join(" ");
+                    let rec = rec!(target);
+                    self.set_lvalues_option(self.call_return_dests(&terminator), &call, &rec)
                 }
                 Terminator::Call { destination: None, .. } =>
                     "none\n".to_string(),
@@ -766,10 +768,10 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                 Terminator::SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
                     let arms = values.iter().zip(targets).map(|(val, &target)| {
                         format!("| {} :=\n{}", self.transpile_constval(val), rec!(target))
-                    });
+                    }).collect_vec();
                     let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap()));
                     format!("match {} with\n{}\nend\n", self.get_lvalue(discr),
-                        arms.chain(iter::once(fallback)).join(""))
+                            arms.into_iter().chain(iter::once(fallback)).join(""))
                 },
                 Terminator::Drop { target, .. } => rec!(target),
                 Terminator::Resume => String::new(),
@@ -801,7 +803,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             return "".to_string()
         }
 
-        self.refs.borrow_mut().clear();
+        self.refs.clear();
         self.param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
             PatKind::Ident(_, ref ident, _) => mk_lean_name(&ident.node.name.to_string()),
             _ => format!("p{}", i),
@@ -823,14 +825,14 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
                                       mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)).replace('.', "_"),
                                       self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs));
             free_assoc_tys.chain(iter::once(trait_param))
-        });
+        }).collect_vec();
 
         let idx = self.deps.borrow_mut().get_def_idx(self.node_id);
         let is_rec = self.deps.borrow().graph.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx);
         let body = if is_rec {
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
-        let prelude = self.prelude.borrow_mut().clone();
+        let prelude = self.prelude.drain(..).collect_vec();
         if prelude.is_empty() {
             let def = format!("definition {} :=\n{}",
                               iter::once(name).chain(ty_params).chain(trait_params).chain(params).join(" "),
@@ -1053,7 +1055,7 @@ definition {} :=\n{}",
 
         self.node_id = id;
         self.deps.borrow_mut().get_def_idx(id); // add to dependency graph
-        self.prelude.borrow_mut().clear();
+        self.prelude.clear();
         let res = self.config.replaced.get(&name).map(|res| Ok(res.to_string()));
         let res = res.unwrap_or_else(|| {
             std::panic::recover(std::panic::AssertRecoverSafe::new(|| { f(self) })).map_err(|err| {
@@ -1131,8 +1133,8 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
         config: Config::new(config),
         node_id: 0,
         param_names: Vec::new(),
-        prelude: Default::default(),
-        refs: RefCell::new(HashMap::new()),
+        prelude: Vec::new(),
+        refs: HashMap::new(),
     };
 
     println!("Transpiling...");
