@@ -20,7 +20,7 @@ lemma binary_search_by_terminates {T F : Type} (s : slice T) (f : F) [f_impl : F
   (Hf_impl_term: Πf x, @FnMut.call_mut _ _ _ f_impl f x ≠ none) :
   binary_search_by s f ≠ none :=
 begin
-  esimp [binary_search_by]
+  esimp [binary_search_by],
 end
 
 /-

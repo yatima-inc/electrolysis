@@ -189,6 +189,7 @@ pub struct Transpiler<'a, 'tcx: 'a> {
     // inside of fns
     node_id: ast::NodeId,
     param_names: Vec<String>,
+    prelude: RefCell<Vec<String>>,
     refs: RefCell<HashMap<usize, &'a Lvalue<'tcx>>>,
 }
 
@@ -685,12 +686,16 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         if let Some(l) = comp.loops.clone().into_iter().find(|l| l.contains(&bb)) {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
             let (defs, _) = Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self);
-            let (l_defs, _) = Component::defs_uses(l_comp.blocks.iter(), self);
+            let (l_defs, l_uses) = Component::defs_uses(l_comp.blocks.iter(), self);
+            let nonlocal_uses = self.locals().into_iter().filter(|v| defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v)).join(" ");
             let state_vars = self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).collect_vec();
             l_comp.state_val = format!("({})", state_vars.iter().join(", "));
-            return format!("loop' (λstate__, {body}) {state}",
-                           body=detuplize("state__", &state_vars, &self.transpile_basic_block(bb, &mut l_comp)),
-                           state=l_comp.state_val);
+            let name = format!("{}.loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
+            self.prelude.borrow_mut().push(format!("definition {name} {params} state__ :=\n{body}",
+                                                   name=name, params=nonlocal_uses,
+                                                   body=detuplize("state__", &state_vars, &self.transpile_basic_block(bb, &l_comp))));
+            return format!("loop' ({name} {params}) {state}",
+                           name=name, params=nonlocal_uses, state=l_comp.state_val);
         }
 
         let data = self.mir().basic_block_data(bb);
@@ -790,16 +795,6 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         format!("some ({})\n", iter::once(ret.to_string()).chain(muts).join(", "))
     }
 
-    fn is_final_impl(&self, def_id: DefId) -> bool {
-        self.tcx.trait_of_item(def_id).is_none() || {
-            let method = self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap();
-            method.defaultness.is_final() && match method.container {
-                ty::ImplOrTraitItemContainer::TraitContainer(_) => false,
-                _ => true,
-            }
-        }
-    }
-
     fn transpile_fn(&mut self, name: String, decl: &FnDecl) -> String {
         // FIXME... or not
         if name.starts_with("tuple._A__B__C__D") {
@@ -814,7 +809,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         let params = self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| {
             format!("({} : {})", name, self.transpile_ty(&arg.ty))
-        });
+        }).collect_vec();
 
         let mut comp = Component::new(self, START_BLOCK, self.mir().all_basic_blocks(), None);
         let body = self.transpile_basic_block(START_BLOCK, &mut comp);
@@ -835,10 +830,23 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
         let body = if is_rec {
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
-        let def = format!("definition {} :=\n{}",
-                          iter::once(name).chain(ty_params).chain(trait_params).chain(params).join(" "),
-                          body);
-        comp.prelude.into_iter().chain(iter::once(def)).join("\n\n")
+        let prelude = self.prelude.borrow_mut().clone();
+        if prelude.is_empty() {
+            let def = format!("definition {} :=\n{}",
+                              iter::once(name).chain(ty_params).chain(trait_params).chain(params).join(" "),
+                              body);
+            prelude.into_iter().chain(iter::once(def)).join("\n\n")
+        } else {
+            format!("section
+parameters {}
+
+{}
+
+definition {} :=\n{}",
+                    ty_params.into_iter().chain(trait_params).chain(params.clone()).join(" "),
+                    prelude.into_iter().join("\n\n"),
+                    iter::once(name).chain(params).join(" "), body)
+        }
     }
 
     fn transpile_generic_ty_def(name: &str, generics: &hir::Generics) -> String {
@@ -1045,6 +1053,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
 
         self.node_id = id;
         self.deps.borrow_mut().get_def_idx(id); // add to dependency graph
+        self.prelude.borrow_mut().clear();
         let res = self.config.replaced.get(&name).map(|res| Ok(res.to_string()));
         let res = res.unwrap_or_else(|| {
             std::panic::recover(std::panic::AssertRecoverSafe::new(|| { f(self) })).map_err(|err| {
@@ -1122,6 +1131,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
         config: Config::new(config),
         node_id: 0,
         param_names: Vec::new(),
+        prelude: Default::default(),
         refs: RefCell::new(HashMap::new()),
     };
 

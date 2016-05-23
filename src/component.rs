@@ -8,12 +8,10 @@ use ::mir_graph::mir_sccs;
 // A loop or the full function body
 #[derive(Default, Debug)]
 pub struct Component<'a> {
-    pub prelude: Vec<String>,
     pub outer: Option<&'a Component<'a>>,
     pub header: Option<BasicBlock>,
     pub blocks: Vec<BasicBlock>,
     pub loops: Vec<Vec<BasicBlock>>,
-    pub exits: HashSet<usize>,
     pub state_val: String,
 }
 
