@@ -7,7 +7,6 @@ ignore = [
 ]
 
 targets = [
-  "iter.Iterator.sum",
   "slice._T_.SliceExt.binary_search_by",
 ]
 

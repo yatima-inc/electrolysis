@@ -2,6 +2,7 @@ import data.nat data.list
 
 open bool
 open eq.ops
+open int
 open nat
 open option
 open prod
@@ -14,6 +15,8 @@ namespace nat
   definition of_int : ℤ → ℕ
   | (int.of_nat n) := n
   | _              := 0
+
+  lemma of_int_one : of_int 1 = 1 := rfl
 end nat
 
 namespace option
@@ -23,34 +26,21 @@ namespace option
   | (some x) := P x
   | none     := false
 
+  theorem ex_some_of_neq_none {x : option A} (H : x ≠ none) : ∃y, x = some y :=
+  begin
+    cases x with y,
+    { exfalso, apply H rfl },
+    { existsi y, apply rfl }
+  end
+
   protected definition bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
   | (some x) := f x
   | none     := none
 
-  theorem all.intro (P : A → Prop) {x x'} (Hxx' : x = some x') (HPx' : P x') : option.all P x :=
-  begin
-    cases x,
-    { apply option.no_confusion Hxx' },
-    { esimp,
-      injection Hxx',
-      apply (a_eq⁻¹ ▸ HPx') }
-  end
-
-  theorem bind_eq_some {f : A → option B} {x x' y} (Hxx' : x = some x') (Hfx' : f x' = some y) : option.bind f x = some y :=
-  begin
-    cases x,
-    { apply option.no_confusion Hxx' },
-    { esimp,
-      injection Hxx',
-      apply (a_eq⁻¹ ▸ Hfx') }
-  end
-
-  theorem neq_none_of_eq_some {A : Type} {x : option A} {y : A} (H : x = some y) : x ≠ none :=
-  begin
-    cases x,
-    { apply option.no_confusion H },
-    { apply not.intro, apply option.no_confusion }
-  end
+  theorem bind_neq_none {f : A → option B} {x} (Hx : x ≠ none) (Hf : ∀x', f x' ≠ none) : option.bind f x ≠ none :=
+  obtain x' H₁, from ex_some_of_neq_none Hx,
+  obtain x'' H₂, from ex_some_of_neq_none (Hf x'),
+  by rewrite [H₁, ▸*, H₂]; contradiction
 end option
 
 open option
@@ -253,12 +243,12 @@ definition checked.shl (n : nat) (m : nat) := some (n * 2^m)
 definition checked.shr (n : nat) (m : int) := some (div n (2^nat.of_int m))
 
 namespace core
-  definition intrinsics.add_with_overflow (n : nat) (m : nat) := some (n + m, false)
+  abbreviation intrinsics.add_with_overflow (n : nat) (m : nat) := some (n + m, false)
 
-  definition mem.swap {T : Type} (x y : T) := some (unit.star,y,x)
+  abbreviation mem.swap {T : Type} (x y : T) := some (unit.star,y,x)
 
-  definition slice._T_.SliceExt.len {T : Type} (self : slice T) := some (list.length self)
-  definition slice._T__SliceExt.get_unchecked {T : Type} (self : slice T) (index : usize) :=
+  abbreviation slice._T_.SliceExt.len {T : Type} (self : slice T) := some (list.length self)
+  abbreviation slice._T_.SliceExt.get_unchecked [parsing_only] {T : Type} (self : slice T) (index : usize) :=
   list.nth self index
 end core
 

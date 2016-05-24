@@ -526,7 +526,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> MaybeValue {
         MaybeValue::total(match *rv {
             Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
-                return MaybeValue::partial(format!("slice._T__SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
+                return MaybeValue::partial(format!("slice._T_.SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
@@ -688,16 +688,15 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             let mut l_comp = Component::new(self, bb, l, Some(&comp));
             let (defs, _) = Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self);
             let (l_defs, l_uses) = Component::defs_uses(l_comp.blocks.iter(), self);
-            let nonlocal_uses = self.locals().into_iter().filter(|v| defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v)).join(" ");
+            let nonlocal_uses = self.locals().into_iter().filter(|v| defs.contains(v) && l_uses.contains(v) && !l_defs.contains(v));
             let state_vars = self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).collect_vec();
             l_comp.state_val = format!("({})", state_vars.iter().join(", "));
             let name = format!("{}.loop_{}", transpile_def_id(&self.tcx, self.def_id()), bb.index());
+            let app = iter::once(name).chain(nonlocal_uses).join(" ");
             let body = self.transpile_basic_block(bb, &l_comp);
-            self.prelude.push(format!("definition {name} {params} state__ :=\n{body}",
-                                      name=name, params=nonlocal_uses,
-                                      body=detuplize("state__", &state_vars, &body)));
-            return format!("loop' ({name} {params}) {state}",
-                           name=name, params=nonlocal_uses, state=l_comp.state_val);
+            self.prelude.push(format!("definition {} state__ :=\n{}", app,
+                                      detuplize("state__", &state_vars, &body)));
+            return format!("loop' ({}) {}", app, l_comp.state_val);
         }
 
         let data = self.mir().basic_block_data(bb);
@@ -840,14 +839,17 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
             prelude.into_iter().chain(iter::once(def)).join("\n\n")
         } else {
             format!("section
-parameters {}
+{}
 
 {}
 
-definition {} :=\n{}",
-                    ty_params.into_iter().chain(trait_params).chain(params.clone()).join(" "),
+definition {} :=\n{}
+end",
+                    vec![ty_params, trait_params, params].into_iter().map(|p| {
+                        format!("parameters {}", p.into_iter().join(" "))
+                    }).join("\n"),
                     prelude.into_iter().join("\n\n"),
-                    iter::once(name).chain(params).join(" "), body)
+                    iter::once(name).join(" "), body)
         }
     }
 
