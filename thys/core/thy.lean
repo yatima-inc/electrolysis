@@ -9,6 +9,7 @@ open option
 open prod.ops
 open sum
 
+-- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
 lemma list.dropn_zero {A : Type} (xs : list A) : dropn 0 xs = xs := rfl
@@ -20,21 +21,20 @@ open ops
 namespace slice
 section
 
-open SliceExt
+/- The SliceExt trait declares all methods on slices. It has a single implementation
+   for [T] (= slice T, rendered as _T_). -/
 open _T_.SliceExt
 
 parameters {T : Type}
 variables (s : slice T)
 
-attribute _T_.SliceExt [constructor]
-attribute len [unfold 3]
-
-lemma is_empty_eq : is_empty T s = some (s = []) :=
+lemma is_empty_eq : SliceExt.is_empty T s = some (s = []) :=
 congr_arg some (propext (iff.intro
   eq_nil_of_length_eq_zero
   (λHeq, Heq⁻¹ ▸ length_nil)
 ))
 
+-- s[start..]
 lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) : _T_.ops.Index_ops.RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s) :=
 begin
   let st := RangeFrom.start r,
@@ -45,6 +45,7 @@ begin
   rewrite this,
 end
 
+-- s[..end]
 lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.end_ r ≤ length s) : _T_.ops.Index_ops.RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s) :=
 begin
   let e := RangeTo.end_ r,
@@ -67,6 +68,8 @@ by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 section binary_search_by
 open _T_.SliceExt.binary_search_by
 
+/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
+
 parameters {F : Type} [f_impl : FnMut T F cmp.Ordering]
 variables (f : F)
 hypothesis (Hf_impl_term : Πf x, @FnMut.call_mut _ _ _ f_impl f x ≠ none)
@@ -74,8 +77,10 @@ include f_impl Hf_impl_term
 
 abbreviation loop_4_state := F × usize × slice T
 
+-- force same decidable instance as in generated.lean
 attribute classical.prop_decidable [instance] [priority 10000]
 
+-- loop_4 either recurses with some shorter slice or terminates normally with some value
 private lemma loop_4_eq (base : nat) :
   (∃f' base' s', loop_4 (f, base, s) = some (inl (f', base', s')) ∧ length s' < length s) ∨
   (∃r, loop_4 (f, base, s) = some (inr r)) :=
@@ -127,9 +132,11 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   }
 end)
 
-private definition R := inv_image lt (λs : loop_4_state, length s.2)
+-- ...making it a well-founded recursion
 
-private lemma R_wf : Π(st st' : loop_4_state), loop_4 st = some (inl st') → R st' st
+private definition R := measure (λst : loop_4_state, length st.2)
+
+private lemma R_loop_4 : Π(st st' : loop_4_state), loop_4 st = some (inl st') → R st' st
 | (f, base, s) (f' , base', s') H :=
 begin
   cases loop_4_eq s f base with H₁ H₂,
@@ -146,6 +153,7 @@ begin
     end }
 end
 
+-- first proof: strong induction (probably easier than well-founded induction over the whole state tuple)
 private lemma loop'_loop_4 (base l : nat) : length s = l → loop' loop_4 (f, base, s) ≠ none :=
 begin
   revert f base s,
@@ -153,7 +161,7 @@ begin
   intro f base s Hlen,
   subst Hlen,
   have well_founded R, from inv_image.wf',
-  rewrite [!loop'_eq R_wf],
+  rewrite [!loop'_eq R_loop_4],
   cases loop_4_eq s f base with H₁ H₂,
   { obtain f' base' s' Heq Hwf, from H₁,
     begin
@@ -164,10 +172,10 @@ begin
     by rewrite Heq; contradiction }
 end
 
-/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
 lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
 generalize_with_eq (length s) (loop'_loop_4 s f 0)
 
+-- second proof: loop'_rule
 lemma binary_search_by_terminates' : binary_search_by s f ≠ none :=
 have option.all (λr, true) (loop' loop_4 (f, 0, s)),
 begin
@@ -181,7 +189,7 @@ begin
       { obtain r Heq, from H₂, by contradiction },
     end end
   },
-  exact R_wf,
+  exact R_loop_4,
   all_goals (intros; trivial),
 end,
 begin
