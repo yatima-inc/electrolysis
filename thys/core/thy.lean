@@ -85,13 +85,12 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   rewrite [of_int_one, pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
   rewrite [split_at_eq s this, ▸*, is_empty_eq, ▸*],
-  --apply generalize_with_eq (dropn (length s / 2) s),
-  cases dropn (length s / 2) s with x xs,
+  eapply generalize_with_eq (dropn (length s / 2) s),
+  intro s' Hs, cases s' with x xs,
   { rewrite [if_pos rfl],
     intro H, subst H,
     right, apply exists.intro, apply rfl },
-  { have Hs : dropn (length s / 2) s = (x :: xs), from sorry,
-    have Hwf : length s > length xs, from
+  { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
     rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
@@ -154,7 +153,7 @@ begin
   intro f base s Hlen,
   subst Hlen,
   have well_founded R, from inv_image.wf',
-  rewrite [@loop'_eq _ _ _ _ _ R_wf],
+  rewrite [!loop'_eq R_wf],
   cases loop_4_eq s f base with H₁ H₂,
   { obtain f' base' s' Heq Hwf, from H₁,
     begin
