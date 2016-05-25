@@ -130,9 +130,9 @@ end)
 private definition R := inv_image lt (λs : loop_4_state, length s.2)
 
 private lemma R_wf : Π(st st' : loop_4_state), loop_4 st = some (inl st') → R st' st
-| (f₁, base, s₁) (f' , base', s') H :=
+| (f, base, s) (f' , base', s') H :=
 begin
-  cases loop_4_eq s₁ f₁ base with H₁ H₂,
+  cases loop_4_eq s f base with H₁ H₂,
   { obtain f'₂ base'₂ s'₂ Heq Hwf, from H₁,
     begin
       rewrite Heq at H,
@@ -173,12 +173,13 @@ have option.all (λr, true) (loop' loop_4 (f, 0, s)),
 begin
   have well_founded R, from inv_image.wf',
   apply loop'_rule R (λs, true),
-  { intro st, cases st with st' s₁, cases st' with f₁ base,
-    note H := loop_4_eq s₁ f₁ base,
-    intro Hcontr, rewrite Hcontr at H,
-    cases H with H₁ H₂,
-    { obtain f' base' s' Heq Hwf, from H₁, by contradiction },
-    { obtain r Heq, from H₂, by contradiction },
+  { intro st, match st with (f, base, s) := begin
+      note H := loop_4_eq s f base,
+      intro Hcontr, rewrite Hcontr at H,
+      cases H with H₁ H₂,
+      { obtain f' base' s' Heq Hwf, from H₁, by contradiction },
+      { obtain r Heq, from H₂, by contradiction },
+    end end
   },
   exact R_wf,
   all_goals (intros; trivial),
