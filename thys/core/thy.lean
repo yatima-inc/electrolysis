@@ -64,9 +64,8 @@ lemma split_at_eq {mid : usize} (H : mid ≤ length s) :
   split_at s mid = some (firstn mid s, dropn mid s) :=
 by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 
+section binary_search_by
 open _T_.SliceExt.binary_search_by
-
-/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
 
 parameters {F : Type} [f_impl : FnMut T F cmp.Ordering]
 variables (f : F)
@@ -77,51 +76,100 @@ abbreviation loop_4_state := F × usize × slice T
 
 attribute classical.prop_decidable [instance] [priority 10000]
 
-private lemma loop_4_term (base : nat) : loop' (loop_4 f) (f, base, s) ≠ none :=
+private lemma loop_4_eq (base : nat) :
+  (∃f' base' s', loop_4 (f, base, s) = some (inl (f', base', s')) ∧ length s' < length s) ∨
+  (∃r, loop_4 (f, base, s) = some (inr r)) :=
+generalize_with_eq (loop_4 (f, base, s)) (begin
+  intro res,
+  rewrite [↑loop_4, ↑checked.shr],
+  rewrite [of_int_one, pow_one],
+  have length s / 2 ≤ length s, from !nat.div_le_self,
+  rewrite [split_at_eq s this, ▸*, is_empty_eq, ▸*],
+  --apply generalize_with_eq (dropn (length s / 2) s),
+  cases dropn (length s / 2) s with x xs,
+  { rewrite [if_pos rfl],
+    intro H, subst H,
+    right, apply exists.intro, apply rfl },
+  { have Hs : dropn (length s / 2) s = (x :: xs), from sorry,
+    have Hwf : length s > length xs, from
+      calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
+                 ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
+    rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
+    have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
+    rewrite [if_pos this, nth_zero],
+    obtain ret Hret, from ex_some_of_neq_none (Hf_impl_term f x),
+    begin
+      cases ret with ord f,
+      rewrite [▸*, Hret, ▸*],
+      cases ord,
+      { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
+        rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
+        intro H, subst H,
+        left, repeat apply exists.intro, split,
+        { apply rfl },
+        { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
+                                      ... < length s  : Hwf }
+      },
+      { intro H, subst H,
+        right, apply exists.intro, apply rfl },
+      { esimp, intro H, subst H,
+        left, repeat apply exists.intro, split,
+        { apply rfl },
+        { have length s ≠ 0,
+          begin
+            intro H,
+            rewrite (eq_nil_of_length_eq_zero H) at Hs,
+            contradiction
+          end,
+          calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
+                                            ... < length s     : div_lt_of_ne_zero this },
+      }
+    end
+  }
+end)
+
+private definition R := inv_image lt (λs : loop_4_state, length s.2)
+
+private lemma R_wf : Π(st st' : loop_4_state), loop_4 st = some (inl st') → R st' st
+| (f₁, base, s₁) (f' , base', s') H :=
 begin
-  have ∀l base (s : slice T), length s = l → loop' (loop_4 f) (f, base, s) ≠ none,
-  begin
-    intro l,
-    induction l using nat.strong_induction_on with l' ih,
-    intro base s Hlen,
-    subst Hlen,
-    let R := inv_image lt (λs : loop_4_state, length s.2),
-    have ∀(s s' : loop_4_state), loop_4 f s = some (inl s') → R s' s, from sorry,
-    rewrite [@loop'_eq _ _ _ R _ this],
-    rewrite [↑loop_4, ↑loop_4, ↑checked.shr],
-    rewrite [of_int_one, pow_one],
-    have length s / 2 ≤ length s, from !nat.div_le_self,
-    rewrite [split_at_eq s this, ▸*, is_empty_eq, ▸*],
-    --apply generalize_with_eq (dropn (length s / 2) s),
-    cases dropn (length s / 2) s with x xs,
-    { rewrite [if_pos rfl], contradiction },
-    { rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
-      have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
-      rewrite [if_pos this, nth_zero],
-      obtain ret Hret, from ex_some_of_neq_none (Hf_impl_term f x),
-      begin
-        cases ret with ord f,
-        rewrite [▸*, Hret, ▸*],
-        cases ord,
-        { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
-          rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this],
-          apply ih, rotate 1,
-          { apply rfl },
-          { rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel], apply sorry } },
-        { contradiction },
-        { apply ih, rotate 1,
-          { apply rfl },
-          { calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
-                                              ... < length s     : div_lt_of_ne_zero sorry },
-        }
-      end
-    }
-  end,
-  apply generalize_with_eq (length s) (λl, this l base s),
+  cases loop_4_eq s₁ f₁ base with H₁ H₂,
+  { obtain f'₂ base'₂ s'₂ Heq Hwf, from H₁,
+    begin
+      rewrite Heq at H,
+      injection H with f'_eq base'_eq s'_eq, rewrite [-s'_eq],
+      apply Hwf
+    end },
+  { obtain r Heq, from H₂,
+    begin
+      rewrite Heq at H,
+      injection H, contradiction
+    end }
 end
 
-lemma binary_search_by_terminates : binary_search_by s f ≠ none := !loop_4_term
+private lemma loop'_loop_4 (base l : nat) : length s = l → loop' loop_4 (f, base, s) ≠ none :=
+begin
+  revert f base s,
+  induction l using nat.strong_induction_on with l' ih,
+  intro f base s Hlen,
+  subst Hlen,
+  have well_founded R, from inv_image.wf',
+  rewrite [@loop'_eq _ _ _ _ _ R_wf],
+  cases loop_4_eq s f base with H₁ H₂,
+  { obtain f' base' s' Heq Hwf, from H₁,
+    begin
+      rewrite Heq,
+      apply ih, exact Hwf, exact rfl
+    end },
+  { obtain r Heq, from H₂,
+    by rewrite Heq; contradiction }
+end
 
+/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
+lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
+generalize_with_eq (length s) (loop'_loop_4 s f 0)
+
+end binary_search_by
 end
 end slice
 
