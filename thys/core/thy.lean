@@ -168,6 +168,26 @@ end
 lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
 generalize_with_eq (length s) (loop'_loop_4 s f 0)
 
+lemma binary_search_by_terminates' : binary_search_by s f ≠ none :=
+have option.all (λr, true) (loop' loop_4 (f, 0, s)),
+begin
+  have well_founded R, from inv_image.wf',
+  apply loop'_rule R (λs, true),
+  { intro st, cases st with st' s₁, cases st' with f₁ base,
+    note H := loop_4_eq s₁ f₁ base,
+    intro Hcontr, rewrite Hcontr at H,
+    cases H with H₁ H₂,
+    { obtain f' base' s' Heq Hwf, from H₁, by contradiction },
+    { obtain r Heq, from H₂, by contradiction },
+  },
+  exact R_wf,
+  all_goals (intros; trivial),
+end,
+begin
+  intro Hcontr, rewrite [↑binary_search_by at Hcontr, Hcontr at this],
+  contradiction
+end
+
 end binary_search_by
 end
 end slice

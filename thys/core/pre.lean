@@ -168,6 +168,29 @@ section
     { rewrite [↑loop, ↑fix, dif_pos Hterm_rel],
       rewrite [well_founded.fix_eq, ↑F at {2}, Heq, ▸*] }
   end
+
+  theorem loop_rule
+    {R : State → State → Prop}
+    [Hwf : well_founded R]
+    (HR : ∀s s', body s = inl s' → R s' s)
+    {P : State → Prop} {Q : Res → Prop}
+    (HP : ∀s s', P s → body s = inl s' → P s')
+    (HQ : ∀s r,  P s → body s = inr r  → Q r)
+    {s : State}
+    (Hs : P s) :
+    option.all Q (loop s) :=
+  begin
+    revert Hs,
+    induction (well_founded.apply Hwf s) with s acc ih,
+    intro Hs,
+    rewrite (loop_eq HR),
+    apply generalize_with_eq (body s), intro b,
+    cases b with s' r,
+    { intro Heq,
+      apply !ih (!HR Heq) (!HP Hs Heq) },
+    { intro Heq,
+      apply !HQ Hs Heq, }
+  end
 end
 
 -- lifting loop to partial body functions
@@ -185,6 +208,8 @@ section
   noncomputable definition loop' (s : State) : option Res :=
   do res ← loop body' s;
   res
+
+  parameters {body}
 
   theorem loop'_eq
     {R : State → State → Prop}
@@ -218,6 +243,34 @@ section
     intro b Heq, cases b with x,
     { esimp },
     { cases x, repeat esimp }
+  end
+
+  theorem loop'_rule
+    (R : State → State → Prop) (P : State → Prop) {Q : Res → Prop}
+    [Hwf : well_founded R]
+    (Hterm : ∀ s, body s ≠ none)
+    (HR : ∀s s', body s = some (inl s') → R s' s)
+    (HP : ∀s s', P s → body s = some (inl s') → P s')
+    (HQ : ∀s r,  P s → body s = some (inr r)  → Q r)
+    {s : State}
+    (Hs : P s) :
+    option.all Q (loop' s) :=
+  -- apparently easier than applying loop_rule
+  begin
+    revert Hs,
+    induction (well_founded.apply Hwf s) with s acc ih,
+    intro Hs,
+    rewrite (loop'_eq HR),
+    apply generalize_with_eq (body s), intro b,
+    cases b with x,
+    { intro Heq,
+      exfalso, apply Hterm s Heq },
+    { cases x with s' r,
+      { intro Heq,
+        apply !ih (!HR Heq) (!HP Hs Heq) },
+      { intro Heq,
+        apply !HQ Hs Heq, }
+    }
   end
 end
 
