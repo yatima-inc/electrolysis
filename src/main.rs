@@ -16,6 +16,7 @@ extern crate rustc_mir;
 extern crate syntax;
 
 mod component;
+mod item_path;
 mod mir_graph;
 
 use std::cell::RefCell;
@@ -48,6 +49,7 @@ use syntax::ast_util::IdVisitingOperation;
 use syntax::diagnostics;
 use rustc::session;
 
+use item_path::item_path_str;
 use component::Component;
 
 fn main() {
@@ -211,7 +213,7 @@ impl<'tcx> TraitImplLookup<'tcx> {
 }
 
 fn transpile_def_id(tcx: &TyCtxt, did: DefId) -> String {
-    mk_lean_name(&tcx.item_path_str(did))
+    mk_lean_name(item_path_str(tcx, did))
 }
 
 fn transpile_node_id(tcx: &TyCtxt, node_id: ast::NodeId) -> String {
@@ -526,7 +528,7 @@ impl<'a, 'tcx> Transpiler<'a, 'tcx> {
     fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> MaybeValue {
         MaybeValue::total(match *rv {
             Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
-                return MaybeValue::partial(format!("slice._T_.SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
+                return MaybeValue::partial(format!("slice._T_.slice_SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
@@ -1084,6 +1086,10 @@ struct IdCollector {
 
 impl<'a> intravisit::Visitor<'a> for IdCollector {
     fn visit_item(&mut self, item: &'a hir::Item) {
+        if let hir::Item_::ItemDefaultImpl(_, _) = item.node {
+            return // https://github.com/rust-lang/rust/issues/33722
+        }
+
         self.ids.push(item.id);
         intravisit::walk_item(self, item);
     }

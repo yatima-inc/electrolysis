@@ -12,8 +12,6 @@ open sum
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
-lemma list.dropn_zero {A : Type} (xs : list A) : dropn 0 xs = xs := rfl
-
 namespace core
 
 open ops
@@ -23,7 +21,7 @@ section
 
 /- The SliceExt trait declares all methods on slices. It has a single implementation
    for [T] (= slice T, rendered as _T_). -/
-open _T_.SliceExt
+open _T_.slice_SliceExt
 
 parameters {T : Type}
 variables (s : slice T)
@@ -35,22 +33,22 @@ congr_arg some (propext (iff.intro
 ))
 
 -- s[start..]
-lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) : _T_.ops.Index_ops.RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s) :=
+lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) : _T_.ops_Index_ops_RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s) :=
 begin
   let st := RangeFrom.start r,
   have st ≤ length s ∧ length s ≤ length s, from and.intro H (le.refl _),
-  rewrite [↑_T_.ops.Index_ops.RangeFrom_usize__.index, ↑_T_.ops.Index_ops.Range_usize__.index, if_pos this],
+  rewrite [↑_T_.ops_Index_ops_RangeFrom_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index, if_pos this],
   have firstn (length s - st) (dropn st s) = dropn st s, from
     firstn_all_of_ge (length_dropn st s ▸ le.refl _),
   rewrite this,
 end
 
 -- s[..end]
-lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.end_ r ≤ length s) : _T_.ops.Index_ops.RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s) :=
+lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.end_ r ≤ length s) : _T_.ops_Index_ops_RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s) :=
 begin
   let e := RangeTo.end_ r,
   have 0 ≤ e ∧ e ≤ length s, by simp, -- whoo!
-  rewrite [↑_T_.ops.Index_ops.RangeTo_usize__.index, ↑_T_.ops.Index_ops.Range_usize__.index, if_pos this],
+  rewrite [↑_T_.ops_Index_ops_RangeTo_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index, if_pos this],
 end
 
 /- fn split_at(&self, mid: usize) -> (&[T], &[T])
@@ -66,7 +64,7 @@ lemma split_at_eq {mid : usize} (H : mid ≤ length s) :
 by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 
 section binary_search_by
-open _T_.SliceExt.binary_search_by
+open _T_.slice_SliceExt.binary_search_by
 
 /- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
 

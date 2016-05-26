@@ -300,8 +300,8 @@ namespace core
 
   abbreviation mem.swap {T : Type} (x y : T) := some (unit.star,y,x)
 
-  abbreviation slice._T_.SliceExt.len {T : Type} (self : slice T) := some (list.length self)
-  abbreviation slice._T_.SliceExt.get_unchecked [parsing_only] {T : Type} (self : slice T) (index : usize) :=
+  abbreviation slice._T_.slice_SliceExt.len {T : Type} (self : slice T) := some (list.length self)
+  abbreviation slice._T_.slice_SliceExt.get_unchecked [parsing_only] {T : Type} (self : slice T) (index : usize) :=
   list.nth self index
 end core
 
