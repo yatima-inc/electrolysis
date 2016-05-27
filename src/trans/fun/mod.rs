@@ -6,6 +6,7 @@ use std::ops::Deref;
 
 use itertools::Itertools;
 
+use rustc_front::hir;
 use rustc::mir::repr::*;
 use rustc::middle::const_eval::ConstVal;
 use rustc::middle::subst::Subst;
@@ -49,6 +50,7 @@ impl MaybeValue {
 pub struct FnTranspiler<'a, 'tcx: 'a> {
     sup: &'a item::ItemTranspiler<'a, 'tcx>,
     param_names: Vec<String>,
+    return_expr: String,
     prelude: Vec<String>,
     refs: HashMap<usize, &'a Lvalue<'tcx>>,
 }
@@ -62,10 +64,11 @@ impl<'a, 'tcx> Deref for FnTranspiler<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
-    pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>, param_names: Vec<String>) -> FnTranspiler<'a, 'tcx> {
+    pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>, param_names: Vec<String>, return_expr: String) -> FnTranspiler<'a, 'tcx> {
         FnTranspiler {
             sup: sup,
             param_names: param_names,
+            return_expr: return_expr,
             prelude: Default::default(),
             refs: Default::default(),
         }
@@ -155,6 +158,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     self.get_lvalue(base))
                         }
                     }
+                    ty::TypeVariants::TyClosure(..) =>
+                        self.param_names[field.index()].clone(),
                     ref ty => panic!("unimplemented: accessing field of {:?}", ty),
                 },
             _ => panic!("unimplemented: loading {:?}", lv),
@@ -240,7 +245,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn get_rvalue(&self, rv: &Rvalue<'tcx>) -> MaybeValue {
+    fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> MaybeValue {
         MaybeValue::total(match *rv {
             Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
                 return MaybeValue::partial(format!("slice._T_.slice_SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
@@ -295,8 +300,28 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         ops.join(" "))
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
-                let ops = ops.into_iter().map(|op| self.get_operand(op));
-                iter::once(self.name_def_id(def_id)).chain(ops).join(" ")
+                let upvars = ops.iter().map(|op| match *op {
+                    Operand::Consume(ref lv) => lv,
+                    Operand::Constant(_) => unreachable!(),
+                }).collect_vec();
+                if upvars.iter().any(|lv| krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).map(|_| lv).is_some()) {
+                    panic!("unimplemented: mutable capturing closure")
+                }
+                let decl = match self.tcx.map.expect_expr(self.tcx.map.as_local_node_id(def_id).unwrap()).node {
+                    hir::Expr_::ExprClosure(_, ref decl, _) => decl,
+                    _ => unreachable!(),
+                };
+                let param_names = upvars.iter().map(|lv| self.lvalue_name(lv).unwrap()).chain(
+                    decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
+                    hir::PatKind::Ident(_, ref ident, _) => krate::mk_lean_name(&ident.node.name.to_string()),
+                    _ => format!("p{}", i),
+                })).collect();
+                let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
+                let mut trans = FnTranspiler::new(&trans, param_names, "some ret".to_string());
+                let mut comp = Component::new(&trans, START_BLOCK, trans.mir().all_basic_blocks(), None);
+                let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
+                self.prelude.append(&mut trans.prelude);
+                format!("λ{}, ({})", trans.param_names.iter().skip(upvars.len()).join(" "), body)
             }
             Rvalue::Len(ref lv) => format!("list.length {}", self.get_lvalue(lv)),
             _ => panic!("unimplemented: rvalue {:?}", rv),
@@ -379,7 +404,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     format!("if {} then\n{} else\n{}", self.get_operand(cond),
                     rec!(bb_if),
                     rec!(bb_else)),
-                Terminator::Return => self.return_expr(),
+                Terminator::Return => self.return_expr.clone(),
                 Terminator::Call { ref func, ref args, destination: Some((_, target)), ..  } => {
                     let call = match *func {
                         Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
@@ -448,18 +473,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             None => None,
         };
         stmts.into_iter().chain(terminator.into_iter()).join("")
-    }
-
-    fn sig(&self) -> &ty::FnSig<'tcx> {
-        self.tcx.lookup_item_type(self.def_id).ty.fn_sig().skip_binder()
-    }
-
-    fn return_expr(&self) -> String {
-        let muts = self.sig().inputs.iter().zip(self.param_names.iter()).filter_map(|(ty, name)| {
-            krate::try_unwrap_mut_ref(ty).map(|_| name.clone())
-        });
-        let ret = if self.sig().output.unwrap().is_nil() { "()" } else { "ret" };
-        format!("some ({})\n", iter::once(ret.to_string()).chain(muts).join(", "))
     }
 
     pub fn transpile_fn(&mut self, name: String) -> String {

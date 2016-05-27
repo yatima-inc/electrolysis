@@ -1,13 +1,16 @@
 rustc_args = "rust/src/libcore/lib.rs"
 
-# unsafe functions axiomatized in core_pre.thy
-ignore = [
-  "mem.swap",
-  "slice._T_.slice_SliceExt.len",
+targets = [
+"slice._T_.slice_SliceExt.binary_search",
 ]
 
-targets = [
-  "slice._T_.slice_SliceExt.binary_search",
+# items axiomatized in core_pre.thy
+ignore = [
+  # intrinsics
+  "ops.FnOnce", "ops.FnMut", "ops.Fn",
+  # unsafe
+  "mem.swap",
+  "slice._T_.slice_SliceExt.len",
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline

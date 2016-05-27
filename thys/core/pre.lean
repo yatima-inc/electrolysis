@@ -274,13 +274,13 @@ section
   end
 end
 
-abbreviation u8 := nat
-abbreviation u16 := nat
-abbreviation u32 := nat
-abbreviation u64 := nat
-abbreviation usize := nat
+abbreviation u8 [parsing_only] := nat
+abbreviation u16 [parsing_only] := nat
+abbreviation u32 [parsing_only] := nat
+abbreviation u64 [parsing_only] := nat
+abbreviation usize [parsing_only] := nat
 
-abbreviation slice := list
+abbreviation slice [parsing_only] := list
 
 definition checked.sub (n : nat) (m : nat) :=
 if n ≥ m then some (n-m) else none
@@ -303,6 +303,27 @@ namespace core
   abbreviation slice._T_.slice_SliceExt.len {T : Type} (self : slice T) := some (list.length self)
   abbreviation slice._T_.slice_SliceExt.get_unchecked [parsing_only] {T : Type} (self : slice T) (index : usize) :=
   list.nth self index
+
+  namespace ops
+    structure FnOnce [class] (Args : Type) (Self : Type) (Output : Type) := mk () ::
+    (call_once : Self → Args → option (Output))
+
+    -- easy without mutable closures
+    abbreviation FnMut [parsing_only] := FnOnce
+    abbreviation Fn [parsing_only] := FnOnce
+
+    definition FnMut.call_mut (Args : Type) (Self : Type) (Output : Type) [FnOnce Args Self Output] : Self → Args → option (Output × Self) := λself x,
+      do y ← FnOnce.call_once Args Self Output self x;
+      some (y, self)
+
+    definition Fn.call (Args : Type) (Self : Type) (Output : Type) [FnMut Args Self Output] : Self → Args → option Output := FnOnce.call_once Args Self Output
+  end ops
 end core
+
+open core.ops
+
+definition fn [instance] {A B : Type} : FnOnce A (A → option B) B := ⦃FnOnce,
+  call_once := id
+⦄
 
 notation `let` binder ` ← ` x `; ` r:(scoped f, f x) := r

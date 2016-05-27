@@ -209,7 +209,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             }
             Vtable::VtableClosure(_) => {
                 TraitImplLookup::Dynamic {
-                    param: "_".to_string()
+                    param: "fn".to_string()
                 }
             },
             vtable => panic!("unimplemented: vtable {:?}", vtable),
@@ -365,8 +365,17 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
             PatKind::Ident(_, ref ident, _) => krate::mk_lean_name(&ident.node.name.to_string()),
             _ => format!("p{}", i),
-        }).collect();
-        ::trans::fun::FnTranspiler::new(self, param_names).transpile_fn(name)
+        }).collect_vec();
+        let return_expr = {
+            let sig = self.tcx.lookup_item_type(self.def_id).ty.fn_sig().skip_binder();
+            let muts = sig.inputs.iter().zip(param_names.iter()).filter_map(|(ty, name)| {
+                krate::try_unwrap_mut_ref(ty).map(|_| name.clone())
+            });
+            let ret = if sig.output.unwrap().is_nil() { "()" } else { "ret" };
+            format!("some ({})\n", iter::once(ret.to_string()).chain(muts).join(", "))
+        };
+
+        ::trans::fun::FnTranspiler::new(self, param_names, return_expr).transpile_fn(name)
     }
 
     pub fn transpile_def_id(&self) -> Option<String> {
