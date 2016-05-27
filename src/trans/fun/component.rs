@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rustc::mir::repr::*;
 
-use super::Transpiler;
+use ::trans::fun::FnTranspiler;
 use ::mir_graph::mir_sccs;
 
 // A loop or the full function body
@@ -16,7 +16,7 @@ pub struct Component<'a> {
 }
 
 impl<'a> Component<'a> {
-    pub fn new(trans: &Transpiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&'a Component<'a>>)
+    pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&'a Component<'a>>)
         -> Component<'a> {
         let loops = mir_sccs(trans.mir(), start, &blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
@@ -28,7 +28,7 @@ impl<'a> Component<'a> {
         }
     }
 
-    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &Transpiler) -> (HashSet<String>, HashSet<String>) {
+    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &FnTranspiler) -> (HashSet<String>, HashSet<String>) {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
