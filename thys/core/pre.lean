@@ -37,6 +37,9 @@ namespace option
   | (some x) := f x
   | none     := none
 
+  theorem bind_some_eq_id {x : option A} : option.bind some x = x :=
+  by cases x; esimp; esimp
+
   theorem bind_neq_none {f : A → option B} {x} (Hx : x ≠ none) (Hf : ∀x', f x' ≠ none) : option.bind f x ≠ none :=
   obtain x' H₁, from ex_some_of_neq_none Hx,
   obtain x'' H₂, from ex_some_of_neq_none (Hf x'),
@@ -305,18 +308,18 @@ namespace core
   list.nth self index
 
   namespace ops
-    structure FnOnce [class] (Args : Type) (Self : Type) (Output : Type) := mk () ::
+    structure FnOnce [class] (Args : Type) (Self : Type) (Output : Type) :=
     (call_once : Self → Args → option (Output))
 
     -- easy without mutable closures
     abbreviation FnMut [parsing_only] := FnOnce
-    abbreviation Fn [parsing_only] := FnOnce
+    abbreviation Fn := FnOnce
 
-    definition FnMut.call_mut (Args : Type) (Self : Type) (Output : Type) [FnOnce Args Self Output] : Self → Args → option (Output × Self) := λself x,
-      do y ← FnOnce.call_once Args Self Output self x;
+    definition FnMut.call_mut [unfold_full] (Args : Type) (Self : Type) (Output : Type) [FnOnce : FnOnce Args Self Output] : Self → Args → option (Output × Self) := λself x,
+      do y ← @FnOnce.call_once Args Self Output FnOnce self x;
       some (y, self)
 
-    definition Fn.call (Args : Type) (Self : Type) (Output : Type) [FnMut Args Self Output] : Self → Args → option Output := FnOnce.call_once Args Self Output
+    definition Fn.call (Args : Type) (Self : Type) (Output : Type) [FnMut : FnMut Args Self Output] : Self → Args → option Output := @FnOnce.call_once Args Self Output FnMut
   end ops
 end core
 

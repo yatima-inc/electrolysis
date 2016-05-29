@@ -222,7 +222,7 @@ let self ← self;
 let x ← x;
 let t0 ← self;
 let t3 ← x;
-let t2 ← λp, (let p ← p;
+let t2 ← (λp, let p ← p;
 let t0 ← p;
 let t2 ← t3;
 do tmp__ ← @cmp.Ord.cmp _ cmp_Ord_T t0 t2;

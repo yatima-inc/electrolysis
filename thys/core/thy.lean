@@ -6,11 +6,27 @@ open eq.ops
 open list
 open nat
 open option
+open partial
 open prod.ops
 open sum
 
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
+
+/-theorem list.mem_of_mem_dropn {A : Type} (x : A) : Π(n : ℕ) (xs : list A), x ∈ dropn n xs → x ∈ xs
+| 0 xs H := H
+| (n+1) [] H := by contradiction
+| (succ n) (y::xs) H := mem_cons_of_mem y (mem_of_mem_dropn n xs H)-/
+
+theorem list.mem_of_mem_dropn {A : Type} (x : A) (n : ℕ) : Π(xs : list A), x ∈ dropn n xs → x ∈ xs :=
+begin
+  induction n with n ih,
+  { intros, eassumption },
+  { intro xs H, cases xs,
+    { unfold dropn at H, contradiction },
+    { unfold dropn at H, apply mem_cons_of_mem _ (ih _ H) },
+  },
+end
 
 namespace core
 
@@ -68,19 +84,20 @@ open _T_.slice_SliceExt.binary_search_by
 
 /- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
 
-parameters {F : Type} [f_impl : FnMut T F cmp.Ordering]
-variables (f : F)
-hypothesis (Hf_impl_term : Πf x, @FnMut.call_mut _ _ _ f_impl f x ≠ none)
-include f_impl Hf_impl_term
+variable f : T ⇀ cmp.Ordering
+abbreviation f_term := ∀x, x ∈ s → f x ≠ none
 
-abbreviation loop_4_state := F × usize × slice T
+abbreviation loop_4_state := (T ⇀ cmp.Ordering) × usize × slice T
 
 -- force same decidable instance as in generated.lean
 attribute classical.prop_decidable [instance] [priority 10000]
 
+attribute FnMut.call_mut [unfold 4]
+attribute fn [constructor]
+
 -- loop_4 either recurses with some shorter slice or terminates normally with some value
-private lemma loop_4_eq (base : nat) :
-  (∃f' base' s', loop_4 (f, base, s) = some (inl (f', base', s')) ∧ length s' < length s) ∨
+private lemma loop_4_eq (base : nat) (Hf_term : f_term s f) :
+  (∃base' s', loop_4 (f, base, s) = some (inl (f, base', s')) ∧ length s' < length s) ∨
   (∃r, loop_4 (f, base, s) = some (inr r)) :=
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
@@ -91,42 +108,42 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   eapply generalize_with_eq (dropn (length s / 2) s),
   intro s' Hs, cases s' with x xs,
   { rewrite [if_pos rfl],
-    intro H, subst H,
+    intro H, rewrite -H,
     right, apply exists.intro, apply rfl },
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
     rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
     have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
-    rewrite [if_pos this, nth_zero],
-    obtain ret Hret, from ex_some_of_neq_none (Hf_impl_term f x),
-    begin
-      cases ret with ord f,
-      rewrite [▸*, Hret, ▸*],
-      cases ord,
-      { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
-        rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
-        intro H, subst H,
-        left, repeat apply exists.intro, split,
-        { apply rfl },
-        { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
-                                      ... < length s  : Hwf }
-      },
-      { intro H, subst H,
-        right, apply exists.intro, apply rfl },
-      { esimp, intro H, subst H,
-        left, repeat apply exists.intro, split,
-        { apply rfl },
-        { have length s ≠ 0,
-          begin
-            intro H,
-            rewrite (eq_nil_of_length_eq_zero H) at Hs,
-            contradiction
-          end,
-          calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
-                                            ... < length s     : div_lt_of_ne_zero this },
-      }
-    end
+    rewrite [if_pos this, nth_zero, ▸*],
+    eapply generalize_with_eq (f x),
+    intro fx Hfx, cases fx with ord,
+    { exfalso,
+      have x ∈ s, from !list.mem_of_mem_dropn (Hs⁻¹ ▸ mem_cons x xs),
+      apply Hf_term x this Hfx },
+    cases ord,
+    { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
+      rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
+      intro H, rewrite -H,
+      left, repeat apply exists.intro, split,
+      { apply rfl },
+      { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
+                                    ... < length s  : Hwf }
+    },
+    { intro H, subst H,
+      right, apply exists.intro, apply rfl },
+    { intro H, subst H,
+      left, repeat apply exists.intro, split,
+      { apply rfl },
+      { have length s ≠ 0,
+        begin
+          intro H,
+          rewrite (eq_nil_of_length_eq_zero H) at Hs,
+          contradiction
+        end,
+        calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
+                                          ... < length s     : div_lt_of_ne_zero this },
+    }
   }
 end)
 
@@ -137,8 +154,9 @@ private definition R := measure (λst : loop_4_state, length st.2)
 private lemma R_loop_4 : Π(st st' : loop_4_state), loop_4 st = some (inl st') → R st' st
 | (f, base, s) (f' , base', s') H :=
 begin
-  cases loop_4_eq s f base with H₁ H₂,
-  { obtain f'₂ base'₂ s'₂ Heq Hwf, from H₁,
+  have f_term s f, from sorry,
+  cases loop_4_eq s f base this with H₁ H₂,
+  { obtain base'₂ s'₂ Heq Hwf, from H₁,
     begin
       rewrite Heq at H,
       injection H with f'_eq base'_eq s'_eq, rewrite [-s'_eq],
@@ -160,8 +178,8 @@ begin
   subst Hlen,
   have well_founded R, from inv_image.wf',
   rewrite [!loop'_eq R_loop_4],
-  cases loop_4_eq s f base with H₁ H₂,
-  { obtain f' base' s' Heq Hwf, from H₁,
+  cases loop_4_eq s f base sorry with H₁ H₂,
+  { obtain base' s' Heq Hwf, from H₁,
     begin
       rewrite Heq,
       apply ih, exact Hwf, exact rfl
@@ -178,12 +196,12 @@ lemma binary_search_by_terminates' : binary_search_by s f ≠ none :=
 have option.all (λr, true) (loop' loop_4 (f, 0, s)),
 begin
   have well_founded R, from inv_image.wf',
-  apply loop'_rule R (λs, true),
+  apply loop'_rule R (λst, true),
   { intro st, match st with (f, base, s) := begin
-      note H := loop_4_eq s f base,
+      note H := loop_4_eq s f base sorry,
       intro Hcontr, rewrite Hcontr at H,
       cases H with H₁ H₂,
-      { obtain f' base' s' Heq Hwf, from H₁, by contradiction },
+      { obtain base' s' Heq Hwf, from H₁, by contradiction },
       { obtain r Heq, from H₂, by contradiction },
     end end
   },
@@ -196,6 +214,18 @@ begin
 end
 
 end binary_search_by
+
+/- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
+
+Binary search a sorted slice for a given element.
+
+If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
+lemma binary_search_terminates [cmp.Ord T] (x : T) : binary_search s x ≠ none :=
+begin
+  rewrite [↑binary_search, bind_some_eq_id],
+  apply binary_search_by_terminates,
+end
+
 end
 end slice
 

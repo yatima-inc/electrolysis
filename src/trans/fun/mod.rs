@@ -321,7 +321,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 let mut comp = Component::new(&trans, START_BLOCK, trans.mir().all_basic_blocks(), None);
                 let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
                 self.prelude.append(&mut trans.prelude);
-                format!("λ{}, ({})", trans.param_names.iter().skip(upvars.len()).join(" "), body)
+                format!("(λ{}, {})", trans.param_names.iter().skip(upvars.len()).join(" "), body)
             }
             Rvalue::Len(ref lv) => format!("list.length {}", self.get_lvalue(lv)),
             _ => panic!("unimplemented: rvalue {:?}", rv),
