@@ -1,8 +1,10 @@
 import core.generated
+import data.finset
 
 open [class] classical
 open core
 open eq.ops
+open finset
 open list
 open nat
 open option
@@ -84,8 +86,8 @@ open _T_.slice_SliceExt.binary_search_by
 
 /- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
 
-variable f : T ⇀ cmp.Ordering
-abbreviation f_term := ∀x, x ∈ s → f x ≠ none
+parameter f : T ⇀ cmp.Ordering
+premise Hf_term : ∀x, x ∈ s → f x ≠ none
 
 abbreviation loop_4_state := (T ⇀ cmp.Ordering) × usize × slice T
 
@@ -96,7 +98,8 @@ attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
 
 -- loop_4 either recurses with some shorter slice or terminates normally with some value
-private lemma loop_4_eq (base : nat) (Hf_term : f_term s f) :
+include Hf_term
+private lemma loop_4_eq (base : nat) :
   (∃base' s', loop_4 (f, base, s) = some (inl (f, base', s')) ∧ length s' < length s) ∨
   (∃r, loop_4 (f, base, s) = some (inr r)) :=
 generalize_with_eq (loop_4 (f, base, s)) (begin
@@ -146,72 +149,40 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     }
   }
 end)
+omit Hf_term
 
 -- ...making it a well-founded recursion
 
 private definition R := measure (λst : loop_4_state, length st.2)
 
-private lemma R_loop_4 : Π(st st' : loop_4_state), loop_4 st = some (inl st') → R st' st
-| (f, base, s) (f' , base', s') H :=
-begin
-  have f_term s f, from sorry,
-  cases loop_4_eq s f base this with H₁ H₂,
-  { obtain base'₂ s'₂ Heq Hwf, from H₁,
-    begin
-      rewrite Heq at H,
-      injection H with f'_eq base'_eq s'_eq, rewrite [-s'_eq],
-      apply Hwf
-    end },
-  { obtain r Heq, from H₂,
-    begin
-      rewrite Heq at H,
-      injection H, contradiction
-    end }
-end
+private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
--- first proof: strong induction (probably easier than well-founded induction over the whole state tuple)
-private lemma loop'_loop_4 (base l : nat) : length s = l → loop' loop_4 (f, base, s) ≠ none :=
+-- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
+include Hf_term
+private lemma fix_loop_4 (base l : nat) : length s = l → loop'.fix loop_4 R (f, base, s) ≠ none :=
 begin
-  revert f base s,
+  revert f base s Hf_term,
   induction l using nat.strong_induction_on with l' ih,
-  intro f base s Hlen,
+  intro f base s Hf_term Hlen,
   subst Hlen,
-  have well_founded R, from inv_image.wf',
-  rewrite [!loop'_eq R_loop_4],
-  cases loop_4_eq s f base sorry with H₁ H₂,
+  rewrite loop'.fix_eq,
+  cases loop_4_eq s Hf_term base with H₁ H₂,
   { obtain base' s' Heq Hwf, from H₁,
     begin
-      rewrite Heq,
-      apply ih, exact Hwf, exact rfl
+      have R (f, base', s') (f, base, s), from Hwf,
+      rewrite [Heq, if_pos this],
+      have ∀x, x ∈ s' → x ∈ s, from sorry,
+      apply ih, exact Hwf,
+      { intro x Hxs, apply Hf_term x (this x Hxs) },
+      exact rfl
     end },
   { obtain r Heq, from H₂,
     by rewrite Heq; contradiction }
 end
 
 lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
-generalize_with_eq (length s) (loop'_loop_4 s f 0)
-
--- second proof: loop'_rule
-lemma binary_search_by_terminates' : binary_search_by s f ≠ none :=
-have option.all (λr, true) (loop' loop_4 (f, 0, s)),
-begin
-  have well_founded R, from inv_image.wf',
-  apply loop'_rule R (λst, true),
-  { intro st, match st with (f, base, s) := begin
-      note H := loop_4_eq s f base sorry,
-      intro Hcontr, rewrite Hcontr at H,
-      cases H with H₁ H₂,
-      { obtain base' s' Heq Hwf, from H₁, by contradiction },
-      { obtain r Heq, from H₂, by contradiction },
-    end end
-  },
-  exact R_loop_4,
-  all_goals (intros; trivial),
-end,
-begin
-  intro Hcontr, rewrite [↑binary_search_by at Hcontr, Hcontr at this],
-  contradiction
-end
+have loop'.fix loop_4 R (f, 0, s) ≠ none, from generalize_with_eq (length s) (fix_loop_4 s Hf_term 0),
+by rewrite [↑binary_search_by, -!loop'.fix_eq_loop' this]; apply this
 
 end binary_search_by
 
