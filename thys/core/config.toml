@@ -4,7 +4,7 @@ targets = [
 "slice._T_.slice_SliceExt.binary_search",
 ]
 
-# items axiomatized in core_pre.thy
+# items axiomatized in pre.lean
 ignore = [
   # intrinsics
   "ops.FnOnce", "ops.FnMut", "ops.Fn",

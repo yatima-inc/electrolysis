@@ -97,11 +97,15 @@ attribute classical.prop_decidable [instance] [priority 10000]
 attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
 
+parameter (base : nat)
+
 -- loop_4 either recurses with some shorter slice or terminates normally with some value
+inductive loop_4_res (res : option (loop_4_state + result.Result u32 u32)) : Prop :=
+| cont : Πbase' s', res = some (inl (f, base', s')) → length s' < length s → loop_4_res res
+| break: Πr, res = some (inr r) → loop_4_res res
+
 include Hf_term
-private lemma loop_4_eq (base : nat) :
-  (∃base' s', loop_4 (f, base, s) = some (inl (f, base', s')) ∧ length s' < length s) ∨
-  (∃r, loop_4 (f, base, s) = some (inr r)) :=
+private lemma loop_4_sem : loop_4_res s (loop_4 (f, base, s)) :=
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
   rewrite [↑loop_4, ↑checked.shr],
@@ -111,8 +115,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   eapply generalize_with_eq (dropn (length s / 2) s),
   intro s' Hs, cases s' with x xs,
   { rewrite [if_pos rfl],
-    intro H, rewrite -H,
-    right, apply exists.intro, apply rfl },
+    intro H,
+    right, apply H⁻¹ },
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
@@ -128,15 +132,15 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
       intro H, rewrite -H,
-      left, repeat apply exists.intro, split,
+      left,
       { apply rfl },
       { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
                                     ... < length s  : Hwf }
     },
     { intro H, subst H,
-      right, apply exists.intro, apply rfl },
+      right, apply rfl },
     { intro H, subst H,
-      left, repeat apply exists.intro, split,
+      left,
       { apply rfl },
       { have length s ≠ 0,
         begin
@@ -166,18 +170,15 @@ begin
   intro f base s Hf_term Hlen,
   subst Hlen,
   rewrite loop'.fix_eq,
-  cases loop_4_eq s Hf_term base with H₁ H₂,
-  { obtain base' s' Heq Hwf, from H₁,
-    begin
-      have R (f, base', s') (f, base, s), from Hwf,
-      rewrite [Heq, if_pos this],
-      have ∀x, x ∈ s' → x ∈ s, from sorry,
-      apply ih, exact Hwf,
-      { intro x Hxs, apply Hf_term x (this x Hxs) },
-      exact rfl
-    end },
-  { obtain r Heq, from H₂,
-    by rewrite Heq; contradiction }
+  cases loop_4_sem s Hf_term with base' s' Heq Hvar r Heq,
+  { have R (f, base', s') (f, base, s), from Hvar,
+    rewrite [Heq, if_pos this],
+    have ∀x, x ∈ s' → x ∈ s, from sorry,
+    apply ih, exact Hvar,
+    { intro x Hxs, apply Hf_term x (this x Hxs) },
+    exact rfl
+  },
+  { rewrite Heq, contradiction }
 end
 
 lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
