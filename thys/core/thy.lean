@@ -15,20 +15,31 @@ open sum
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
-/-theorem list.mem_of_mem_dropn {A : Type} (x : A) : Π(n : ℕ) (xs : list A), x ∈ dropn n xs → x ∈ xs
-| 0 xs H := H
-| (n+1) [] H := by contradiction
-| (succ n) (y::xs) H := mem_cons_of_mem y (mem_of_mem_dropn n xs H)-/
+namespace list
+section
+  parameter {A : Type}
 
-theorem list.mem_of_mem_dropn {A : Type} (x : A) (n : ℕ) : Π(xs : list A), x ∈ dropn n xs → x ∈ xs :=
-begin
-  induction n with n ih,
-  { intros, eassumption },
-  { intro xs H, cases xs,
-    { unfold dropn at H, contradiction },
-    { unfold dropn at H, apply mem_cons_of_mem _ (ih _ H) },
-  },
+  theorem firstn_sub : Π(n : ℕ) (xs : list A), firstn n xs ⊆ xs
+  | 0 xs := nil_sub _
+  | (succ n) [] := sub.refl _
+  | (succ n) (x::xs) := cons_sub_cons x (firstn_sub n xs)
+
+  theorem mem_of_mem_dropn (x : A) : Π(n : ℕ) (xs : list A), x ∈ dropn n xs → x ∈ xs
+  | 0 xs H := H
+  | (n+1) [] H := by contradiction
+  | (succ n) (y::xs) H := by esimp at H; apply mem_cons_of_mem y (mem_of_mem_dropn n xs H)
+
+  theorem dropn_sub_dropn_cons : Π(n : ℕ) (x : A) (xs : list A), dropn n xs ⊆ dropn n (x::xs)
+  | 0 x xs := sub_cons x xs
+  | (succ n) x [] := nil_sub _
+  | (succ n) x (x'::xs) := by esimp; apply dropn_sub_dropn_cons n x' xs
+
+  theorem dropn_sub : Π(n : ℕ) (xs : list A), dropn n xs ⊆ xs
+  | 0 xs := sub.refl _
+  | (succ n) [] := sub.refl _
+  | (succ n) (x::xs) := by esimp; apply sub.trans (dropn_sub_dropn_cons n x xs) (dropn_sub n (x::xs))
 end
+end list
 
 namespace core
 
@@ -99,9 +110,9 @@ attribute fn [constructor]
 
 parameter (base : nat)
 
--- loop_4 either recurses with some shorter slice or terminates normally with some value
+-- loop_4 either recurses with some sub-slice or terminates normally with some value
 inductive loop_4_res (res : option (loop_4_state + result.Result u32 u32)) : Prop :=
-| cont : Πbase' s', res = some (inl (f, base', s')) → length s' < length s → loop_4_res res
+| cont : Πbase' s', res = some (inl (f, base', s')) → length s' < length s → s' ⊆ s → loop_4_res res
 | break: Πr, res = some (inr r) → loop_4_res res
 
 include Hf_term
@@ -135,7 +146,9 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       left,
       { apply rfl },
       { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
-                                    ... < length s  : Hwf }
+                                    ... < length s  : Hwf },
+      { rewrite -Hs,
+        apply sub.trans, apply list.dropn_sub, apply list.dropn_sub }
     },
     { intro H, subst H,
       right, apply rfl },
@@ -150,6 +163,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         end,
         calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
                                           ... < length s     : div_lt_of_ne_zero this },
+      { apply list.firstn_sub }
     }
   }
 end)
@@ -170,12 +184,11 @@ begin
   intro f base s Hf_term Hlen,
   subst Hlen,
   rewrite loop'.fix_eq,
-  cases loop_4_sem s Hf_term with base' s' Heq Hvar r Heq,
-  { have R (f, base', s') (f, base, s), from Hvar,
+  cases loop_4_sem s Hf_term with base' s' Heq Hlen Hsub r Heq,
+  { have R (f, base', s') (f, base, s), from Hlen,
     rewrite [Heq, if_pos this],
-    have ∀x, x ∈ s' → x ∈ s, from sorry,
-    apply ih, exact Hvar,
-    { intro x Hxs, apply Hf_term x (this x Hxs) },
+    apply ih, exact Hlen,
+    { intro x Hxs, apply Hf_term x (Hsub Hxs) },
     exact rfl
   },
   { rewrite Heq, contradiction }
@@ -187,15 +200,20 @@ by rewrite [↑binary_search_by, -!loop'.fix_eq_loop' this]; apply this
 
 end binary_search_by
 
+parameters [cmp.Ord T]
+premise (Hord_term : ∀x y : T, cmp.Ord.cmp x y ≠ none)
+
 /- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
 
 Binary search a sorted slice for a given element.
 
 If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
-lemma binary_search_terminates [cmp.Ord T] (x : T) : binary_search s x ≠ none :=
+include Hord_term
+lemma binary_search_terminates (x : T) : binary_search s x ≠ none :=
 begin
   rewrite [↑binary_search, bind_some_eq_id],
   apply binary_search_by_terminates,
+  intro y Hys, rewrite bind_some_eq_id, apply Hord_term y x
 end
 
 end

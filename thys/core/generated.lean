@@ -98,7 +98,7 @@ let ret ← (t0, t8);
 some (ret)
 
 
-structure slice.SliceExt [class] (Self : Type) (Item : Type) := mk () ::
+structure slice.SliceExt [class] (Self : Type) (Item : Type) :=
 (len : Self → option (usize))
 
 definition slice._T_.slice_SliceExt [instance] (T : Type) := ⦃
@@ -202,7 +202,7 @@ let s ← t1;
 loop' (slice._T_.slice_SliceExt.binary_search_by.loop_4) (f, base, s)
 end
 
-structure cmp.PartialEq [class] (Rhs : Type) (Self : Type)  := mk () ::
+structure cmp.PartialEq [class] (Rhs : Type) (Self : Type)  :=
 (eq : Self → Rhs → option (Prop))
 
 structure cmp.Eq [class] (Self : Type)  extends cmp.PartialEq Self Self 
@@ -211,10 +211,10 @@ inductive option.Option (T : Type) :=
 | None {} : option.Option T
 | Some {} : T → option.Option T
 
-structure cmp.PartialOrd [class] (Rhs : Type) (Self : Type)  extends cmp.PartialEq Rhs Self := mk () ::
+structure cmp.PartialOrd [class] (Rhs : Type) (Self : Type)  extends cmp.PartialEq Rhs Self :=
 (partial_cmp : Self → Rhs → option ((option.Option (cmp.Ordering))))
 
-structure cmp.Ord [class] (Self : Type)  extends cmp.Eq Self, cmp.PartialOrd Self Self := mk () ::
+structure cmp.Ord [class] (Self : Type)  extends cmp.Eq Self, cmp.PartialOrd Self Self :=
 (cmp : Self → Self → option ((cmp.Ordering)))
 
 definition slice._T_.slice_SliceExt.binary_search {T : Type} [cmp_Ord_T : cmp.Ord T] (self : (slice T)) (x : T) :=

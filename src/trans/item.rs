@@ -312,7 +312,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 self.transpile_associated_types(self.def_id).join(" "),
                 extends,
                 if items.is_empty() { "".to_owned() }
-                else { format!(":= mk () ::\n{}", items.join("\n")) })
+                else { format!(":=\n{}", items.join("\n")) })
     }
 
     fn transpile_trait_impl(&self) -> String {
