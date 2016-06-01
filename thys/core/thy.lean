@@ -12,6 +12,8 @@ open partial
 open prod.ops
 open sum
 
+definition rev_apply {A B : Type} (x : A) (f : A → B) : B := f x
+
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
@@ -44,6 +46,7 @@ end list
 namespace core
 
 open ops
+open result
 
 namespace slice
 section
@@ -52,8 +55,8 @@ section
    for [T] (= slice T, rendered as _T_). -/
 open _T_.slice_SliceExt
 
-parameters {T : Type}
-variables (s : slice T)
+parameter {T : Type}
+variable (s : slice T)
 
 lemma is_empty_eq : SliceExt.is_empty T s = some (s = []) :=
 congr_arg some (propext (iff.intro
@@ -92,15 +95,15 @@ lemma split_at_eq {mid : usize} (H : mid ≤ length s) :
   split_at s mid = some (firstn mid s, dropn mid s) :=
 by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 
+/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
 section binary_search_by
 open _T_.slice_SliceExt.binary_search_by
 
-/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
-
-parameter f : T ⇀ cmp.Ordering
+variable base : usize
+variable f : T ⇀ cmp.Ordering
 premise Hf_term : ∀x, x ∈ s → f x ≠ none
 
-abbreviation loop_4_state := (T ⇀ cmp.Ordering) × usize × slice T
+private abbreviation loop_4_state := (T ⇀ cmp.Ordering) × usize × slice T
 
 -- force same decidable instance as in generated.lean
 attribute classical.prop_decidable [instance] [priority 10000]
@@ -108,17 +111,16 @@ attribute classical.prop_decidable [instance] [priority 10000]
 attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
 
-parameter (base : nat)
-
 -- loop_4 either recurses with some sub-slice or terminates normally with some value
-inductive loop_4_res (res : option (loop_4_state + result.Result u32 u32)) : Prop :=
-| cont : Πbase' s', res = some (inl (f, base', s')) → length s' < length s → s' ⊆ s → loop_4_res res
-| break: Πr, res = some (inr r) → loop_4_res res
+inductive loop_4_sem : Prop :=
+| cont : Πbase' s', loop_4 (f, base, s) = some (inl (f, base', s')) → length s' < length s → s' ⊆ s → loop_4_sem
+| break: Πr, loop_4 (f, base, s) = some (inr r) → loop_4_sem
 
 include Hf_term
-private lemma loop_4_sem : loop_4_res s (loop_4 (f, base, s)) :=
+private lemma loop_4_sem.intro : loop_4_sem s base f :=
 generalize_with_eq (loop_4 (f, base, s)) (begin
-  intro res,
+  intro res Hres,
+  apply rev_apply Hres,
   rewrite [↑loop_4, ↑checked.shr],
   rewrite [of_int_one, pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
@@ -127,7 +129,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   intro s' Hs, cases s' with x xs,
   { rewrite [if_pos rfl],
     intro H,
-    right, apply H⁻¹ },
+    right, apply Hres ⬝ H⁻¹ },
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
@@ -142,19 +144,19 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     cases ord,
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
-      intro H, rewrite -H,
+      intro H,
       left,
-      { apply rfl },
+      { apply Hres ⬝ H⁻¹ },
       { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
                                     ... < length s  : Hwf },
       { rewrite -Hs,
         apply sub.trans, apply list.dropn_sub, apply list.dropn_sub }
     },
-    { intro H, subst H,
-      right, apply rfl },
-    { intro H, subst H,
+    { intro H,
+      right, apply Hres ⬝ H⁻¹ },
+    { intro H,
       left,
-      { apply rfl },
+      { apply Hres ⬝ H⁻¹ },
       { have length s ≠ 0,
         begin
           intro H,
@@ -177,14 +179,15 @@ private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
 -- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
 include Hf_term
-private lemma fix_loop_4 (base l : nat) : length s = l → loop'.fix loop_4 R (f, base, s) ≠ none :=
+private lemma fix_loop_4 : loop'.fix loop_4 R (f, base, s) ≠ none :=
 begin
+  eapply generalize_with_eq (length s), intro l,
   revert f base s Hf_term,
   induction l using nat.strong_induction_on with l' ih,
   intro f base s Hf_term Hlen,
   subst Hlen,
   rewrite loop'.fix_eq,
-  cases loop_4_sem s Hf_term with base' s' Heq Hlen Hsub r Heq,
+  cases loop_4_sem.intro s base f Hf_term with base' s' Heq Hlen Hsub r Heq,
   { have R (f, base', s') (f, base, s), from Hlen,
     rewrite [Heq, if_pos this],
     apply ih, exact Hlen,
@@ -195,8 +198,11 @@ begin
 end
 
 lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
-have loop'.fix loop_4 R (f, 0, s) ≠ none, from generalize_with_eq (length s) (fix_loop_4 s Hf_term 0),
-by rewrite [↑binary_search_by, -!loop'.fix_eq_loop' this]; apply this
+begin
+  note H := fix_loop_4 s 0 f Hf_term,
+  rewrite [↑binary_search_by, -!loop'.fix_eq_loop' H],
+  apply H
+end
 
 end binary_search_by
 
