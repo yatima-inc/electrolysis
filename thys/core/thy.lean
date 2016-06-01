@@ -12,8 +12,6 @@ open partial
 open prod.ops
 open sum
 
-definition rev_apply {A B : Type} (x : A) (f : A → B) : B := f x
-
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
@@ -103,7 +101,7 @@ variable base : usize
 variable f : T ⇀ cmp.Ordering
 premise Hf_term : ∀x, x ∈ s → f x ≠ none
 
-private abbreviation loop_4_state := (T ⇀ cmp.Ordering) × usize × slice T
+private abbreviation loop_4.state := (T ⇀ cmp.Ordering) × usize × slice T
 
 -- force same decidable instance as in generated.lean
 attribute classical.prop_decidable [instance] [priority 10000]
@@ -112,15 +110,14 @@ attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
 
 -- loop_4 either recurses with some sub-slice or terminates normally with some value
-inductive loop_4_sem : Prop :=
-| cont : Πbase' s', loop_4 (f, base, s) = some (inl (f, base', s')) → length s' < length s → s' ⊆ s → loop_4_sem
-| break: Πr, loop_4 (f, base, s) = some (inr r) → loop_4_sem
+inductive loop_4.res : option (loop_4.state + result.Result u32 u32) → Prop :=
+| cont : Πbase' s', length s' < length s → s' ⊆ s → loop_4.res (some (inl (f, base', s')))
+| break: Πr, loop_4.res (some (inr r))
 
 include Hf_term
-private lemma loop_4_sem.intro : loop_4_sem s base f :=
+private lemma loop_4.sem : loop_4.res s f (loop_4 (f, base, s)) :=
 generalize_with_eq (loop_4 (f, base, s)) (begin
-  intro res Hres,
-  apply rev_apply Hres,
+  intro res,
   rewrite [↑loop_4, ↑checked.shr],
   rewrite [of_int_one, pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
@@ -128,8 +125,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   eapply generalize_with_eq (dropn (length s / 2) s),
   intro s' Hs, cases s' with x xs,
   { rewrite [if_pos rfl],
-    intro H,
-    right, apply Hres ⬝ H⁻¹ },
+    intro H, rewrite -H,
+    right },
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
@@ -144,19 +141,17 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     cases ord,
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
-      intro H,
+      intro H, rewrite -H,
       left,
-      { apply Hres ⬝ H⁻¹ },
       { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
                                     ... < length s  : Hwf },
       { rewrite -Hs,
         apply sub.trans, apply list.dropn_sub, apply list.dropn_sub }
     },
-    { intro H,
-      right, apply Hres ⬝ H⁻¹ },
-    { intro H,
+    { intro H, subst H,
+      right },
+    { intro H, subst H,
       left,
-      { apply Hres ⬝ H⁻¹ },
       { have length s ≠ 0,
         begin
           intro H,
@@ -173,7 +168,7 @@ omit Hf_term
 
 -- ...making it a well-founded recursion
 
-private definition R := measure (λst : loop_4_state, length st.2)
+private definition R := measure (λst : loop_4.state, length st.2)
 
 private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
@@ -187,14 +182,16 @@ begin
   intro f base s Hf_term Hlen,
   subst Hlen,
   rewrite loop'.fix_eq,
-  cases loop_4_sem.intro s base f Hf_term with base' s' Heq Hlen Hsub r Heq,
+  note H := loop_4.sem s base f Hf_term, revert H,
+  eapply generalize_with_eq (loop_4 (f, base, s)), intro res _ Hres,
+  cases Hres with base' s' Hlen Hsub r,
   { have R (f, base', s') (f, base, s), from Hlen,
-    rewrite [Heq, if_pos this],
+    rewrite [if_pos this],
     apply ih, exact Hlen,
     { intro x Hxs, apply Hf_term x (Hsub Hxs) },
     exact rfl
   },
-  { rewrite Heq, contradiction }
+  { contradiction }
 end
 
 lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
