@@ -1,117 +1,24 @@
 import data.nat data.list
+import move
 
 open bool
 open eq.ops
 open int
 open nat
 open option
+open [notation] partial
 open prod
 open prod.ops
 open sum
-
--- things that may or may not belong in the stdlib
-
-namespace nat
-  definition of_int : ℤ → ℕ
-  | (int.of_nat n) := n
-  | _              := 0
-
-  lemma of_int_one : of_int 1 = 1 := rfl
-end nat
-
-namespace option
-  variables {A B : Type}
-
-  protected definition all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
-  | (some x) := P x
-  | none     := false
-
-  theorem ex_some_of_neq_none {x : option A} (H : x ≠ none) : ∃y, x = some y :=
-  begin
-    cases x with y,
-    { exfalso, apply H rfl },
-    { existsi y, apply rfl }
-  end
-
-  protected definition bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
-  | (some x) := f x
-  | none     := none
-
-  theorem bind_some_eq_id {x : option A} : option.bind some x = x :=
-  by cases x; esimp; esimp
-
-  theorem bind_neq_none {f : A → option B} {x} (Hx : x ≠ none) (Hf : ∀x', f x' ≠ none) : option.bind f x ≠ none :=
-  obtain x' H₁, from ex_some_of_neq_none Hx,
-  obtain x'' H₂, from ex_some_of_neq_none (Hf x'),
-  by rewrite [H₁, ▸*, H₂]; contradiction
-end option
 
 open option
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
 
-definition sum.inl_opt [unfold 3] {A B : Type} : A + B → option A
-| (inl a) := some a
-| (inr _) := none
-
-definition sum.inr_opt {A B : Type} : A + B → option B
-| (inl _) := none
-| (inr b) := some b
-
-
-namespace partial
-infixr ` ⇀ `:25 := λA B, A → option B
-
-section
-  parameters {A B : Type} {R : B → B → Prop}
-  parameters (f : A ⇀ B)
-
-  definition R' [unfold 3] : option B → option B → Prop
-  | (some y) (some x) := R y x
-  | _        _        := false
-
-  private definition R'.wf (H : well_founded R) : well_founded R' :=
-  begin
-    apply well_founded.intro,
-    intro x, cases x with x',
-    { apply acc.intro,
-      intro y,
-      cases y; repeat contradiction },
-    { induction (well_founded.apply H x') with x' _ ih,
-      apply acc.intro,
-      intro y HR', cases y with y',
-      { contradiction },
-      { apply ih _ HR' }
-    }
-  end
-
-  parameter (R)
-  definition inv_image (f : A ⇀ B) : A → A → Prop := inv_image R' f
-
-  parameter {R}
-  lemma inv_image.wf (H : well_founded R) : well_founded (inv_image f) :=
-  inv_image.wf f (R'.wf H)
-end
-
-end partial
-
-open [notation] partial
 
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
 open [class] classical
-
-theorem dite_else_false {H : Prop} {t : H → Prop} (Hdite : if c : H then t c else false) : H :=
-begin
-  apply dite H,
-  { apply id },
-  { intro Hneg,
-    rewrite (dif_neg Hneg) at Hdite,
-    apply false.elim Hdite }
-end
-
-attribute dite [unfold 2]
-attribute ite [unfold 2]
 
 -- a general loop combinator for separating tail-recursive definitions from their well-foundedness proofs
 
@@ -156,7 +63,7 @@ section
 
   noncomputable definition loop (s : State) : option Res :=
   if Hex : ∃ R, term_rel R s then
-    @loop.fix (classical.some Hex) (dite_else_false (classical.some_spec Hex)) s
+    @loop.fix (classical.some Hex) (classical.dite_else_false (classical.some_spec Hex)) s
   else none
 
   parameter {body}
@@ -213,7 +120,7 @@ section
     assumption
   end,
   let R₀ := classical.some Hterm_rel in
-  have well_founded R₀, from dite_else_false (classical.some_spec Hterm_rel),
+  have well_founded R₀, from classical.dite_else_false (classical.some_spec Hterm_rel),
   have loop.fix R₀ s ≠ none, from dif_pos this ▸ classical.some_spec Hterm_rel,
   begin
     rewrite [↑loop, dif_pos Hterm_rel],

@@ -1,5 +1,7 @@
 import core.generated
 import data.finset
+import data.list.sorted
+import move
 
 open [class] classical
 open core
@@ -10,39 +12,27 @@ open nat
 open option
 open partial
 open prod.ops
-open sum
 
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
-namespace list
-section
-  parameter {A : Type}
-
-  theorem firstn_sub : Π(n : ℕ) (xs : list A), firstn n xs ⊆ xs
-  | 0 xs := nil_sub _
-  | (succ n) [] := sub.refl _
-  | (succ n) (x::xs) := cons_sub_cons x (firstn_sub n xs)
-
-  theorem mem_of_mem_dropn (x : A) : Π(n : ℕ) (xs : list A), x ∈ dropn n xs → x ∈ xs
-  | 0 xs H := H
-  | (n+1) [] H := by contradiction
-  | (succ n) (y::xs) H := by esimp at H; apply mem_cons_of_mem y (mem_of_mem_dropn n xs H)
-
-  theorem dropn_sub_dropn_cons : Π(n : ℕ) (x : A) (xs : list A), dropn n xs ⊆ dropn n (x::xs)
-  | 0 x xs := sub_cons x xs
-  | (succ n) x [] := nil_sub _
-  | (succ n) x (x'::xs) := by esimp; apply dropn_sub_dropn_cons n x' xs
-
-  theorem dropn_sub : Π(n : ℕ) (xs : list A), dropn n xs ⊆ xs
-  | 0 xs := sub.refl _
-  | (succ n) [] := sub.refl _
-  | (succ n) (x::xs) := by esimp; apply sub.trans (dropn_sub_dropn_cons n x xs) (dropn_sub n (x::xs))
-end
-end list
+open list
 
 namespace core
 
+namespace cmp
+  noncomputable definition ordering {T : Type} [linear_strong_order_pair T] (x y : T) : cmp.Ordering :=
+  if x < y then Ordering.Less
+  else if x = y then Ordering.Equal
+  else Ordering.Greater
+
+  structure Ord' [class] (T : Type) extends Ord T, order : linear_strong_order_pair T := -- issue #1066
+  (cmp_eq : ∀x y : T, cmp x y = some (@ordering _ order x y))
+
+  lemma Ord'.ord_cmp_eq {T : Type} [Ord' T] (x y : T) : Ord.cmp x y = some (ordering x y) := Ord'.cmp_eq x y -- HACK
+end cmp
+
+open cmp
 open ops
 open result
 
