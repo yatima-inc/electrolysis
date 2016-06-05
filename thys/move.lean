@@ -125,26 +125,19 @@ section
     induction xs with x xs ih,
     { apply locally_sorted.base },
     { unfold insert_pos,
-      cases @decidable_le _ _ y x with H₁ H₂,
-      { apply locally_sorted.step H₁ Hsorted },
-      { cases xs with x' xs,
-        { apply locally_sorted.step,
-          apply le_of_not_ge H₂,
-          apply locally_sorted.base
-        },
-        { rewrite [↑ite, ↑insert_at],
-          revert ih, rewrite [↑insert_pos],
-          cases @decidable_le _ _ y x' with H₁ H₂,
-          { intro ih, apply locally_sorted.step,
-            apply le_of_not_ge H₂,
-            apply locally_sorted.step, apply H₁, cases Hsorted, assumption },
+      exact decidable.rec_on _
+        (suppose y ≤ x, locally_sorted.step this Hsorted)
+        (suppose Hyx : ¬y ≤ x, begin
+          cases xs with x' xs,
+          { exact locally_sorted.step (le_of_not_ge Hyx) !locally_sorted.base },
           { cases Hsorted with _ _ _ _ Hxx' Hsorted',
-            rewrite [↑ite],
-            intro ih,
-            apply locally_sorted.step, apply Hxx', apply ih Hsorted',
+            rewrite [↑ite, ↑insert_at],
+            revert ih, rewrite [↑insert_pos],
+            exact decidable.rec_on _
+              (suppose y ≤ x', assume ih, locally_sorted.step (le_of_not_ge Hyx) (locally_sorted.step this Hsorted'))
+              (suppose ¬y ≤ x', assume ih, locally_sorted.step Hxx' (ih Hsorted'))
           }
-        }
-      }
+        end)
     }
   end
 end
@@ -202,14 +195,9 @@ theorem le_lt_antisymm {T : Type} [order_pair T] {n m : T} (H1 : n ≤ m) (H2 : 
 !lt.irrefl (lt_of_le_of_lt H1 H2)
 
 namespace classical
-  theorem dite_else_false {H : Prop} {t : H → Prop} (Hdite : if c : H then t c else false) : H :=
-  begin
-    apply dite H,
-    { apply id },
-    { intro Hneg,
-      rewrite (dif_neg Hneg) at Hdite,
-      apply false.elim Hdite }
-  end
+  theorem dite_else_false {c : Prop} {t : c → Prop} (Hdite : if H : c then t H else false) : c :=
+  if H : c then H
+  else false.elim (dif_neg H ▸ Hdite)
 end classical
 
 attribute dite [unfold 2]
