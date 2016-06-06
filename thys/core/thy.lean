@@ -9,6 +9,7 @@ open [class] classical
 open core
 open eq.ops
 open list
+open list.prefixeq
 open nat
 open interval
 open option
@@ -183,7 +184,10 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       intro H, rewrite -H,
       split,
       exact ⦃loop_4_invar,
-        s_in_self := sorry, -- by rewrite [-Hs, loop_4_invar.s_in_self Hinv at {2}, +list.dropn_dropn, length_firstn_eq, min_eq_left !nat.div_le_self, length_dropn]
+        s_in_self := begin
+          rewrite [-Hs, dropn_dropn, length_firstn_eq, min_eq_left !nat.div_le_self, add.comm at {1}, {base + _}add.comm, -{dropn _ self}dropn_dropn],
+          apply !dropn_prefixeq_dropn_of_prefixeq (loop_4_invar.s_in_self Hinvar),
+        end,
         insert_pos := sorry,
         needle_mem := sorry
       ⦄,
@@ -205,7 +209,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         esimp,
         split,
         exact ⦃loop_4_invar,
-          s_in_self := sorry,
+          s_in_self := prefixeq.trans !firstn_prefixeq (loop_4_invar.s_in_self Hinvar),
           insert_pos := sorry,
           needle_mem := sorry
         ⦄,

@@ -118,16 +118,37 @@ section
   | [] n y := [y]
   | xs 0 y := y::xs
   | (x::xs) (succ n) y := x::insert_at xs n y
+end
 
-  inductive prefixeq : list A → list A → Prop :=
-  | nil : Πys, prefixeq [] ys
-  | cons : Πx {xs ys}, prefixeq xs ys → prefixeq (x::xs) (x::ys)
+inductive prefixeq {A : Type} : list A → list A → Prop :=
+  infix ` ⊑ₚ `:50 := prefixeq
+| nil : Πys, [] ⊑ₚ ys
+| cons : Πx {xs ys}, xs ⊑ₚ ys → x::xs ⊑ₚ x::ys
 
-  theorem prefixeq.refl : Π(xs : list A), prefixeq xs xs
-  | []      := !prefixeq.nil
-  | (x::xs) := prefixeq.cons x (prefixeq.refl xs)
+namespace prefixeq
+section
+  parameter {A : Type}
 
-  theorem nth_of_nth_prefixeq {i : ℕ} {xs ys : list A} {z : A} (Hxs : nth xs i = some z) (Hprefix : prefixeq xs ys) : nth ys i = some z :=
+  infix ` ⊑ₚ `:50 := prefixeq
+
+  protected theorem refl [refl] : Π(xs : list A), xs ⊑ₚ xs
+  | []      := !nil
+  | (x::xs) := cons x (refl xs)
+
+  protected theorem trans [trans] : Π{xs ys zs : list A}, xs ⊑ₚ ys → ys ⊑ₚ zs → xs ⊑ₚ zs
+  | [] ys zs _ _ := !nil
+  | (x::xs) (x::ys) (x::zs) (cons x H₁) (cons x H₂) :=
+    cons x (trans H₁ H₂)
+
+  protected theorem antisymm : Π{xs ys : list A}, xs ⊑ₚ ys → ys ⊑ₚ xs → xs = ys
+  | [] [] _ _ := rfl
+  | (x::xs) (x::ys) (cons x H₁) (cons x H₂) := antisymm H₁ H₂ ▸ rfl
+
+  definition weak_order [instance] : weak_order (list A) := ⦃weak_order,
+    le := prefixeq, le_refl := refl, le_trans := @trans, le_antisymm := @antisymm
+  ⦄
+
+  theorem nth_of_nth_prefixeq {i : ℕ} {xs ys : list A} {z : A} (Hxs : nth xs i = some z) (Hprefix : xs ⊑ₚ ys) : nth ys i = some z :=
   begin
     revert i Hxs,
     induction Hprefix with x z' xs ys Hprefix ih,
@@ -138,7 +159,19 @@ section
       { apply ih i Hxs }
     }
   end
+
+  theorem firstn_prefixeq : Π(n : ℕ) (xs : list A), firstn n xs ⊑ₚ xs
+  | 0 xs             := !nil
+  | (succ n) []      := !nil
+  | (succ n) (x::xs) := cons x (firstn_prefixeq n xs)
+
+  theorem dropn_prefixeq_dropn_of_prefixeq : Π(n : ℕ) {xs ys : list A} (H : xs ⊑ₚ ys),
+    dropn n xs ⊑ₚ dropn n ys
+  | 0 xs ys H := H
+  | n [] ys H := by rewrite dropn_nil; apply !prefixeq.nil
+  | (succ n) (x::xs) (x::ys) (cons x H) := by unfold dropn; apply dropn_prefixeq_dropn_of_prefixeq n H
 end
+end prefixeq
 
 namespace sorted
 section
