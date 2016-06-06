@@ -20,9 +20,16 @@ end nat
 namespace option
   variables {A B : Type}
 
-  protected definition all [unfold 3] {A : Type} (P : A → Prop) : option A → Prop
+  protected definition all [unfold 3] (P : A → Prop) : option A → Prop
   | (some x) := P x
   | none     := false
+
+  protected theorem all.elim {x : option A} {P : A → Prop} (H : option.all P x) : ∃y, x = some y ∧ P y :=
+  begin
+    cases x with y,
+    { contradiction },
+    { apply exists.intro y (and.intro rfl H) }
+  end
 
   theorem ex_some_of_neq_none {x : option A} (H : x ≠ none) : ∃y, x = some y :=
   begin
@@ -50,7 +57,7 @@ section
   variable xs : list A
 
   -- first without [inhabited], last without predicate
-  definition first' : option A := nth xs 0
+  definition first' [unfold 2] : option A := nth xs 0
   definition last' : list A → option A
   | []      := none
   | [x]     := some x
@@ -83,7 +90,7 @@ section
   | (succ n) []      := sub.refl _
   | (succ n) (x::xs) := by esimp; apply sub.trans (dropn_sub_dropn_cons n x xs) (dropn_sub n (x::xs))
 
-  theorem dropn_dropn (n : ℕ) : Π (m : ℕ) (xs : list A), dropn n (dropn m xs) = dropn (#nat (n+m)) xs
+  theorem dropn_dropn (n : ℕ) : Π (m : ℕ) (xs : list A), dropn n (dropn m xs) = dropn (n+m) xs
   | 0 xs             := by esimp
   | (succ m) []      := by rewrite +dropn_nil
   | (succ m) (x::xs) := by rewrite [nat.add_succ, ↑dropn at {1,3}]; apply dropn_dropn m xs
@@ -93,16 +100,44 @@ section
   | (succ n) []      H := by rewrite length_nil at H
   | (succ n) (x::xs) H := begin
     have H' : n < length xs, from lt_of_succ_lt_succ (!length_cons ▸ H),
-    have xs ≠ nil, from take Hcontr,
-      by rewrite [Hcontr at H', length_nil at H']; apply not_succ_le_zero n H',
+    have xs ≠ nil, begin
+      intro Hcontr,
+      rewrite [Hcontr at H', length_nil at H'],
+      apply not_succ_le_zero n H',
+    end,
     rewrite [↑dropn, last'_cons_eq_last' this],
     apply last'_dropn_of_last' n xs H'
   end
+
+  theorem nth_eq_first'_dropn : Π(n : ℕ) (xs : list A), nth xs n = first' (dropn n xs)
+  | 0 xs             := rfl
+  | (succ n) []      := by esimp
+  | (succ n) (x::xs) := by rewrite [↑dropn, ↑nth]; apply nth_eq_first'_dropn n xs
 
   definition insert_at : list A → ℕ → A → list A
   | [] n y := [y]
   | xs 0 y := y::xs
   | (x::xs) (succ n) y := x::insert_at xs n y
+
+  inductive prefixeq : list A → list A → Prop :=
+  | nil : Πys, prefixeq [] ys
+  | cons : Πx {xs ys}, prefixeq xs ys → prefixeq (x::xs) (x::ys)
+
+  theorem prefixeq.refl : Π(xs : list A), prefixeq xs xs
+  | []      := !prefixeq.nil
+  | (x::xs) := prefixeq.cons x (prefixeq.refl xs)
+
+  theorem nth_of_nth_prefixeq {i : ℕ} {xs ys : list A} {z : A} (Hxs : nth xs i = some z) (Hprefix : prefixeq xs ys) : nth ys i = some z :=
+  begin
+    revert i Hxs,
+    induction Hprefix with x z' xs ys Hprefix ih,
+    all_goals intro i Hxs,
+    { contradiction },
+    { cases i with i,
+      { apply Hxs },
+      { apply ih i Hxs }
+    }
+  end
 end
 
 namespace sorted
@@ -115,6 +150,14 @@ section
   | (x::xs) y := if y ≤ x
     then 0
     else succ (insert_pos xs y)
+
+  theorem insert_pos_le_length : Π(xs : list A) (y : A), insert_pos xs y ≤ length xs
+  | [] y      := zero_le _
+  | (x::xs) y := begin
+    unfold insert_pos, cases (_ : decidable (y ≤ x)),
+    { apply zero_le },
+    { apply succ_le_succ (insert_pos_le_length xs y) }
+  end
 
   theorem sorted_insert_at_insert_pos (xs : list A) (y : A) (H : sorted le xs) :
     sorted le (insert_at xs (insert_pos xs y) y) :=
@@ -202,3 +245,16 @@ end classical
 
 attribute dite [unfold 2]
 attribute ite [unfold 2]
+
+-- H as implicit instead of instance implicit for rewriting
+theorem if_pos' {c : Prop} {H : decidable c} (Hc : c) {A : Type} {t e : A} : (ite c t e) = t :=
+decidable.rec
+  (λ Hc : c,    eq.refl (@ite c (decidable.inl Hc) A t e))
+  (λ Hnc : ¬c,  absurd Hc Hnc)
+  H
+
+theorem if_neg' {c : Prop} {H : decidable c} (Hnc : ¬c) {A : Type} {t e : A} : (ite c t e) = e :=
+decidable.rec
+  (λ Hc : c,    absurd Hc Hnc)
+  (λ Hnc : ¬c,  eq.refl (@ite c (decidable.inr Hnc) A t e))
+  H

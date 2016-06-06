@@ -1,4 +1,6 @@
 import core.generated
+
+import algebra.interval
 import data.finset
 import data.list.sorted
 import move
@@ -6,12 +8,13 @@ import move
 open [class] classical
 open core
 open eq.ops
-open finset
 open list
 open nat
+open interval
 open option
 open partial
 open prod.ops
+open set
 
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
@@ -21,12 +24,12 @@ open list
 namespace core
 
 namespace cmp
-  noncomputable definition ordering {T : Type} [linear_strong_order_pair T] (x y : T) : cmp.Ordering :=
+  definition ordering {T : Type} [decidable_linear_order T] (x y : T) : cmp.Ordering :=
   if x < y then Ordering.Less
   else if x = y then Ordering.Equal
   else Ordering.Greater
 
-  structure Ord' [class] (T : Type) extends Ord T, order : linear_strong_order_pair T := -- issue #1066
+  structure Ord' [class] (T : Type) extends Ord T, order : decidable_linear_order T := -- issue #1066
   (cmp_eq : ∀x y : T, cmp x y = some (@ordering _ order x y))
 
   lemma Ord'.ord_cmp_eq {T : Type} [Ord' T] (x y : T) : Ord.cmp x y = some (ordering x y) := Ord'.cmp_eq x y -- HACK
@@ -37,11 +40,12 @@ open ops
 open result
 
 namespace slice
-section
 
 /- The SliceExt trait declares all methods on slices. It has a single implementation
    for [T] (= slice T, rendered as _T_). -/
 open _T_.slice_SliceExt
+
+section
 
 parameter {T : Type}
 variable (s : slice T)
@@ -83,15 +87,21 @@ lemma split_at_eq {mid : usize} (H : mid ≤ length s) :
   split_at s mid = some (firstn mid s, dropn mid s) :=
 by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 
-/- fn binary_search_by<T, F: FnMut(&T) -> Ordering>(self: &[T], f: F) -> Result<usize, usize> -/
-section binary_search_by
+end
+
+section binary_search
 open _T_.slice_SliceExt.binary_search_by
 
-variable base : usize
-variable f : T ⇀ cmp.Ordering
-premise Hf_term : ∀x, x ∈ s → f x ≠ none
+parameter {T : Type}
+parameter [Ord' T]
+parameter self : slice T -- force same decidable instance as in generated.lean
+attribute classical.prop_decidable [instance] [priority 10000]
 
-private abbreviation loop_4.state := (T ⇀ cmp.Ordering) × usize × slice T
+-- the original slice
+hypothesis Hsorted : sorted lt self
+
+parameter needle : T
+abbreviation f y := Ord.cmp y needle
 
 -- force same decidable instance as in generated.lean
 attribute classical.prop_decidable [instance] [priority 10000]
@@ -99,13 +109,36 @@ attribute classical.prop_decidable [instance] [priority 10000]
 attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
 
--- loop_4 either recurses with some sub-slice or terminates normally with some value
-inductive loop_4.res : option (loop_4.state + result.Result u32 u32) → Prop :=
-| cont : Πbase' s', length s' < length s → s' ⊆ s → loop_4.res (some (inl (f, base', s')))
-| break: Πr, loop_4.res (some (inr r))
+/- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
 
-include Hf_term
-private lemma loop_4.sem : loop_4.res s f (loop_4 (f, base, s)) :=
+Binary search a sorted slice for a given element.
+
+If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
+inductive binary_search_res : Result usize usize → Prop :=
+| found : Πi, nth self i = some needle → binary_search_res (Result.Ok i)
+| not_found : needle ∉ self → binary_search_res (Result.Err (sorted.insert_pos self needle))
+
+section loop_4
+
+variable s : slice T
+variable base : usize
+
+private abbreviation loop_4.state := (T ⇀ cmp.Ordering) × usize × slice T
+
+include self needle base s -- HACK
+structure loop_4_invar :=
+(s_in_self  : prefixeq s (dropn base self))
+(insert_pos : sorted.insert_pos self needle ∈ '[base, base + length s])
+(needle_mem : needle ∈ self → needle ∈ s)
+--(needle_mem : needle ∈ self → sorted.insert_pos self needle ≠ base + length s)
+omit self needle base s
+
+inductive loop_4_step : loop_4.state → Prop :=
+mk : Πbase' s', loop_4_invar s' base' → length s' < length s → loop_4_step (f, base', s')
+
+abbreviation loop_4_res := sum.rec (loop_4_step s) binary_search_res
+
+private lemma loop_4.sem (Hinvar : loop_4_invar s base) : option.all (loop_4_res s) (loop_4 (f, base, s)) :=
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
   rewrite [↑loop_4, ↑checked.shr],
@@ -116,100 +149,131 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   intro s' Hs, cases s' with x xs,
   { rewrite [if_pos rfl],
     intro H, rewrite -H,
-    right },
+    have Hs : s = nil, begin
+      have 0 = length s - length s / 2, from Hs ▸ !length_dropn,
+      apply classical.by_contradiction, intro Hs_not_nil,
+      apply lt.irrefl (length s / 2) (calc
+        length s / 2 < length s     : div_lt_of_ne_zero (take Hcontr, Hs_not_nil (eq_nil_of_length_eq_zero Hcontr))
+                  ... = (length s - length s / 2) + length s / 2 : (nat.sub_add_cancel !nat.div_le_self)⁻¹
+                  ... = 0 + length s / 2 : { this⁻¹ }
+                  ... = length s / 2 : !zero_add
+      )
+    end,
+    have base = sorted.insert_pos self needle, begin
+      note H := loop_4_invar.insert_pos Hinvar,
+      rewrite [Hs at H, length_nil at H, add_zero at H, Icc_self at H],
+      apply (eq_of_mem_singleton H)⁻¹
+    end,
+    rewrite this,
+    right,
+    show needle ∉ self, from
+    take Hneedle,
+    have needle ∈ s, from loop_4_invar.needle_mem Hinvar Hneedle,
+    Hs ▸ this,
+  },
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
     rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
     have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
-    rewrite [if_pos this, nth_zero, ▸*],
-    eapply generalize_with_eq (f x),
-    intro fx Hfx, cases fx with ord,
-    { exfalso,
-      have x ∈ s, from !list.mem_of_mem_dropn (Hs⁻¹ ▸ mem_cons x xs),
-      apply Hf_term x this Hfx },
-    cases ord,
+    rewrite [if_pos this, nth_zero, ↑f, Ord'.ord_cmp_eq x needle, ↑ordering, ▸*],
+    cases (decidable_lt : decidable (x < needle)) with _ Hx_ge_needle,
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
       intro H, rewrite -H,
-      left,
-      { calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel, ]
-                                    ... < length s  : Hwf },
-      { rewrite -Hs,
-        apply sub.trans, apply list.dropn_sub, apply list.dropn_sub }
+      split,
+      exact ⦃loop_4_invar,
+        s_in_self := sorry, -- by rewrite [-Hs, loop_4_invar.s_in_self Hinv at {2}, +list.dropn_dropn, length_firstn_eq, min_eq_left !nat.div_le_self, length_dropn]
+        insert_pos := sorry,
+        needle_mem := sorry
+      ⦄,
+      exact calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel]
+                                        ... < length s  : Hwf,
     },
     { intro H, subst H,
-      right },
-    { intro H, subst H,
-      left,
-      { have length s ≠ 0,
-        begin
-          intro H,
-          rewrite (eq_nil_of_length_eq_zero H) at Hs,
-          contradiction
+      cases (has_decidable_eq : decidable (x = needle)) with Hfound Hnot_found,
+      { left,
+        have nth (x::xs) 0 = some needle, from Hfound ▸ !nth_zero,
+        have nth s (length s / 2) = some needle, begin
+          rewrite [nth_eq_first'_dropn, Hs, ▸*, nth_zero, Hfound]
         end,
-        calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
-                                          ... < length s     : div_lt_of_ne_zero this },
-      { apply list.firstn_sub }
+        rewrite [nth_eq_first'_dropn, add.comm, -dropn_dropn, -nth_eq_first'_dropn,
+          length_firstn_eq, min_eq_left !nat.div_le_self],
+        apply nth_of_nth_prefixeq this (loop_4_invar.s_in_self Hinvar)
+      },
+      { have x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
+        esimp,
+        split,
+        exact ⦃loop_4_invar,
+          s_in_self := sorry,
+          insert_pos := sorry,
+          needle_mem := sorry
+        ⦄,
+        { have length s ≠ 0,
+          begin
+            intro H,
+            rewrite (eq_nil_of_length_eq_zero H) at Hs,
+            contradiction
+          end,
+          calc length (firstn (length s / 2) s) ≤ length s / 2 : length_firstn_le
+                                            ... < length s     : div_lt_of_ne_zero this }
+      }
     }
   }
 end)
-omit Hf_term
-
--- ...making it a well-founded recursion
 
 private definition R := measure (λst : loop_4.state, length st.2)
 
 private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
 -- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
-include Hf_term
-private lemma fix_loop_4 : loop'.fix loop_4 R (f, base, s) ≠ none :=
+private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : option.all binary_search_res (loop'.fix loop_4 R (f, base, s)) :=
 begin
   eapply generalize_with_eq (length s), intro l,
-  revert f base s Hf_term,
+  revert base s Hinvar,
   induction l using nat.strong_induction_on with l' ih,
-  intro f base s Hf_term Hlen,
+  intro base s Hinvar Hlen,
   subst Hlen,
   rewrite loop'.fix_eq,
-  note H := loop_4.sem s base f Hf_term, revert H,
-  eapply generalize_with_eq (loop_4 (f, base, s)), intro res _ Hres,
-  cases Hres with base' s' Hlen Hsub r,
-  { have R (f, base', s') (f, base, s), from Hlen,
-    rewrite [if_pos this],
-    apply ih, exact Hlen,
-    { intro x Hxs, apply Hf_term x (Hsub Hxs) },
-    exact rfl
-  },
-  { contradiction }
+  note Hres := loop_4.sem s base Hinvar, revert Hres,
+  eapply generalize_with_eq (loop_4 (f, base, s)), intro res _,
+  exact match res with
+  | some (sum.inl st') := begin
+    intro H, cases H with base' s' Hinvar' Hvar,
+    { have R (f, base', s') (f, base, s), from Hvar,
+      rewrite [if_pos this],
+      apply ih _ Hvar _ _ Hinvar' rfl
+    },
+  end
+  | some (sum.inr r) := by esimp; apply id
+  | none := by contradiction
+  end
 end
 
-lemma binary_search_by_terminates : binary_search_by s f ≠ none :=
+end loop_4
+
+theorem binary_search_by.sem : option.all binary_search_res (binary_search_by self f) :=
 begin
-  note H := fix_loop_4 s 0 f Hf_term,
-  rewrite [↑binary_search_by, -!loop'.fix_eq_loop' H],
+  have loop_4_invar self 0, from ⦃loop_4_invar,
+    s_in_self := !prefixeq.refl,
+    insert_pos := and.intro !zero_le (!zero_add⁻¹ ▸ !sorted.insert_pos_le_length),
+    needle_mem := id
+  ⦄,
+  note H := fix_loop_4 self 0 this,
+  have loop'.fix loop_4 R (f, 0, self) ≠ none, begin
+    intro Hnonterm, rewrite Hnonterm at H, contradiction
+  end,
+  rewrite [↑binary_search_by, -!loop'.fix_eq_loop' this],
   apply H
 end
 
-end binary_search_by
-
-parameters [cmp.Ord T]
-premise (Hord_term : ∀x y : T, cmp.Ord.cmp x y ≠ none)
-
-/- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
-
-Binary search a sorted slice for a given element.
-
-If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
-include Hord_term
-lemma binary_search_terminates (x : T) : binary_search s x ≠ none :=
+theorem binary_search.sem : option.all binary_search_res (binary_search self needle) :=
 begin
-  rewrite [↑binary_search, bind_some_eq_id],
-  apply binary_search_by_terminates,
-  intro y Hys, rewrite bind_some_eq_id, apply Hord_term y x
+  rewrite [↑binary_search, bind_some_eq_id, funext (λx, bind_some_eq_id)],
+  apply binary_search_by.sem,
 end
 
-end
+end binary_search
 end slice
 
 /-
