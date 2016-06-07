@@ -114,6 +114,16 @@ section
   | (succ n) []      := by esimp
   | (succ n) (x::xs) := by rewrite [↑dropn, ↑nth]; apply nth_eq_first'_dropn n xs
 
+  theorem firstn_app_dropn_eq_self : Π(n : ℕ) (xs : list A), firstn n xs ++ dropn n xs = xs
+  | 0        xs      := rfl
+  | (succ n) []      := rfl
+  | (succ n) (x::xs) := by rewrite [↑firstn, ↑dropn, ▸*, append_cons, firstn_app_dropn_eq_self]
+
+  theorem mem_of_nth : Π{i : ℕ} {xs : list A} {y : A}, nth xs i = some y → y ∈ xs
+  | _        []      _ H := by contradiction
+  | 0        (x::xs) y H := by injection H with Hxy; apply Hxy ▸ !mem_cons
+  | (succ i) (x::xs) y H := by rewrite [↑nth at H]; apply mem_cons_of_mem x (mem_of_nth H)
+
   definition insert_at : list A → ℕ → A → list A
   | [] n y := [y]
   | xs 0 y := y::xs
@@ -192,29 +202,76 @@ section
     { apply succ_le_succ (insert_pos_le_length xs y) }
   end
 
-  theorem sorted_insert_at_insert_pos (xs : list A) (y : A) (H : sorted le xs) :
-    sorted le (insert_at xs (insert_pos xs y) y) :=
-  begin
-    note Hsorted := locally_sorted_of_sorted H,
-    clear H,
-    apply sorted_of_locally_sorted,
-    induction xs with x xs ih,
-    { apply locally_sorted.base },
-    { unfold insert_pos,
-      exact decidable.rec_on _
-        (suppose y ≤ x, locally_sorted.step this Hsorted)
-        (suppose Hyx : ¬y ≤ x, begin
-          cases xs with x' xs,
-          { exact locally_sorted.step (le_of_not_ge Hyx) !locally_sorted.base },
-          { cases Hsorted with _ _ _ _ Hxx' Hsorted',
-            rewrite [↑ite, ↑insert_at],
-            revert ih, rewrite [↑insert_pos],
-            exact decidable.rec_on _
-              (suppose y ≤ x', assume ih, locally_sorted.step (le_of_not_ge Hyx) (locally_sorted.step this Hsorted'))
-              (suppose ¬y ≤ x', assume ih, locally_sorted.step Hxx' (ih Hsorted'))
-          }
-        end)
-    }
+  section
+    parameter {xs : list A}
+    parameter (Hsorted : sorted le xs)
+
+    theorem first_le {x x' : A} (Hsorted : sorted le (x::xs)) (Hx'_mem : x' ∈ x::xs) : x ≤ x' :=
+    or.rec_on (eq_or_mem_of_mem_cons Hx'_mem)
+      (assume H : x' = x, H ▸ le.refl x')
+      (assume H : x' ∈ xs, of_mem_of_all H (sorted_extends (@le.trans _ _) Hsorted))
+
+    include Hsorted
+    theorem insert_pos_gt {y xi : A} {i : ℕ} (Hyxi : y > xi) (Hnth : nth xs i = some xi) :
+      insert_pos xs y > i :=
+    begin
+      revert i Hnth,
+      induction Hsorted using sorted.rec with x xs Hhd_rel Hsorted ih,
+      { contradiction },
+      { unfold insert_pos, cases (_ : decidable (y ≤ x)) with Hyx Hyx,
+        { intro i Hnth, exfalso,
+          exact lt.irrefl _ (
+            calc x ≤ xi : first_le (sorted.step Hhd_rel Hsorted) (mem_of_nth Hnth)
+               ... < y  : Hyxi
+               ... ≤ x  : Hyx)
+        },
+        { intro i Hnth, cases i with i,
+          { apply zero_lt_succ },
+          { apply succ_lt_succ (ih i Hnth) }
+        }
+      }
+    end
+
+    theorem insert_pos_le {y xi : A} {i : ℕ} (Hyxi : y < xi) (Hnth : nth xs i = some xi) :
+      insert_pos xs y ≤ i :=
+    begin
+      revert i Hnth,
+      induction Hsorted using sorted.rec with x xs Hhd_rel Hsorted ih,
+      { contradiction },
+      { unfold insert_pos, cases (_ : decidable (y ≤ x)) with Hyx Hyx,
+        { intros, apply zero_le },
+        { intro i Hnth, cases i with i,
+          { injection Hnth with Hx_eq_xi,
+            exfalso, apply Hyx (le_of_lt (Hx_eq_xi⁻¹ ▸ Hyxi)) },
+          { apply succ_le_succ (ih i Hnth) }
+        }
+      }
+    end
+
+    theorem sorted_insert_at_insert_pos (y : A) :
+      sorted le (insert_at xs (insert_pos xs y) y) :=
+    begin
+      note Hlsorted := locally_sorted_of_sorted Hsorted,
+      clear Hsorted,
+      apply sorted_of_locally_sorted,
+      induction xs with x xs ih,
+      { apply locally_sorted.base },
+      { unfold insert_pos,
+        exact decidable.rec_on _
+          (suppose y ≤ x, locally_sorted.step this Hlsorted)
+          (suppose Hyx : ¬y ≤ x, begin
+            cases xs with x' xs,
+            { exact locally_sorted.step (le_of_not_ge Hyx) !locally_sorted.base },
+            { cases Hlsorted with _ _ _ _ Hxx' Hlsorted',
+              rewrite [↑ite, ↑insert_at],
+              revert ih, rewrite [↑insert_pos],
+              exact decidable.rec_on _
+                (suppose y ≤ x', assume ih, locally_sorted.step (le_of_not_ge Hyx) (locally_sorted.step this Hlsorted'))
+                (suppose ¬y ≤ x', assume ih, locally_sorted.step Hxx' (ih Hlsorted'))
+            }
+          end)
+      }
+    end
   end
 end
 end sorted
