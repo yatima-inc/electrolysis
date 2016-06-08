@@ -117,7 +117,7 @@ Binary search a sorted slice for a given element.
 If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
 inductive binary_search_res : Result usize usize → Prop :=
 | found : Πi, nth self i = some needle → binary_search_res (Result.Ok i)
-| not_found : needle ∉ self → binary_search_res (Result.Err (sorted.insert_pos self needle))
+| not_found : Πi, needle ∉ self → sorted le (insert_at self i needle) → binary_search_res (Result.Err i)
 
 section loop_4
 
@@ -173,10 +173,11 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     end,
     rewrite this,
     right,
-    show needle ∉ self, from
-    take Hneedle,
-    have needle ∈ s, from loop_4_invar.needle_mem Hinvar Hneedle,
-    Hs ▸ this,
+    { show needle ∉ self, from
+      take Hneedle,
+      have needle ∈ s, from loop_4_invar.needle_mem Hinvar Hneedle,
+      Hs ▸ this },
+    { apply sorted.sorted_insert_at_insert_pos Hsorted }
   },
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
