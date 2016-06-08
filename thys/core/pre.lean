@@ -16,8 +16,6 @@ open option
 notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
 
 
-lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
-
 open [class] classical
 
 -- a general loop combinator for separating tail-recursive definitions from their well-foundedness proofs

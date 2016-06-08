@@ -7,6 +7,8 @@ open list
 open nat
 open option
 
+lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
+
 namespace nat
   open int
 
@@ -124,6 +126,19 @@ section
   | 0        (x::xs) y H := by injection H with Hxy; apply Hxy ▸ !mem_cons
   | (succ i) (x::xs) y H := by rewrite [↑nth at H]; apply mem_cons_of_mem x (mem_of_nth H)
 
+  theorem nth_of_mem : Π{xs : list A} {y : A}, y ∈ xs → ∃i, nth xs i = some y
+  | []      y H := by contradiction
+  | (x::xs) y H := or.rec_on (eq_or_mem_of_mem_cons H)
+    (suppose y = x, exists.intro 0 (this ▸ rfl))
+    (suppose y ∈ xs,
+      obtain i Hnth, from nth_of_mem this,
+      exists.intro (i+1) (!nth_succ ⬝ Hnth))
+
+  theorem lt_length_of_mem : Π{xs : list A} {i : ℕ} {y : A}, nth xs i = some y → i < length xs
+  | []      i        y H := by contradiction
+  | (x::xs) 0        y H := !zero_lt_succ
+  | (x::xs) (succ i) y H := by unfold nth at H; apply succ_lt_succ (lt_length_of_mem H)
+
   definition insert_at : list A → ℕ → A → list A
   | [] n y := [y]
   | xs 0 y := y::xs
@@ -203,8 +218,8 @@ section
   end
 
   section
-    parameter {xs : list A}
-    parameter (Hsorted : sorted le xs)
+    variable {xs : list A}
+    variable (Hsorted : sorted le xs)
 
     theorem first_le {x x' : A} (Hsorted : sorted le (x::xs)) (Hx'_mem : x' ∈ x::xs) : x ≤ x' :=
     or.rec_on (eq_or_mem_of_mem_cons Hx'_mem)
@@ -212,6 +227,21 @@ section
       (assume H : x' ∈ xs, of_mem_of_all H (sorted_extends (@le.trans _ _) Hsorted))
 
     include Hsorted
+    theorem le_of_nth_le_nth {x₁ x₂ : A} : Π{i j : ℕ}, nth xs i = some x₁ → nth xs j = some x₂ → i ≤ j → x₁ ≤ x₂ :=
+    begin
+      induction Hsorted using sorted.rec with y ys Hhd_rel Hsorted ih,
+      { contradiction },
+      { intro i j Hi Hj Hle,
+        cases i with i',
+        { injection Hi with H, subst H,
+          apply first_le (sorted.step Hhd_rel Hsorted) (mem_of_nth Hj) },
+        { cases j with j',
+          { exfalso, apply !not_succ_le_zero Hle },
+          { unfold nth at Hi, unfold nth at Hj, apply ih Hi Hj (le_of_succ_le_succ Hle) }
+        }
+      }
+    end
+
     theorem insert_pos_gt {y xi : A} {i : ℕ} (Hyxi : y > xi) (Hnth : nth xs i = some xi) :
       insert_pos xs y > i :=
     begin
@@ -270,6 +300,41 @@ section
                 (suppose ¬y ≤ x', assume ih, locally_sorted.step Hxx' (ih Hlsorted'))
             }
           end)
+      }
+    end
+
+    theorem sorted_dropn_of_sorted : Π(n : ℕ), sorted le (dropn n xs) :=
+    begin
+      induction Hsorted using sorted.rec with x xs Hhd_rel Hsorted ih,
+      { intro n, rewrite dropn_nil, apply sorted.base },
+      { intro n, cases n,
+        { apply sorted.step Hhd_rel Hsorted },
+        { unfold dropn, apply ih }
+      }
+    end
+
+    omit Hsorted
+    theorem hd_rel_of_prefix_of_hd_rel {x : A} {ys : list A} (Hprefix : prefixeq xs ys) (Hhd_rel : hd_rel le x ys) :
+      hd_rel le x xs :=
+    begin
+      cases Hhd_rel with y ys' Hxy,
+      { cases Hprefix, apply hd_rel.base },
+      { cases Hprefix,
+        { apply hd_rel.base },
+        { exact hd_rel.step _ Hxy }
+      }
+    end
+
+    theorem sorted_of_prefix_of_sorted {ys : list A} (Hprefix : prefixeq xs ys) (Hsorted : sorted le ys) :
+      sorted le xs :=
+    begin
+      revert xs Hprefix,
+      induction Hsorted using sorted.rec with y ys Hhd_rel Hsorted ih,
+      all_goals intro xs Hprefix,
+      { cases Hprefix, apply sorted.base },
+      { cases Hprefix with _ _ xs' _ Hprefix',
+        { apply sorted.base },
+        { apply sorted.step (!hd_rel_of_prefix_of_hd_rel Hprefix' Hhd_rel) (ih xs' Hprefix') }
       }
     end
   end

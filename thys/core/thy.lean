@@ -72,7 +72,7 @@ end
 lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.end_ r ≤ length s) : _T_.ops_Index_ops_RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s) :=
 begin
   let e := RangeTo.end_ r,
-  have 0 ≤ e ∧ e ≤ length s, by simp, -- whoo!
+  have 0 ≤ e ∧ e ≤ length s, by simp,
   rewrite [↑_T_.ops_Index_ops_RangeTo_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index, if_pos this],
 end
 
@@ -131,7 +131,6 @@ structure loop_4_invar :=
 (s_in_self  : prefixeq s (dropn base self))
 (insert_pos : sorted.insert_pos self needle ∈ '[base, base + length s])
 (needle_mem : needle ∈ self → needle ∈ s)
---(needle_mem : needle ∈ self → sorted.insert_pos self needle ≠ base + length s)
 omit self needle base s
 
 inductive loop_4_step : loop_4.state → Prop :=
@@ -139,8 +138,10 @@ mk : Πbase' s', loop_4_invar s' base' → length s' < length s → loop_4_step 
 
 abbreviation loop_4_res := sum.rec (loop_4_step s) binary_search_res
 
-include Hsorted
 private lemma loop_4.sem (Hinvar : loop_4_invar s base) : option.all (loop_4_res s) (loop_4 (f, base, s)) :=
+have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
+  (loop_4_invar.s_in_self Hinvar)
+  (sorted.sorted_dropn_of_sorted Hsorted _),
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
   rewrite [↑loop_4, ↑checked.shr],
@@ -213,7 +214,21 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
                    ... = base + (length s₁ + 1) + length (dropn 1 (x::xs)) : by simp
           }
         end,
-        needle_mem := sorry
+        needle_mem := assume Hneedle : needle ∈ self,
+          have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_4_invar.needle_mem Hinvar Hneedle,
+          or.rec_on (mem_or_mem_of_mem_append this)
+            (suppose needle ∈ s₁,
+              have x ≥ needle, from
+                obtain i Hi, from nth_of_mem this,
+                show needle ≤ x, from sorted.le_of_nth_le_nth sorted_s
+                  (show nth s i = some needle, from prefixeq.nth_of_nth_prefixeq Hi !firstn_prefixeq)
+                  (show nth s (length s / 2) = some x, by rewrite [nth_eq_first'_dropn, Hs])
+                  (show i ≤ length s / 2, from le_of_lt (len_s₁ ▸ lt_length_of_mem Hi)),
+              false.elim (not_le_of_gt Hx_lt_needle this))
+            (suppose needle ∈ s₂,
+              show needle ∈ xs, from or.rec_on (eq_or_mem_of_mem_cons (Hs ▸ this))
+                (suppose needle = x, false.elim (lt.irrefl _ (this ▸ Hx_lt_needle)))
+                (suppose needle ∈ xs, this))
       ⦄,
       exact calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel]
                                         ... < length s  : Hwf,
@@ -221,16 +236,24 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     { intro H, subst H,
       cases (has_decidable_eq : decidable (x = needle)) with Hfound Hnot_found,
       { left, apply Hfound ▸ nth_x },
-      { have x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
+      { have Hx_ge_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
         split,
         exact ⦃loop_4_invar,
           s_in_self := prefixeq.trans !firstn_prefixeq (loop_4_invar.s_in_self Hinvar),
           insert_pos := begin
             split,
             { apply and.left (loop_4_invar.insert_pos Hinvar) },
-            { apply sorted.insert_pos_le Hsorted this nth_x }
+            { apply sorted.insert_pos_le Hsorted Hx_ge_needle nth_x }
           end,
-          needle_mem := sorry
+          needle_mem := assume Hneedle : needle ∈ self,
+            have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_4_invar.needle_mem Hinvar Hneedle,
+            or.rec_on (mem_or_mem_of_mem_append this)
+              (suppose needle ∈ s₁, this)
+              (suppose needle ∈ s₂,
+                have x ≤ needle, from sorted.first_le
+                  (show sorted le (x::xs), from Hs ▸ sorted.sorted_dropn_of_sorted sorted_s _)
+                  (show needle ∈ x::xs, from Hs ▸ this),
+                false.elim (not_le_of_gt Hx_ge_needle this))
         ⦄,
         { have length s ≠ 0,
           begin
@@ -250,6 +273,7 @@ private definition R := measure (λst : loop_4.state, length st.2)
 private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
 -- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
+include Hsorted
 private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : option.all binary_search_res (loop'.fix loop_4 R (f, base, s)) :=
 begin
   eapply generalize_with_eq (length s), intro l,
