@@ -116,7 +116,7 @@ Binary search a sorted slice for a given element.
 
 If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
 inductive binary_search_res : Result usize usize → Prop :=
-| found : Πi, nth self i = some needle → binary_search_res (Result.Ok i)
+| found     : Πi, nth self i = some needle → binary_search_res (Result.Ok i)
 | not_found : Πi, needle ∉ self → sorted le (insert_at self i needle) → binary_search_res (Result.Err i)
 
 section loop_4
@@ -138,7 +138,7 @@ mk : Πbase' s', loop_4_invar s' base' → length s' < length s → loop_4_step 
 
 abbreviation loop_4_res := sum.rec (loop_4_step s) binary_search_res
 
-private lemma loop_4.sem (Hinvar : loop_4_invar s base) : option.all (loop_4_res s) (loop_4 (f, base, s)) :=
+private lemma loop_4.sem (Hinvar : loop_4_invar s base) : option.any (loop_4_res s) (loop_4 (f, base, s)) :=
 have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
   (loop_4_invar.s_in_self Hinvar)
   (sorted.sorted_dropn_of_sorted Hsorted _),
@@ -275,7 +275,7 @@ private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
 -- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
 include Hsorted
-private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : option.all binary_search_res (loop'.fix loop_4 R (f, base, s)) :=
+private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : option.any binary_search_res (loop'.fix loop_4 R (f, base, s)) :=
 begin
   eapply generalize_with_eq (length s), intro l,
   revert base s Hinvar,
@@ -301,7 +301,7 @@ end
 end loop_4
 
 include Hsorted
-theorem binary_search_by.sem : option.all binary_search_res (binary_search_by self f) :=
+theorem binary_search_by.sem : option.any binary_search_res (binary_search_by self f) :=
 begin
   have loop_4_invar self 0, from ⦃loop_4_invar,
     s_in_self := !prefixeq.refl,
@@ -316,7 +316,7 @@ begin
   apply H
 end
 
-theorem binary_search.sem : option.all binary_search_res (binary_search self needle) :=
+theorem binary_search.sem : option.any binary_search_res (binary_search self needle) :=
 begin
   rewrite [↑binary_search, bind_some_eq_id, funext (λx, bind_some_eq_id)],
   apply binary_search_by.sem,

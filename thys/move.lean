@@ -22,11 +22,11 @@ end nat
 namespace option
   variables {A B : Type}
 
-  protected definition all [unfold 3] (P : A → Prop) : option A → Prop
+  protected definition any [unfold 3] (P : A → Prop) : option A → Prop
   | (some x) := P x
   | none     := false
 
-  protected theorem all.elim {x : option A} {P : A → Prop} (H : option.all P x) : ∃y, x = some y ∧ P y :=
+  protected theorem any.elim {x : option A} {P : A → Prop} (H : option.any P x) : ∃y, x = some y ∧ P y :=
   begin
     cases x with y,
     { contradiction },
