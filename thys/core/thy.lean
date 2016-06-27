@@ -95,13 +95,11 @@ open _T_.slice_SliceExt.binary_search_by
 
 parameter {T : Type}
 parameter [Ord' T]
-parameter self : slice T -- force same decidable instance as in generated.lean
-attribute classical.prop_decidable [instance] [priority 10000]
+parameter self : slice T
+parameter needle : T
 
--- the original slice
 hypothesis Hsorted : sorted le self
 
-parameter needle : T
 abbreviation f y := Ord.cmp y needle
 
 -- force same decidable instance as in generated.lean
@@ -128,7 +126,7 @@ private abbreviation loop_4.state := (T ⇀ cmp.Ordering) × usize × slice T
 
 include self needle base s -- HACK
 structure loop_4_invar :=
-(s_in_self  : prefixeq s (dropn base self))
+(s_in_self  : s ⊑ₚ (dropn base self))
 (insert_pos : sorted.insert_pos self needle ∈ '[base, base + length s])
 (needle_mem : needle ∈ self → needle ∈ s)
 omit self needle base s

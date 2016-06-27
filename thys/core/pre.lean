@@ -193,7 +193,7 @@ definition checked.sub (n : nat) (m : nat) :=
 if n ≥ m then some (n-m) else none
 
 definition checked.div (n : nat) (m : nat) :=
-if m ≠ 0 then some (mod n m) else none
+if m ≠ 0 then some (div n m) else none
 
 definition checked.mod (n : nat) (m : nat) :=
 if m ≠ 0 then some (mod n m) else none
