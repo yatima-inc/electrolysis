@@ -2,7 +2,7 @@ use rustc::front::map::definitions::DefPathData;
 use rustc::middle::def_id::DefId;
 use rustc::middle::ty::TyCtxt;
 
-// from rust/src/librustc/ty/item_path.rs
+// from ../rust/src/librustc/ty/item_path.rs, but forces absolute paths, plus some minor changes
 
 fn push(buffer: &mut String, elem: &str) {
     if !buffer.is_empty() {

@@ -121,7 +121,7 @@ inductive result.Result (T : Type) (E : Type) :=
 
 section
 parameters {T : Type} {F : Type}
-parameters [ops_FnMut__T__F : ops.FnMut (T) F (cmp.Ordering)]
+parameters [ops_FnMut__T__F : ops.FnMut (T) F (cmp.Ordering )]
 parameters (self : (slice T)) (f : F)
 
 definition slice._T_.slice_SliceExt.binary_search_by.loop_4 state__ :=
@@ -205,17 +205,17 @@ end
 structure cmp.PartialEq [class] (Rhs : Type) (Self : Type)  :=
 (eq : Self → Rhs → option (Prop))
 
-structure cmp.Eq [class] (Self : Type)  extends cmp.PartialEq Self Self 
+structure cmp.Eq [class] (Self : Type) extends cmp.PartialEq Self Self 
 
 inductive option.Option (T : Type) :=
 | None {} : option.Option T
 | Some {} : T → option.Option T
 
-structure cmp.PartialOrd [class] (Rhs : Type) (Self : Type)  extends cmp.PartialEq Rhs Self :=
-(partial_cmp : Self → Rhs → option ((option.Option (cmp.Ordering))))
+structure cmp.PartialOrd [class] (Rhs : Type) (Self : Type) extends cmp.PartialEq Rhs Self :=
+(partial_cmp : Self → Rhs → option ((option.Option (cmp.Ordering ))))
 
-structure cmp.Ord [class] (Self : Type)  extends cmp.Eq Self, cmp.PartialOrd Self Self :=
-(cmp : Self → Self → option ((cmp.Ordering)))
+structure cmp.Ord [class] (Self : Type) extends cmp.Eq Self, cmp.PartialOrd Self Self :=
+(cmp : Self → Self → option ((cmp.Ordering )))
 
 definition slice._T_.slice_SliceExt.binary_search {T : Type} [cmp_Ord_T : cmp.Ord T] (self : (slice T)) (x : T) :=
 let self ← self;

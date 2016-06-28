@@ -5,7 +5,9 @@ use petgraph::algo::*;
 
 use rustc::mir::repr::*;
 
-fn mk_mir_graph(mir: &Mir, start: BasicBlock, blocks: &Vec<BasicBlock>) -> Graph<BasicBlock, ()> {
+/// Builds a graph of all blocks in `blocks` reachables from `start`, ignoring back edges to `start`
+/// - meaning every (nontrivial) return value is not strongly connected.
+fn mk_mir_graph(mir: &Mir, start: BasicBlock, blocks: &[BasicBlock]) -> Graph<BasicBlock, ()> {
     let mut g = Graph::new();
     let nodes = blocks.iter().map(|&bb| (bb.index(), g.add_node(bb))).collect::<HashMap<_, _>>();
     for &bb in blocks {
@@ -20,7 +22,7 @@ fn mk_mir_graph(mir: &Mir, start: BasicBlock, blocks: &Vec<BasicBlock>) -> Graph
     g
 }
 
-pub fn mir_sccs(mir: &Mir, start: BasicBlock, blocks: &Vec<BasicBlock>) -> Vec<Vec<BasicBlock>> {
+pub fn mir_sccs(mir: &Mir, start: BasicBlock, blocks: &[BasicBlock]) -> Vec<Vec<BasicBlock>> {
     let g = mk_mir_graph(mir, start, blocks);
     scc(&g).iter().map(|scc| {
         scc.iter().map(|&n| *g.node_weight(n).unwrap()).collect()

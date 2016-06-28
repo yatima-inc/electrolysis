@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::io::prelude::*;
-use std::iter;
 
 use itertools::Itertools;
 use petgraph::graph::{self, Graph};
@@ -15,6 +13,8 @@ use rustc::middle::ty::{self, Ty, TyCtxt};
 use item_path::item_path_str;
 use trans::item::ItemTranspiler;
 
+/// Turns strings into (mostly) valid Lean identifiers
+/// `std::[T]` ~> `std._T_`
 pub fn mk_lean_name<S : AsRef<str>>(s: S) -> String {
     let s = s.as_ref().replace("::", ".").replace(|c: char| c != '.' && !c.is_alphanumeric(), "_").trim_left_matches('_').to_owned();
     if s == "end" || s.ends_with(".end") || s == "by" || s.ends_with(".by") { s + "_" } else { s }
@@ -28,17 +28,12 @@ pub fn try_unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
     }
 }
 
-pub fn format_generic_ty<It: Iterator<Item=String>>(ty: &str, generics: It) -> String {
-    iter::once(ty.to_string()).chain(generics).join(" ")
-}
-
 pub fn name_def_id(tcx: &TyCtxt, did: DefId) -> String {
     mk_lean_name(item_path_str(tcx, did))
 }
 
 pub struct Config<'a> {
-    pub ignored: HashSet<String>,
-    pub replaced: HashMap<String, String>,
+    pub ignored: HashSet<String>, // cache at least this one
     pub config: &'a toml::Value,
 }
 
@@ -49,12 +44,6 @@ impl<'a> Config<'a> {
                 Some(ignored) => ::toml_value_as_str_array(ignored).into_iter().map(str::to_string).collect(),
                 None => HashSet::new(),
             },
-            replaced: match config.lookup("replace") {
-                Some(replaced) => replaced.as_table().unwrap().iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap().to_string())
-                }).collect(),
-                None => HashMap::new(),
-            },
             config: config,
         }
     }
@@ -62,9 +51,12 @@ impl<'a> Config<'a> {
 
 #[derive(Default)]
 pub struct Deps {
+    // other crates referenced
     pub crate_deps: HashSet<String>,
+    // a graph (used -> user)
     pub graph: Graph<DefId, ()>,
     def_idcs: HashMap<DefId, graph::NodeIndex>,
+    // slightly hackish: new deps in the current transpile call
     new_deps: HashSet<DefId>,
 }
 
@@ -81,6 +73,10 @@ impl Deps {
         let from = self.get_def_idx(used);
         let to = self.get_def_idx(user);
         self.graph.add_edge(from, to, ());
+    }
+
+    fn drain_new_deps(&mut self) -> Vec<DefId> {
+        self.new_deps.drain().collect_vec()
     }
 }
 
@@ -118,21 +114,28 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
 
     pub fn is_recursive(&self, def_id: DefId) -> bool {
         let idx = self.deps.borrow_mut().get_def_idx(def_id);
+        // look for self-loop
         self.deps.borrow().graph.neighbors_directed(idx, ::petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx)
     }
 
-    fn try_transpile<F : for<'b> FnOnce(ItemTranspiler<'b, 'tcx>) -> Option<String>>(&mut self, def_id: DefId, f: F) {
+    pub fn transpile(&mut self, def_id: DefId) {
         let name = name_def_id(self.tcx, def_id);
 
-        if self.trans_results.contains_key(&def_id) || self.config.ignored.contains(&name) {
+        if self.trans_results.contains_key(&def_id) {
+            return
+        }
+
+        if self.config.ignored.contains(&name) {
+            self.trans_results.insert(def_id, Ok(None));
             return
         }
 
         self.deps.borrow_mut().get_def_idx(def_id); // add to dependency graph
-        let res = self.config.replaced.get(&name).map(|res| Ok(Some(res.to_string())));
+        let res = self.config.config.lookup(&format!("replace.\"{}\"", name)).map(|res| Ok(Some(res.as_str().unwrap().to_string())));
         let res = res.unwrap_or_else(|| {
+            // HACK: catch panics from rustc libs if we use an API in a wrong way
             ::std::panic::recover(::std::panic::AssertRecoverSafe::new(|| {
-                f(ItemTranspiler { sup: self, def_id: def_id })
+                ItemTranspiler { sup: self, def_id: def_id }.transpile_def_id()
             })).map_err(|err| {
                 match err.downcast_ref::<String>() {
                     Some(msg) => msg.clone(),
@@ -144,13 +147,9 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
             })
         });
         self.trans_results.insert(def_id, res);
-        let new_deps = self.deps.borrow().def_idcs.keys().cloned().collect_vec(); // self.deps.borrow_mut().new_deps.drain()...
+        let new_deps = self.deps.borrow_mut().drain_new_deps();
         for dep in new_deps {
             self.transpile(dep)
         }
-    }
-
-    pub fn transpile(&mut self, def_id: DefId) {
-        self.try_transpile(def_id, |trans| trans.transpile_def_id())
     }
 }

@@ -2,28 +2,29 @@ use std::collections::HashSet;
 
 use rustc::mir::repr::*;
 
-use ::trans::fun::FnTranspiler;
-use ::mir_graph::mir_sccs;
+use trans::fun::FnTranspiler;
+use mir_graph::mir_sccs;
 
-// A loop or the full function body
+/// A loop body or the full function body
 #[derive(Default, Debug)]
 pub struct Component<'a> {
-    pub outer: Option<&'a Component<'a>>,
-    pub header: Option<BasicBlock>,
-    pub blocks: Vec<BasicBlock>,
-    pub loops: Vec<Vec<BasicBlock>>,
-    pub state_val: String,
+    pub outer: Option<&'a Component<'a>>, // None for fn bodies
+    pub header: Option<BasicBlock>, // loop header (dominates body)
+    pub blocks: &'a [BasicBlock],
+    pub loops: Vec<Vec<BasicBlock>>, // nested loops
+    pub state_val: String, // tuple of loop vars
 }
 
 impl<'a> Component<'a> {
-    pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: Vec<BasicBlock>, outer: Option<&'a Component<'a>>)
+    pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: &'a [BasicBlock], outer: Option<&'a Component<'a>>)
         -> Component<'a> {
-        let loops = mir_sccs(trans.mir(), start, &blocks);
-        let loops = loops.into_iter().filter(|l| l.len() > 1).collect::<Vec<_>>();
+        let loops = mir_sccs(trans.mir(), start, blocks);
+        let loops = loops.into_iter().filter(|l| l.len() > 1).collect();
         Component {
             outer: outer,
             header: outer.map(|_| start),
-            blocks: blocks, loops: loops,
+            blocks: blocks,
+            loops: loops,
             .. Default::default()
         }
     }
@@ -32,7 +33,7 @@ impl<'a> Component<'a> {
         fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
             match *op {
                 Operand::Consume(ref lv) => uses.push(lv),
-                Operand::Constant(_) => ()
+                Operand::Constant(_) => {}
             }
         }
 

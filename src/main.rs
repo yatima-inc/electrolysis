@@ -1,6 +1,6 @@
+// we require access to many rustc internals
 #![feature(rustc_private)]
-#![feature(box_patterns)]
-#![feature(recover, slice_patterns, advanced_slice_patterns)]
+#![feature(box_patterns, recover, slice_patterns, advanced_slice_patterns)]
 
 extern crate itertools;
 extern crate petgraph;
@@ -16,6 +16,7 @@ extern crate rustc_mir;
 extern crate syntax;
 
 mod item_path;
+mod joins;
 mod mir_graph;
 mod trans;
 
@@ -45,6 +46,8 @@ fn main() {
         [_, ref crate_name] => crate_name.clone(),
         _ => panic!("Expected crate name as single cmdline argument"),
     };
+
+    // get rust path from rustc itself
     let sysroot = std::process::Command::new("rustc")
         .arg("--print")
         .arg("sysroot")
@@ -53,12 +56,14 @@ fn main() {
         .stdout;
     let sysroot = path::PathBuf::from(String::from_utf8(sysroot).unwrap().trim());
 
+    // load TOML config from 'thys/$crate/config.toml'
     let mut config = String::new();
-    let mut config_file = File::open(path::Path::new("thys").join(&crate_name).join("config.toml")).unwrap();
+    let mut config_file = File::open(path::Path::new("thys").join(&crate_name).join("config.toml")).expect("error opening crate config");
     config_file.read_to_string(&mut config).unwrap();
     let config: toml::Value = config.parse().unwrap();
 
-    let rustc_args = config.lookup("rustc_args").expect("Missing config item 'rustc_args'");
+    // parse rustc options
+    let rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'");
     let rustc_args = iter::once("rustc").chain(rustc_args.as_str().unwrap().split(" ")).map(|s| s.to_string());
     let rustc_matches = rustc_driver::handle_options(rustc_args.collect()).expect("error parsing rustc args");
     let mut options = session::config::build_session_options(&rustc_matches);
@@ -69,12 +74,14 @@ fn main() {
         _ => panic!("expected input file"),
     };
 
+    // some more rustc orchestration
     let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(syntax::parse::token::get_ident_interner()));
     let sess = session::build_session(options, Some(input.clone()),
         diagnostics::registry::Registry::new(&rustc::DIAGNOSTICS),
         cstore.clone()
     );
     let rustc_cfg = session::config::build_configuration(&sess);
+
     println!("Compiling up to MIR...");
     let _ = driver::compile_input(&sess, &cstore, rustc_cfg,
         &session::config::Input::File(input),
@@ -82,9 +89,7 @@ fn main() {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
                 callback: Box::new(|state| {
-                    if !sess.has_errors() {
-                        transpile_crate(&state, &config).unwrap();
-                    }
+                    transpile_crate(&state, &config).unwrap();
                 }),
                 run_callback_on_error: false,
             },
@@ -93,6 +98,7 @@ fn main() {
     );
 }
 
+/// Collects all node IDs of a crate
 struct IdCollector {
     ids: Vec<NodeId>
 }
@@ -100,7 +106,7 @@ struct IdCollector {
 impl<'a> intravisit::Visitor<'a> for IdCollector {
     fn visit_item(&mut self, item: &'a hir::Item) {
         if let hir::Item_::ItemDefaultImpl(_, _) = item.node {
-            return // shrug
+            return // default impls don't seem to be part of the HIR map
         }
 
         self.ids.push(item.id);
@@ -124,18 +130,17 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.unwrap();
     let base = path::Path::new("thys").join(crate_name);
-    try!(std::fs::create_dir_all(&base));
 
     let mut trans = CrateTranspiler::new(tcx, &state.mir_map.unwrap(), config);
     println!("Transpiling...");
-
-    let mut id_collector = IdCollector { ids: vec![] };
-    state.hir_crate.unwrap().visit_all_items(&mut id_collector);
 
     let targets = config.lookup("targets").map(|targets| {
         toml_value_as_str_array(targets).into_iter().collect::<HashSet<_>>()
     });
 
+    // find targets' DefIds and transpile them
+    let mut id_collector = IdCollector { ids: vec![] };
+    state.hir_crate.unwrap().visit_all_items(&mut id_collector);
     for id in id_collector.ids {
         let def_id = tcx.map.local_def_id(id);
         let name = name_def_id(tcx, def_id);
@@ -145,6 +150,8 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
     }
 
     let (trans_results, trans::krate::Deps { crate_deps, graph, .. }) = trans.destruct();
+
+    // write out theory header, importing dependencies and the pre file, if existent
 
     let mut crate_deps = crate_deps.into_iter().map(|c| format!("{}.generated", c)).collect_vec();
     crate_deps.sort();
@@ -175,27 +182,29 @@ namespace {}
     }
     try!(write!(f, "\n"));
 
-    try!(write!(try!(File::create("deps-un.dot")), "{:?}", &graph));
+    // condensate sets of cyclic dependencies into graph nodes
     let condensed = condensation(graph, /* make_acyclic */ true);
-    //try!(write!(try!(File::create("deps.dot")), "{:?}", petgraph::dot::Dot::new(&condensed.map(|_, comp| comp.iter().map(|nid| tcx.map.local_def_id(*nid)).collect_vec(), |_, e| e))));
-    let mut failed = HashSet::new();
 
+    // write out each cyclic set, in dependencies-first order
+    let mut failed = HashSet::new();
     for idx in toposort(&condensed) {
         match &condensed[idx][..] {
+            // a singleton set, meaning no cyclic dependencies!
             [def_id] => {
                 let name = name_def_id(tcx, def_id);
 
+                // don't even bother writing out code that will fail because of missing dependencies
                 let failed_deps = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).filter(|idx| failed.contains(idx)).collect_vec();
                 if failed_deps.is_empty() {
-                    match trans_results.get(&def_id) {
-                        Some(&Ok(Some(ref trans))) => {
+                    match trans_results[&def_id] {
+                        Ok(Some(ref trans)) => {
                             try!(write!(f, "{}\n\n", trans));
                         }
-                        Some(&Err(ref err)) => {
+                        Ok(None) => {}
+                        Err(ref err) => {
                             failed.insert(idx);
                             try!(write!(f, "/- {}: {} -/\n\n", name, err.replace("/-", "/ -")))
                         }
-                        _ => {}
                     }
                 } else {
                     failed.insert(idx);
@@ -204,10 +213,13 @@ namespace {}
                     }).join(", ")));
                 }
             }
+
+            // cyclic dependencies, oh my
             component => {
                 let succeeded = component.iter().filter_map(|def_id| trans_results.get(def_id).and_then(|trans| trans.as_ref().ok())).collect_vec();
                 if succeeded.len() == component.len() {
                     if succeeded.iter().all(|trans| trans.as_ref().unwrap().starts_with("inductive")) {
+                        // hackishly turn ["inductive A...", "inductive B..."] into "inductive A... with B..."
                         try!(write!(f, "inductive {}\n\n", succeeded.iter().map(|trans| trans.as_ref().unwrap().trim_left_matches("inductive")).join("\n\nwith")));
                         continue;
                     }
@@ -218,11 +230,11 @@ namespace {}
                 }).join(", ")));
                 for &def_id in component {
                     let name = name_def_id(tcx, def_id);
-                    match trans_results.get(&def_id) {
-                        Some(&Ok(Some(ref trans))) => {
+                    match trans_results[&def_id] {
+                        Ok(Some(ref trans)) => {
                             try!(write!(f, "{}\n\n", trans));
                         }
-                        Some(&Err(ref err)) => {
+                        Err(ref err) => {
                             try!(write!(f, "{}: {}\n\n", name, err.replace("/-", "/ -")))
                         }
                         _ => {}
@@ -233,5 +245,6 @@ namespace {}
         }
     }
 
+    // the end!
     write!(f, "end {}", crate_name)
 }
