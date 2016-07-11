@@ -30,8 +30,8 @@ namespace cmp
   else if x = y then Ordering.Equal
   else Ordering.Greater
 
-  structure Ord' [class] (T : Type) extends Ord T, order : decidable_linear_order T := -- issue #1066
-  (cmp_eq : ∀x y : T, cmp x y = some (@ordering _ order x y))
+  structure Ord' [class] (T : Type) extends Ord T, decidable_linear_order T :=
+  (cmp_eq : ∀x y : T, cmp x y = some (ordering x y))
 
   lemma Ord'.ord_cmp_eq {T : Type} [Ord' T] (x y : T) : Ord.cmp x y = some (ordering x y) := Ord'.cmp_eq x y -- HACK
 end cmp
