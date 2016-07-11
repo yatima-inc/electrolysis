@@ -4,7 +4,7 @@
 
 ## About
 
-A tool for formally verifying Rust programs by transpiling them into definitions in the [Lean](http://leanprover.github.io/) theorem prover.
+A tool for formally verifying Rust programs by transpiling them into definitions in the [Lean](http://leanprover.github.io/) theorem prover. [Presentation at Oregon Programming Languages Summer School](presentation/presentation.pdf)
 
 ## Installation
 
@@ -14,5 +14,3 @@ electrolysis$ rustup override add $(cat rust-nightly-version)
 electrolysis$ cargo run core
 ```
 This will build the project and export all code from the `core` crate necessary for `binary_search` (see also [thys/core/config.toml](thys/core/config.toml)) into [thys/core/generated.lean](thys/core/generated.lean) (this file already exists in case you just want to examine the correctness proof).
-
-Oh, for now you'll also need to compile a custom Lean version from [this PR](https://github.com/leanprover/lean/pull/1071).
