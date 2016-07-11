@@ -17,3 +17,9 @@ impl<S, T> Join for (S, T) where S: ToString, T: IntoIterator<Item=String> {
         iter::once(self.0.to_string()).chain(self.1).join(sep)
     }
 }
+
+impl<'a> Join for &'a Vec<String> {
+    fn join(self, sep: &str) -> String {
+        self.iter().join(sep)
+    }
+}

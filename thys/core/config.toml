@@ -28,7 +28,7 @@ ignore = [
 /// Requires that `begin <= end` and `end <= self.len()`,
 /// otherwise slicing will panic.
 -/
-definition slice._T_.ops_Index_ops_Range_usize__.index {T : Type₁} (self : slice T) (index : ops.Range usize) : m (slice T) :=
+definition slice._T_.ops_Index_ops_Range_usize__.index {T : Type₁} (self : slice T) (index : ops.Range usize) : sem (slice T) :=
 if ops.Range.start index ≤ ops.Range.end_ index ∧ ops.Range.end_ index ≤ list.length self
 then return (list.firstn (ops.Range.end_ index - ops.Range.start index) (list.dropn (ops.Range.start index) self))
 else mzero"""

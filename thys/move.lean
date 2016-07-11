@@ -147,8 +147,8 @@ end
 
 inductive prefixeq {A : Type} : list A → list A → Prop :=
   infix ` ⊑ₚ `:50 := prefixeq
-| nil : Πys, [] ⊑ₚ ys
-| cons : Πx {xs ys}, xs ⊑ₚ ys → x::xs ⊑ₚ x::ys
+| prefixeq_nil : Πys, [] ⊑ₚ ys
+| prefixeq_of_cons_prefixeq : Πx {xs ys}, xs ⊑ₚ ys → x::xs ⊑ₚ x::ys
 
 namespace prefixeq
 section
@@ -157,17 +157,18 @@ section
   infix ` ⊑ₚ `:50 := prefixeq
 
   protected theorem refl [refl] : Π(xs : list A), xs ⊑ₚ xs
-  | []      := !nil
-  | (x::xs) := cons x (refl xs)
+  | []      := !prefixeq_nil
+  | (x::xs) := prefixeq_of_cons_prefixeq x (refl xs)
 
   protected theorem trans [trans] : Π{xs ys zs : list A}, xs ⊑ₚ ys → ys ⊑ₚ zs → xs ⊑ₚ zs
-  | [] ys zs _ _ := !nil
-  | (x::xs) (x::ys) (x::zs) (cons x H₁) (cons x H₂) :=
-    cons x (trans H₁ H₂)
+  | [] ys zs _ _ := !prefixeq_nil
+  | (x::xs) (x::ys) (x::zs) (prefixeq_of_cons_prefixeq x H₁) (prefixeq_of_cons_prefixeq x H₂) :=
+    prefixeq_of_cons_prefixeq x (trans H₁ H₂)
 
   protected theorem antisymm : Π{xs ys : list A}, xs ⊑ₚ ys → ys ⊑ₚ xs → xs = ys
   | [] [] _ _ := rfl
-  | (x::xs) (x::ys) (cons x H₁) (cons x H₂) := antisymm H₁ H₂ ▸ rfl
+  | (x::xs) (x::ys) (prefixeq_of_cons_prefixeq x H₁) (prefixeq_of_cons_prefixeq x H₂) :=
+    antisymm H₁ H₂ ▸ rfl
 
   definition weak_order [instance] : weak_order (list A) := ⦃weak_order,
     le := prefixeq, le_refl := refl, le_trans := @trans, le_antisymm := @antisymm
@@ -186,15 +187,15 @@ section
   end
 
   theorem firstn_prefixeq : Π(n : ℕ) (xs : list A), firstn n xs ⊑ₚ xs
-  | 0 xs             := !nil
-  | (succ n) []      := !nil
-  | (succ n) (x::xs) := cons x (firstn_prefixeq n xs)
+  | 0 xs             := !prefixeq_nil
+  | (succ n) []      := !prefixeq_nil
+  | (succ n) (x::xs) := prefixeq_of_cons_prefixeq x (firstn_prefixeq n xs)
 
   theorem dropn_prefixeq_dropn_of_prefixeq : Π(n : ℕ) {xs ys : list A} (H : xs ⊑ₚ ys),
     dropn n xs ⊑ₚ dropn n ys
   | 0 xs ys H := H
-  | n [] ys H := by rewrite dropn_nil; apply !prefixeq.nil
-  | (succ n) (x::xs) (x::ys) (cons x H) := by unfold dropn; apply dropn_prefixeq_dropn_of_prefixeq n H
+  | n [] ys H := by rewrite dropn_nil; apply !prefixeq_nil
+  | (succ n) (x::xs) (x::ys) (prefixeq_of_cons_prefixeq x H) := by unfold dropn; apply dropn_prefixeq_dropn_of_prefixeq n H
 end
 end prefixeq
 
@@ -422,7 +423,7 @@ attribute monad.bind [unfold 5]
 
 notation `do` binder ` ← ` x `; ` r:(scoped f, monad.bind x f) := r
 
-definition return {m : Type → Type} [monad m] {A : Type} (a : A) : m A :=
+definition return [constructor] {m : Type → Type} [monad m] {A : Type} (a : A) : m A :=
 monad.ret m a
 
 definition fapp {A B : Type} {m : Type → Type} [monad m] (f : m (A → B)) (a : m A) : m B :=

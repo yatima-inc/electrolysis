@@ -180,8 +180,6 @@ open sum
     try!(write!(f, "
 
 namespace {}
-section
-  variables {{m : Type₁ → Type}} [monad_sem m]
 
 ", crate_name));
 
@@ -249,5 +247,5 @@ section
     }
 
     // the end!
-    write!(f, "end\nend {}", crate_name)
+    write!(f, "end {}", crate_name)
 }

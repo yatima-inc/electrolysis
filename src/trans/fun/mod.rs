@@ -115,11 +115,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         self.mir().var_decls.len() + self.mir().temp_decls.len() + 1
     }
 
-    fn locals(&self) -> Vec<String> {
+    fn locals(&self) -> Vec<Lvalue<'tcx>> {
         self.mir().var_decls.iter().enumerate().map(|(idx, _)| Lvalue::Var(idx as u32))
             .chain(self.mir().temp_decls.iter().enumerate().map(|(idx, _)| Lvalue::Temp(idx as u32)))
             .chain(iter::once(Lvalue::ReturnPointer))
-            .map(|lv| self.local_name(&lv))
             .collect()
     }
 
@@ -423,8 +422,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     let trait_param = self.infer_trait_impl(trait_pred.trait_ref.subst(self.tcx, &substs)).to_string(self);
                     free_assoc_tys.chain(iter::once(trait_param))
                 });
-                // two placeholders for {m} [monad_sem m]
-                (format!("@{} _ _", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" ")
+                (format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" ")
             },
             Operand::Constant(_) => unreachable!(),
             Operand::Consume(ref lv) => self.get_lvalue(lv),
@@ -440,15 +438,24 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let (defs, _) = Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self);
             let (l_defs, l_uses) = Component::defs_uses(l_comp.blocks.iter(), self);
             // vars that are used by l, but not (re)defined ~> parameters
-            let nonlocal_uses = self.locals().into_iter().filter(|v| l_uses.contains(v) && !l_defs.contains(v));
+            let nonlocal_uses = self.locals().into_iter().map(|v| self.lvalue_name(&v).unwrap())
+                .filter(|v| l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
             // vars that are redefined by l ~> loop state
-            let state_vars = self.locals().into_iter().filter(|v| defs.contains(v) && l_defs.contains(v)).collect_vec();
+            let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.locals().into_iter().filter_map(|v| {
+                let ty = self.transpile_ty(self.lvalue_ty(&v));
+                let name = self.lvalue_name(&v).unwrap();
+                if defs.contains(&name) && l_defs.contains(&name) {
+                    Some((ty, name))
+                } else { None }
+            }).unzip();
+            let state_ty = state_var_tys.join(" × ");
             l_comp.state_val = format!("({})", state_vars.iter().join(", "));
             let name = format!("{}.loop_{}", self.name(), bb.index());
             let app = (name, nonlocal_uses).join(" ");
+            let ret_ty = format!("sem (sum ({}) {})", state_ty, self.ret_ty());
             let body = self.transpile_basic_block(bb, &l_comp);
-            self.prelude.push(format!("definition {} state__ :=\n{}", app,
-                                      detuplize("state__", &state_vars, &body)));
+            self.prelude.push(format!("definition {} (state__ : {}) : {} :=\n{}", app,
+                                      state_ty, ret_ty, detuplize("state__", &state_vars, &body)));
             return format!("loop' ({}) {}", app, l_comp.state_val);
         }
 
@@ -497,6 +504,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         stmts.into_iter().chain(terminator).join("")
     }
 
+    fn ret_ty(&self) -> String {
+        match self.tcx.lookup_item_type(self.def_id).ty.sty {
+            ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) =>
+                self.sup.ret_ty(data),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn transpile_fn(mut self, name: String) -> String {
         // FIXME... or not
         if name.starts_with("tuple._A__B__C__D") {
@@ -506,7 +521,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let params = self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| {
             format!("({} : {})", name, self.transpile_ty(&arg.ty))
         }).collect_vec();
-        let ret_ty = self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty.fn_ret().0.unwrap());
 
         let blocks = self.mir().all_basic_blocks();
         let mut comp = Component::new(&self, START_BLOCK, &blocks, None);
@@ -530,9 +544,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
         if self.prelude.is_empty() {
-            let def = format!("definition {} : m {} :=\n{}",
+            let def = format!("definition {} : sem {} :=\n{}",
                               (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
-                              ret_ty,
+                              self.ret_ty(),
                               body);
             self.prelude.into_iter().chain(iter::once(def)).join("\n\n")
         } else {
@@ -541,13 +555,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
 {}
 
-definition {} : m {} :=\n{}
+definition {} : sem {} :=\n{}
 end",
                     vec![ty_params, trait_params, params].into_iter().map(|p| {
                         format!("parameters {}", p.into_iter().join(" "))
                     }).join("\n"),
-                    self.prelude.into_iter().join("\n\n"),
-                    name, ret_ty, body)
+                    self.prelude.iter().join("\n\n"),
+                    name, self.ret_ty(), body)
         }
     }
 }

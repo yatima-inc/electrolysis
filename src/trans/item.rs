@@ -119,6 +119,17 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         (self.transpile_trait_ref_no_assoc_tys(trait_ref), associated_types).join(" ")
     }
 
+    /// `Fn(&mut T) -> R` ~> `(R × T)'`
+    pub fn ret_ty(&self, fun_ty: &ty::BareFnTy<'tcx>) -> String {
+        let sig = fun_ty.sig.skip_binder();
+        let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
+        let mut outputs = match sig.output {
+            ty::FnOutput::FnConverging(out_ty) => iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)),
+            ty::FnOutput::FnDiverging => panic!("unimplemented: diverging function"),
+        };
+        format!("({})", outputs.join(" × "))
+    }
+
     pub fn transpile_ty(&self, ty: Ty<'tcx>) -> String {
         match ty.sty {
             // may as well go full classical
@@ -130,16 +141,11 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 [] => "unit".to_string(),
                 _ => format!("({})", tys.iter().map(|ty| self.transpile_ty(ty)).join(" × ")),
             },
-            // `Fn(&mut T) -> R` ~> `'T -> m (R × T)'`
+            // `Fn(&mut T) -> R` ~> `'T -> sem (R × T)'`
             ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) => {
                 let sig = data.sig.skip_binder();
-                let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
                 let inputs = sig.inputs.iter().map(|ty| self.transpile_ty(ty));
-                let mut outputs = match sig.output {
-                    ty::FnOutput::FnConverging(out_ty) => iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)),
-                    ty::FnOutput::FnDiverging => panic!("unimplemented: diverging function"),
-                };
-                inputs.chain(iter::once(format!("m ({})", outputs.join(" × ")))).join(" → ")
+                inputs.chain(iter::once(format!("sem {}", self.ret_ty(data)))).join(" → ")
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
             ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format!("({} {})",
@@ -150,8 +156,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
             ty::TypeVariants::TyProjection(ref proj) => self.transpile_associated_type(proj.trait_ref, &proj.item_name),
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)),
+            ty::TypeVariants::TyStr => "string".to_string(),
             ty::TypeVariants::TyTrait(_) => panic!("unimplemented: trait objects"),
-            //ty::TypeVariants::TyInfer(_) => "_".to_string(), // FIXME: shouldn't be reachable
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.name_def_id(did),
                 None => panic!("unimplemented: ty {:?}", ty),

@@ -178,8 +178,9 @@ section
   end
 end
 
-section
-parameters {m : Type₁ → Type} [monad_zero m]
+-- fix semantics monad
+definition sem := stateT nat option
+definition sem.is_monad_zero [instance] : monad_zero sem := stateT.is_monad_zero
 
 abbreviation u8 [parsing_only] := nat
 abbreviation u16 [parsing_only] := nat
@@ -201,51 +202,39 @@ if y ≠ 0 then return (mod x y) else mzero
 /- TODO: actually check something -/
 definition checked.shl (x y : nat) : m nat := return (x * 2^y)
 definition checked.shr (x : nat) (y : int) : m nat := return (div x (2^nat.of_int y))
-end
-
--- introduce new class so that no instances are in context
-structure monad_sem [class] (m : Type₁ → Type) extends monad_zero m
 
 namespace core
-  section
-  parameters {m : Type₁ → Type} [monad_sem m]
+  abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)
 
-  abbreviation intrinsics.add_with_overflow (x y : nat) : m (nat × Prop) := return (x + y, false)
+  abbreviation mem.swap {T : Type₁} (x y : T) : sem (unit × T × T) := return (unit.star,y,x)
 
-  abbreviation mem.swap {T : Type₁} (x y : T) : m (unit × T × T) := return (unit.star,y,x)
-
-  abbreviation slice._T_.slice_SliceExt.len {T : Type₁} (self : slice T) : m nat :=
+  abbreviation slice._T_.slice_SliceExt.len {T : Type₁} (self : slice T) : sem nat :=
   return (list.length self)
   definition slice._T_.slice_SliceExt.get_unchecked {T : Type₁} (self : slice T) (index : usize)
-    : m T :=
+    : sem T :=
   option.rec mzero return (list.nth self index)
-  end
 
   namespace ops
-    section
-    parameters {m : Type₁ → Type} [monad_sem m]
-
     structure FnOnce [class] (Args : Type₁) (Self : Type₁) (Output : Type₁) :=
-    (call_once : Self → Args → m Output)
+    (call_once : Self → Args → sem Output)
 
     -- easy without mutable closures
     abbreviation FnMut [parsing_only] := FnOnce
     abbreviation Fn := FnOnce
 
     definition FnMut.call_mut [unfold_full] (Args : Type₁) (Self : Type₁) (Output : Type₁)
-      [FnOnce : FnOnce Args Self Output] : Self → Args → m (Output × Self) := λself x,
+      [FnOnce : FnOnce Args Self Output] : Self → Args → sem (Output × Self) := λself x,
       do y ← @FnOnce.call_once Args Self Output FnOnce self x;
       return (y, self)
 
     definition Fn.call (Args : Type₁) (Self : Type₁) (Output : Type₁)
-      [FnMut : FnMut Args Self Output] : Self → Args → m Output := FnOnce.call_once Output
-    end
+      [FnMut : FnMut Args Self Output] : Self → Args → sem Output := FnOnce.call_once Output
   end ops
 end core
 
 open core.ops
 
-definition fn [instance] {m} [monad_sem m] {A B : Type₁} : @FnOnce m _ A (A → m B) B := ⦃FnOnce,
+definition fn [instance] {A B : Type₁} : FnOnce A (A → sem B) B := ⦃FnOnce,
   call_once := id
 ⦄
 

@@ -30,10 +30,10 @@ namespace cmp
   else if x = y then Ordering.Equal
   else Ordering.Greater
 
-  structure Ord' [class] (T : Type) extends Ord T, decidable_linear_order T :=
+  structure Ord' [class] (T : Type₁) extends Ord T, decidable_linear_order T :=
   (cmp_eq : ∀x y : T, cmp x y = some (ordering x y))
 
-  lemma Ord'.ord_cmp_eq {T : Type} [Ord' T] (x y : T) : Ord.cmp x y = some (ordering x y) := Ord'.cmp_eq x y -- HACK
+  lemma Ord'.ord_cmp_eq {T : Type₁} [Ord' T] (x y : T) : Ord.cmp x y = some (ordering x y) := Ord'.cmp_eq x y -- HACK
 end cmp
 
 open cmp
@@ -48,7 +48,7 @@ open _T_.slice_SliceExt
 
 section
 
-parameter {T : Type}
+parameter {T : Type₁}
 variable (s : slice T)
 
 lemma is_empty_eq : SliceExt.is_empty T s = some (s = []) :=
@@ -93,7 +93,7 @@ end
 section binary_search
 open _T_.slice_SliceExt.binary_search_by
 
-parameter {T : Type}
+parameter {T : Type₁}
 parameter [Ord' T]
 parameter self : slice T
 parameter needle : T
@@ -180,9 +180,10 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
-    rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
+    have x :: xs ≠ nil, by contradiction,
+    rewrite [if_neg' this],
     have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
-    rewrite [if_pos this, nth_zero, ↑f, Ord'.ord_cmp_eq x needle, ↑ordering, ▸*],
+    rewrite [if_pos this, ↑get_unchecked, nth_zero, ↑f, Ord'.ord_cmp_eq x needle, ↑ordering, ▸*],
     have nth_x : nth self (base + length s₁) = some x,
     begin
       have nth s (length s / 2) = some x, by rewrite [nth_eq_first'_dropn, Hs, ▸*, nth_zero],
@@ -316,7 +317,7 @@ end
 
 theorem binary_search.sem : option.any binary_search_res (binary_search self needle) :=
 begin
-  rewrite [↑binary_search, bind_some_eq_id, funext (λx, bind_some_eq_id)],
+  rewrite [↑binary_search, ↑return, bind_some_eq_id, funext (λx, bind_some_eq_id)],
   apply binary_search_by.sem,
 end
 
