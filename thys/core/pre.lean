@@ -13,15 +13,12 @@ open sum
 
 open option
 
-notation `do` binder ` ← ` x `; ` r:(scoped f, option.bind f x) := r
-
-
 open [class] classical
 
 -- a general loop combinator for separating tail-recursive definitions from their well-foundedness proofs
 
 section
-  parameters {State Res : Type}
+  parameters {State Res : Type₁}
   parameters (body : State → State + Res)
 
   section
@@ -129,7 +126,7 @@ end
 -- lifting loop to partial body functions
 
 section
-  parameters {State Res : Type}
+  parameters {State Res : Type₁}
   parameters (body : State ⇀ State + Res)
   parameter (R : State → State → Prop)
   parameter [well_founded R]
@@ -181,6 +178,9 @@ section
   end
 end
 
+section
+parameters {m : Type₁ → Type} [monad_zero m]
+
 abbreviation u8 [parsing_only] := nat
 abbreviation u16 [parsing_only] := nat
 abbreviation u32 [parsing_only] := nat
@@ -189,47 +189,63 @@ abbreviation usize [parsing_only] := nat
 
 abbreviation slice [parsing_only] := list
 
-definition checked.sub (n : nat) (m : nat) :=
-if n ≥ m then some (n-m) else none
+definition checked.sub (x y : nat) : m nat :=
+if x ≥ y then return (x-y) else mzero
 
-definition checked.div (n : nat) (m : nat) :=
-if m ≠ 0 then some (div n m) else none
+definition checked.div (x y : nat) : m nat :=
+if y ≠ 0 then return (div x y) else mzero
 
-definition checked.mod (n : nat) (m : nat) :=
-if m ≠ 0 then some (mod n m) else none
+definition checked.mod (x y : nat) : m nat :=
+if y ≠ 0 then return (mod x y) else mzero
 
 /- TODO: actually check something -/
-definition checked.shl (n : nat) (m : nat) := some (n * 2^m)
-definition checked.shr (n : nat) (m : int) := some (div n (2^nat.of_int m))
+definition checked.shl (x y : nat) : m nat := return (x * 2^y)
+definition checked.shr (x : nat) (y : int) : m nat := return (div x (2^nat.of_int y))
+end
+
+-- introduce new class so that no instances are in context
+structure monad_sem [class] (m : Type₁ → Type) extends monad_zero m
 
 namespace core
-  abbreviation intrinsics.add_with_overflow (n : nat) (m : nat) := some (n + m, false)
+  section
+  parameters {m : Type₁ → Type} [monad_sem m]
 
-  abbreviation mem.swap {T : Type} (x y : T) := some (unit.star,y,x)
+  abbreviation intrinsics.add_with_overflow (x y : nat) : m (nat × Prop) := return (x + y, false)
 
-  abbreviation slice._T_.slice_SliceExt.len {T : Type} (self : slice T) := some (list.length self)
-  abbreviation slice._T_.slice_SliceExt.get_unchecked [parsing_only] {T : Type} (self : slice T) (index : usize) :=
-  list.nth self index
+  abbreviation mem.swap {T : Type₁} (x y : T) : m (unit × T × T) := return (unit.star,y,x)
+
+  abbreviation slice._T_.slice_SliceExt.len {T : Type₁} (self : slice T) : m nat :=
+  return (list.length self)
+  definition slice._T_.slice_SliceExt.get_unchecked {T : Type₁} (self : slice T) (index : usize)
+    : m T :=
+  option.rec mzero return (list.nth self index)
+  end
 
   namespace ops
-    structure FnOnce [class] (Args : Type) (Self : Type) (Output : Type) :=
-    (call_once : Self → Args → option (Output))
+    section
+    parameters {m : Type₁ → Type} [monad_sem m]
+
+    structure FnOnce [class] (Args : Type₁) (Self : Type₁) (Output : Type₁) :=
+    (call_once : Self → Args → m Output)
 
     -- easy without mutable closures
     abbreviation FnMut [parsing_only] := FnOnce
     abbreviation Fn := FnOnce
 
-    definition FnMut.call_mut [unfold_full] (Args : Type) (Self : Type) (Output : Type) [FnOnce : FnOnce Args Self Output] : Self → Args → option (Output × Self) := λself x,
+    definition FnMut.call_mut [unfold_full] (Args : Type₁) (Self : Type₁) (Output : Type₁)
+      [FnOnce : FnOnce Args Self Output] : Self → Args → m (Output × Self) := λself x,
       do y ← @FnOnce.call_once Args Self Output FnOnce self x;
-      some (y, self)
+      return (y, self)
 
-    definition Fn.call (Args : Type) (Self : Type) (Output : Type) [FnMut : FnMut Args Self Output] : Self → Args → option Output := @FnOnce.call_once Args Self Output FnMut
+    definition Fn.call (Args : Type₁) (Self : Type₁) (Output : Type₁)
+      [FnMut : FnMut Args Self Output] : Self → Args → m Output := FnOnce.call_once Output
+    end
   end ops
 end core
 
 open core.ops
 
-definition fn [instance] {A B : Type} : FnOnce A (A → option B) B := ⦃FnOnce,
+definition fn [instance] {m} [monad_sem m] {A B : Type₁} : @FnOnce m _ A (A → m B) B := ⦃FnOnce,
   call_once := id
 ⦄
 

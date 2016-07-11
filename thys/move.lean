@@ -40,14 +40,14 @@ namespace option
     { existsi y, apply rfl }
   end
 
-  protected definition bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
-  | (some x) := f x
-  | none     := none
+  protected definition bind [unfold 3] {A B : Type} : option A → (A → option B) → option B
+  | (some x) f := f x
+  | none     _ := none
 
-  theorem bind_some_eq_id {x : option A} : option.bind some x = x :=
+  theorem bind_some_eq_id {x : option A} : option.bind x some = x :=
   by cases x; esimp; esimp
 
-  theorem bind_neq_none {f : A → option B} {x} (Hx : x ≠ none) (Hf : ∀x', f x' ≠ none) : option.bind f x ≠ none :=
+  theorem bind_neq_none {f : A → option B} {x} (Hx : x ≠ none) (Hf : ∀x', f x' ≠ none) : option.bind x f ≠ none :=
   obtain x' H₁, from ex_some_of_neq_none Hx,
   obtain x'' H₂, from ex_some_of_neq_none (Hf x'),
   by rewrite [H₁, ▸*, H₂]; contradiction
@@ -413,3 +413,38 @@ decidable.rec
   (λ Hc : c,    absurd Hc Hnc)
   (λ Hnc : ¬c,  eq.refl (@ite c (decidable.inr Hnc) A t e))
   H
+
+structure monad [class] (m : Type → Type) /-extends functor m : Type-/ :=
+(ret  : Π {a : Type}, a → m a)
+(bind : Π {a b : Type}, m a → (a → m b) → m b)
+
+attribute monad.bind [unfold 5]
+
+notation `do` binder ` ← ` x `; ` r:(scoped f, monad.bind x f) := r
+
+definition return {m : Type → Type} [monad m] {A : Type} (a : A) : m A :=
+monad.ret m a
+
+definition fapp {A B : Type} {m : Type → Type} [monad m] (f : m (A → B)) (a : m A) : m B :=
+do g ← f;
+do b ← a;
+return (g b)
+
+definition monad.and_then {A B : Type} {m : Type → Type} [monad m] (a : m A) (b : m B) : m B :=
+do x ← a;
+b
+
+infixr ` <*> `:2 := fapp
+infixl ` >>= `:2 := monad.bind
+infixl ` >> `:2  := monad.and_then
+
+structure monad_zero [class] (m : Type → Type) extends monad m :=
+(zero : Π {a : Type}, m a)
+
+attribute monad_zero.to_monad [unfold 2]
+
+definition mzero {m : Type → Type} [monad_zero m] {A : Type} : m A :=
+monad_zero.zero m
+
+definition option.is_monad_zero [instance] [constructor] : monad_zero option :=
+monad_zero.mk @option.some @option.bind @option.none

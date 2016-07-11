@@ -171,16 +171,19 @@ noncomputable theory
 open classical
 open int
 open nat
-open option
 open prod.ops
 open sum
-
-namespace {}
-", crate_name));
+"));
     if has_pre {
         try!(write!(f, "open {}\n", crate_name));
     }
-    try!(write!(f, "\n"));
+    try!(write!(f, "
+
+namespace {}
+section
+  variables {{m : Type₁ → Type}} [monad_sem m]
+
+", crate_name));
 
     // condensate sets of cyclic dependencies into graph nodes
     let condensed = condensation(graph, /* make_acyclic */ true);
@@ -246,5 +249,5 @@ namespace {}
     }
 
     // the end!
-    write!(f, "end {}", crate_name)
+    write!(f, "end\nend {}", crate_name)
 }

@@ -324,7 +324,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     _ => format!("p{}", i),
                 })).collect();
                 let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
-                let mut trans = FnTranspiler::new(&trans, param_names, "some ret".to_string());
+                let mut trans = FnTranspiler::new(&trans, param_names, "return ret".to_string());
                 let blocks = trans.mir().all_basic_blocks();
                 let mut comp = Component::new(&trans, START_BLOCK, &blocks, None);
                 let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
@@ -363,10 +363,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn transpile_basic_block_rec(&mut self, bb: BasicBlock, comp: &Component) -> String {
         if comp.header == Some(bb) {
             // pass state to next iteration
-            format!("some (inl {})\n", comp.state_val)
+            format!("return (inl {})\n", comp.state_val)
         } else if !comp.blocks.contains(&bb) {
             // leaving a loop
-            format!("do tmp__ ← {};\nsome (inr tmp__)", self.transpile_basic_block(bb, &comp.outer.unwrap()))
+            format!("do tmp__ ← {};\nreturn (inr tmp__)", self.transpile_basic_block(bb, &comp.outer.unwrap()))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -423,7 +423,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     let trait_param = self.infer_trait_impl(trait_pred.trait_ref.subst(self.tcx, &substs)).to_string(self);
                     free_assoc_tys.chain(iter::once(trait_param))
                 });
-                (format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" ")
+                // two placeholders for {m} [monad_sem m]
+                (format!("@{} _ _", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" ")
             },
             Operand::Constant(_) => unreachable!(),
             Operand::Consume(ref lv) => self.get_lvalue(lv),
@@ -470,7 +471,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 }
                 // diverging call
                 Terminator::Call { destination: None, .. } =>
-                    "none\n".to_string(),
+                    "mzero\n".to_string(),
                 Terminator::Switch { ref discr, ref adt_def, ref targets } => {
                     let value = self.get_lvalue(discr);
                     let mut arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
@@ -505,17 +506,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let params = self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| {
             format!("({} : {})", name, self.transpile_ty(&arg.ty))
         }).collect_vec();
+        let ret_ty = self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty.fn_ret().0.unwrap());
 
         let blocks = self.mir().all_basic_blocks();
         let mut comp = Component::new(&self, START_BLOCK, &blocks, None);
         let body = self.transpile_basic_block(START_BLOCK, &mut comp);
 
-        let ty_params = self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| format!("{{{} : Type}}", p.name)).collect_vec();
+        let ty_params = self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
         let assoc_ty_substs = self.get_assoc_ty_substs(self.def_id);
         // `where T : Iterator` ~> `'(Item : Type) [Iterator : Iterator T Item]'`
         let trait_params = self.trait_predicates_without_markers(self.def_id).flat_map(|trait_pred| {
             let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
-            let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| format!("({} : Type)", ty));
+            let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| format!("({} : Type₁)", ty));
             let trait_param = format!("[{} : {}]",
                                       mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)).replace('.', "_"),
                                       self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs));
@@ -528,8 +530,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
         if self.prelude.is_empty() {
-            let def = format!("definition {} :=\n{}",
+            let def = format!("definition {} : m {} :=\n{}",
                               (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
+                              ret_ty,
                               body);
             self.prelude.into_iter().chain(iter::once(def)).join("\n\n")
         } else {
@@ -538,13 +541,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
 {}
 
-definition {} :=\n{}
+definition {} : m {} :=\n{}
 end",
                     vec![ty_params, trait_params, params].into_iter().map(|p| {
                         format!("parameters {}", p.into_iter().join(" "))
                     }).join("\n"),
                     self.prelude.into_iter().join("\n\n"),
-                    name, body)
+                    name, ret_ty, body)
         }
     }
 }

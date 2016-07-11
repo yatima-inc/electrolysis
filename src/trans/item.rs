@@ -130,7 +130,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 [] => "unit".to_string(),
                 _ => format!("({})", tys.iter().map(|ty| self.transpile_ty(ty)).join(" × ")),
             },
-            // `Fn(&mut T) -> R` ~> `'T -> option (R × T)'`
+            // `Fn(&mut T) -> R` ~> `'T -> m (R × T)'`
             ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) => {
                 let sig = data.sig.skip_binder();
                 let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
@@ -139,7 +139,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     ty::FnOutput::FnConverging(out_ty) => iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)),
                     ty::FnOutput::FnDiverging => panic!("unimplemented: diverging function"),
                 };
-                inputs.chain(iter::once(format!("option ({})", outputs.join(" × ")))).join(" → ")
+                inputs.chain(iter::once(format!("m ({})", outputs.join(" × ")))).join(" → ")
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
             ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format!("({} {})",
@@ -234,7 +234,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         }
     }
 
-    // `self.def_id=Iterator, attr=Some('[class]')` ~> `'Iterator [class] (T : Type)'`
+    // `self.def_id=Iterator, attr=Some('[class]')` ~> `'Iterator [class] (T : Type₁)'`
     fn as_generic_ty_def(&self, attr: Option<&str>) -> String {
         let name = if let Some(attr) = attr { format!("{} {}", self.name(), attr) } else { self.name() };
         // traits are weird
@@ -244,7 +244,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         } else {
             self.tcx.lookup_item_type(self.def_id).generics
         };
-        (name, generics.types.iter().map(|p| format!("({} : Type)", p.name))).join(" ")
+        (name, generics.types.iter().map(|p| format!("({} : Type₁)", p.name))).join(" ")
     }
 
     fn transpile_struct(&self, variant: ty::VariantDef<'tcx>) -> String {
@@ -294,7 +294,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         self.trait_predicates_without_markers(def_id).flat_map(|trait_pred| {
             let trait_def = self.tcx.lookup_trait_def(trait_pred.def_id());
             trait_def.associated_type_names.iter().map(|name| {
-                format!("({} : Type)", self.transpile_associated_type(trait_pred.trait_ref, &name))
+                format!("({} : Type₁)", self.transpile_associated_type(trait_pred.trait_ref, &name))
             }).collect_vec()
         }).collect()
     }
@@ -389,7 +389,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 krate::try_unwrap_mut_ref(ty).map(|_| name.clone())
             });
             let ret = if sig.output.unwrap().is_nil() { "()" } else { "ret" };
-            format!("some ({})\n", (ret, muts).join(", "))
+            format!("return ({})\n", (ret, muts).join(", "))
         };
 
         ::trans::fun::FnTranspiler::new(self, param_names, return_expr).transpile_fn(name)
