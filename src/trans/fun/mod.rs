@@ -217,7 +217,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
         }).unzip();
         let indirect_dests = indirect_dests.into_iter().filter_map(|x| x).join("");
-        format!("do tmp__ ← {};\n{}", val,
+        format!("dostep tmp__ ← {};\n{}", val,
                 detuplize("tmp__", &direct_dests[..], &(indirect_dests + cont)))
     }
 
@@ -456,7 +456,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let body = self.transpile_basic_block(bb, &l_comp);
             self.prelude.push(format!("definition {} (state__ : {}) : {} :=\n{}", app,
                                       state_ty, ret_ty, detuplize("state__", &state_vars, &body)));
-            return format!("loop' ({}) {}", app, l_comp.state_val);
+            return format!("loop ({}) {}", app, l_comp.state_val);
         }
 
         let data = self.mir().basic_block_data(bb);

@@ -20,7 +20,7 @@ open set
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
-open list
+attribute sem [reducible]
 
 namespace core
 
@@ -31,9 +31,8 @@ namespace cmp
   else Ordering.Greater
 
   structure Ord' [class] (T : Type₁) extends Ord T, decidable_linear_order T :=
-  (cmp_eq : ∀x y : T, cmp x y = some (ordering x y))
-
-  lemma Ord'.ord_cmp_eq {T : Type₁} [Ord' T] (x y : T) : Ord.cmp x y = some (ordering x y) := Ord'.cmp_eq x y -- HACK
+  (max_cost : ℕ)
+  (cmp_eq : ∀x y : T, ∃k, k ≤ max_cost ∧ cmp x y = some (ordering x y, k))
 end cmp
 
 open cmp
@@ -51,18 +50,22 @@ section
 parameter {T : Type₁}
 variable (s : slice T)
 
-lemma is_empty_eq : SliceExt.is_empty T s = some (s = []) :=
-congr_arg some (propext (iff.intro
-  eq_nil_of_length_eq_zero
-  (λHeq, Heq⁻¹ ▸ length_nil)
-))
+lemma is_empty_eq : SliceExt.is_empty T s = some (s = [], 0) :=
+congr_arg some (prod.eq
+  (propext (iff.intro
+    eq_nil_of_length_eq_zero
+    (λHeq, Heq⁻¹ ▸ length_nil)
+  ))
+  rfl)
 
 -- s[start..]
-lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) : _T_.ops_Index_ops_RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s) :=
+lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) :
+  _T_.ops_Index_ops_RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s, RangeFrom.start r) :=
 begin
   let st := RangeFrom.start r,
   have st ≤ length s ∧ length s ≤ length s, from and.intro H (le.refl _),
-  rewrite [↑_T_.ops_Index_ops_RangeFrom_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index, if_pos this],
+  rewrite [↑_T_.ops_Index_ops_RangeFrom_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index,
+    bind_return, if_pos this],
   have firstn (length s - st) (dropn st s) = dropn st s, from
     firstn_all_of_ge (length_dropn st s ▸ le.refl _),
   rewrite this,

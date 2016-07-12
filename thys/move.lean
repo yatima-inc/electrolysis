@@ -53,6 +53,8 @@ namespace option
   by rewrite [H₁, ▸*, H₂]; contradiction
 end option
 
+export [unfold] option
+
 namespace list
 section
   parameter {A : Type}
@@ -419,11 +421,9 @@ structure monad [class] (m : Type → Type) /-extends functor m : Type-/ :=
 (ret  : Π {a : Type}, a → m a)
 (bind : Π {a b : Type}, m a → (a → m b) → m b)
 
-attribute monad.bind [unfold 5]
-
 notation `do` binder ` ← ` x `; ` r:(scoped f, monad.bind x f) := r
 
-definition return [constructor] {m : Type → Type} [monad m] {A : Type} (a : A) : m A :=
+definition return [unfold 2] {m : Type → Type} [monad m] {A : Type} (a : A) : m A :=
 monad.ret m a
 
 definition fapp {A B : Type} {m : Type → Type} [monad m] (f : m (A → B)) (a : m A) : m B :=
@@ -447,5 +447,32 @@ attribute monad_zero.to_monad [unfold 2]
 definition mzero {m : Type → Type} [monad_zero m] {A : Type} : m A :=
 monad_zero.zero m
 
+definition monad_zero.of_option [unfold 4] {m : Type → Type} [monad_zero m] {A : Type} : option A → m A :=
+option.rec mzero return
+
 definition option.is_monad_zero [instance] [constructor] : monad_zero option :=
 monad_zero.mk @option.some @option.bind @option.none
+
+structure stateT (s : Type) (m : Type → Type) [monad m] (a : Type) :=
+(run : s → m (a × s))
+
+namespace stateT
+section
+  parameters {s : Type₁} {m : Type₁ → Type} [monad m]
+  variables {a b : Type₁}
+
+  definition return (x : a) : stateT s m a := stateT.mk (λs, return (x, s))
+  definition bind (x : stateT s m a) (f : a → stateT s m b) : stateT s m b :=
+  stateT.mk (λs, do p ← run x s; match p with
+    (a, s') := run (f a) s'
+  end)
+
+  definition is_monad [constructor] : monad.{1} (stateT s m) :=
+  monad.mk @return @bind
+
+  parameter [monad_zero m]
+  definition zero : stateT s m a := stateT.mk (λs, mzero)
+  definition is_monad_zero [constructor] : monad_zero.{1} (stateT s m) :=
+  ⦃monad_zero, is_monad, zero := @zero⦄
+end
+end stateT
