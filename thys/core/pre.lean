@@ -22,6 +22,9 @@ definition sem.incr {a : Type₁} : sem a → sem a
 | (some (x, k)) := some (x, k+1)
 | none          := none
 
+inductive sem.terminates_with {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
+mk : Π {ret x k}, ret = some (x, k) → H x → k ≤ max_cost → sem.terminates_with H max_cost ret
+
 definition sem.return {a : Type₁} (x : a) : sem a := some (x, 0)
 definition sem.bind {a b : Type₁} (m : sem a) (f : a → sem b) : sem b :=
 option.bind m (λs, match s with
@@ -37,12 +40,19 @@ monad_zero.mk @sem.return @sem.bind @sem.zero
 
 -- TODO: move into monad class
 attribute sem.bind [unfold 3]
-lemma bind_return {A B : Type₁} {a : A} {f : A → sem B} : (return a >>= f) = f a :=
+lemma return_bind {A B : Type₁} {a : A} {f : A → sem B} : (return a >>= f) = f a :=
 begin
   rewrite [▸*, ↑sem.return],
   cases f a with a',
   { esimp },
   { cases a', rewrite [▸*, !zero_add] }
+end
+lemma bind_return {A : Type₁} {m : sem A} : (m >>= return) = m :=
+begin
+  rewrite [▸*, ↑sem.return],
+  cases m with a',
+  { esimp },
+  { cases a', esimp }
 end
 
 lemma bind.assoc {A B C : Type₁} {m : sem A} {f : A → sem B} {g : B → sem C} :
@@ -59,9 +69,18 @@ begin
   }
 end
 
-attribute sem [irreducible]
+lemma incr_bind {A B : Type₁} {m : sem A} {f : A → sem B} :
+  sem.incr (sem.bind m f) = sem.bind (sem.incr m) f :=
+begin
+  cases m with x,
+  { esimp },
+  { cases x with a k, esimp [sem.incr], cases f a with x',
+    { esimp },
+    { apply prod.cases_on, esimp, intros, rewrite [add.right_comm] }
+  }
+end
 
-notation `dostep` binder ` ← ` x `; ` r:(scoped f, sem.incr (sem.bind x f)) := r
+notation `dostep ` binder ` ← ` x `; ` r:(scoped f, sem.incr (sem.bind x f)) := r
 
 -- a general loop combinator for separating tail-recursive definitions from their well-foundedness proofs
 
@@ -96,7 +115,7 @@ section
     | x'    := if H : R' x' x then f x' H else mzero
     end
 
-    protected noncomputable definition loop.fix [Hwf: well_founded R] (s : State) : sem Res :=
+    protected noncomputable definition loop.fix [irreducible] [Hwf: well_founded R] (s : State) : sem Res :=
     do x ← well_founded.fix F (inl s);
     monad_zero.of_option (sum.inr_opt x)
 
@@ -105,7 +124,7 @@ section
     else false
   end
 
-  noncomputable definition loop (s : State) : sem Res :=
+  noncomputable definition loop [irreducible] (s : State) : sem Res :=
   if Hex : ∃ R, term_rel R s then
     @loop.fix (classical.some Hex) (classical.dite_else_false (classical.some_spec Hex)) s
   else mzero
@@ -116,13 +135,13 @@ section
     {R : State → State → Prop}
     [Hwf_R : well_founded R]
     {s : State} :
-    loop.fix R s = do x' ← body s; match x' with
-    | inl s' := sem.incr (if R s' s then loop.fix R s' else mzero)
+    loop.fix R s = dostep x' ← body s; match x' with
+    | inl s' := if R s' s then loop.fix R s' else mzero
     | inr r  := return r
     end :=
   begin
-    rewrite [↑loop.fix, well_founded.fix_eq, ↑F at {2}, bind_return, bind.assoc],
-    apply congr_arg (monad.bind (body s)), apply funext, intro x',
+    rewrite [↑loop.fix, well_founded.fix_eq, ↑F at {2}, return_bind, -incr_bind, bind.assoc],
+    apply congr_arg sem.incr, apply congr_arg (monad.bind (body s)), apply funext, intro x',
     cases x' with s' r,
     { esimp,
       cases classical.prop_decidable (R s' s), esimp, esimp
@@ -130,29 +149,34 @@ section
     { esimp }
   end
 
-  /-private lemma fix_eq_fix
+  private lemma fix_eq_fix
     {R₁ R₂ : State → State → Prop}
     [Hwf_R₁ : well_founded R₁] [well_founded R₂]
     {s : State}
-    (Hterm₁ : loop.fix R₁ s ≠ mzero) (Hterm₂ : loop.fix R₂ s ≠ mzero) :
+    (Hterm₁ : loop.fix R₁ s ≠ sem.zero) (Hterm₂ : loop.fix R₂ s ≠ sem.zero) :
     loop.fix R₁ s = loop.fix R₂ s :=
   begin
     revert Hterm₁ Hterm₂,
     induction (well_founded.apply Hwf_R₁ s) with s acc ih,
     rewrite [↑loop.fix, well_founded.fix_eq (F R₁), well_founded.fix_eq (F R₂), ↑F at {2, 4},
-      +bind_return],
-    now,
-    apply congr_arg (monad.bind (body s)), apply funext, intro x',
-    cases x' with s' r,
+      +return_bind],
+    cases body s with x',
+    { intros, apply rfl },
     { esimp,
-      cases classical.prop_decidable (R₁ s' s) with HR₁,
-      { cases classical.prop_decidable (R₂ s' s) with HR₂ HnR₂,
-        { esimp, intro Hterm₁ Hterm₂, apply ih _ HR₁ Hterm₁ Hterm₂ },
-        { esimp, intro Hterm₁ Hterm₂, exfalso, apply Hterm₂ rfl }
+      cases x' with st k, cases st with s' r,
+      { esimp, cases classical.prop_decidable (R₁ s' s) with HR₁,
+        { cases classical.prop_decidable (R₂ s' s) with HR₂ HnR₂,
+          { esimp, intro Hterm₁ Hterm₂,
+            rewrite [-+incr_bind],
+            exact sorry
+            --apply ih _ HR₁ Hterm₁ Hterm₂
+          },
+          { esimp, intro Hterm₁ Hterm₂, exfalso, apply Hterm₂ rfl }
+        },
+        { esimp, intro Hterm₁ Hterm₂, exfalso, apply Hterm₁ rfl }
       },
-      { esimp, intro Hterm₁ Hterm₂, exfalso, apply Hterm₁ rfl }
+      { intros, exact rfl }
     },
-    { intros, apply rfl }
   end
 
   protected theorem loop.fix_eq_loop
@@ -169,11 +193,11 @@ section
   end,
   let R₀ := classical.some Hterm_rel in
   have well_founded R₀, from classical.dite_else_false (classical.some_spec Hterm_rel),
-  have loop.fix R₀ s ≠ nonterm, from dif_pos this ▸ classical.some_spec Hterm_rel,
+  have loop.fix R₀ s ≠ none, from dif_pos this ▸ classical.some_spec Hterm_rel,
   begin
     rewrite [↑loop, dif_pos Hterm_rel],
     apply fix_eq_fix Hterm this,
-  end-/
+  end
 end
 
 abbreviation u8 [parsing_only] := nat
@@ -232,4 +256,5 @@ definition fn [instance] {A B : Type₁} : FnOnce A (A → sem B) B := ⦃FnOnce
   call_once := id
 ⦄
 
-notation `let` binder ` ← ` x `; ` r:(scoped f, f x) := r
+notation `let'` binder ` ← ` x `; ` r:(scoped f, f x) := r
+attribute sem [irreducible]

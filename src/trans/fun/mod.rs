@@ -27,7 +27,7 @@ fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
 // TODO: instead implement pattern let in Lean
 fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
     match pat {
-        [ref x] => format!("let {} ← {};\n{}", x, val, cont),
+        [ref x] => format!("let' {} ← {};\n{}", x, val, cont),
         _ => format!("match {} with ({}) :=\n{}end\n", val, pat.into_iter().join(", "), cont),
     }
 }
@@ -189,7 +189,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             return self.set_lvalue(lv, val)
         }
         if let Some(name) = self.lvalue_name(lv) {
-            return format!("let {} ← {};\n", name, val)
+            return format!("let' {} ← {};\n", name, val)
         }
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
@@ -199,7 +199,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
                         let field_name = adt_def.struct_variant().fields[field.index()].name;
-                        format!("let {} ← ⦃ {}, {} := {}, {} ⦄;\n", base_name, self.name_def_id(adt_def.did), field_name, val, base_name)
+                        format!("let' {} ← ⦃ {}, {} := {}, {} ⦄;\n", base_name, self.name_def_id(adt_def.did), field_name, val, base_name)
                     },
                     ref ty => panic!("unimplemented: setting field of {:?}", ty),
                 }
