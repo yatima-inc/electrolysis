@@ -107,7 +107,7 @@ parameter needle : T
 
 hypothesis Hsorted : sorted le self
 
-abbreviation f y := sem.incr (Ord.cmp y needle)
+abbreviation f y := sem.incr 1 (Ord.cmp y needle)
 
 attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
@@ -391,7 +391,7 @@ theorem binary_search.sem : sem.terminates_with
 begin
   cases binary_search_by.sem with  _ res k Hsem_eq Hres Hmax_cost,
   rewrite [↑binary_search, bind_return,
-    funext (λx, congr_arg sem.incr bind_return),
+    funext (λx, congr_arg (sem.incr 1) bind_return),
     ↑binary_search_by,
     Hsem_eq],
   apply sem.terminates_with.mk rfl,

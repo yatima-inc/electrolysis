@@ -18,8 +18,8 @@ open [class] classical
 -- fix semantics monad
 definition sem (a : Type₁) := option (a × nat)
 
-definition sem.incr {a : Type₁} : sem a → sem a
-| (some (x, k)) := some (x, k+1)
+definition sem.incr [unfold 3] {a : Type₁} (n : ℕ) : sem a → sem a
+| (some (x, k)) := some (x, k+n)
 | none          := none
 
 inductive sem.terminates_with {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
@@ -75,18 +75,24 @@ begin
   }
 end
 
-lemma incr_bind {A B : Type₁} {m : sem A} {f : A → sem B} :
-  sem.incr (sem.bind m f) = sem.bind (sem.incr m) f :=
+lemma incr_bind {A B : Type₁} {k : ℕ} {m : sem A} {f : A → sem B} :
+  sem.incr k (sem.bind m f) = sem.bind (sem.incr k m) f :=
 begin
   cases m with x,
   { esimp },
-  { cases x with a k, esimp [sem.incr], cases f a with x',
+  { cases x with a k, esimp, cases f a with x',
     { esimp },
     { apply prod.cases_on, esimp, intros, rewrite [add.right_comm] }
   }
 end
 
-notation `dostep ` binder ` ← ` x `; ` r:(scoped f, sem.incr (sem.bind x f)) := r
+lemma neq_mzero_of_incr_neq_mzero {A : Type₁} {k : ℕ} {m : sem A} (H : sem.incr k m ≠ mzero) :
+  m ≠ mzero :=
+begin
+  cases m with x,
+  { exact H },
+  { cases x with a k, esimp, contradiction }
+end
 
 -- a general loop combinator for separating tail-recursive definitions from their well-foundedness proofs
 
@@ -147,7 +153,7 @@ section
     end :=
   begin
     rewrite [↑loop.fix, well_founded.fix_eq, ↑F at {2}, return_bind, -incr_bind, bind.assoc],
-    apply congr_arg sem.incr, apply congr_arg (monad.bind (body s)), apply funext, intro x',
+    apply congr_arg (sem.incr 1), apply congr_arg (sem.bind (body s)), apply funext, intro x',
     cases x' with s' r,
     { esimp,
       cases classical.prop_decidable (R s' s), esimp, esimp
@@ -172,10 +178,27 @@ section
       cases x' with st k, cases st with s' r,
       { esimp, cases classical.prop_decidable (R₁ s' s) with HR₁,
         { cases classical.prop_decidable (R₂ s' s) with HR₂ HnR₂,
-          { esimp, intro Hterm₁ Hterm₂,
+          { esimp,
+            have ∀m : sem State', option.bind m (λ s', prod.cases_on s' (λ a a_1, some (a, k + a_1))) = 
+              sem.incr k m,
+            begin
+              intro m, cases m,
+              { esimp },
+              { esimp, apply prod.cases_on, intros, rewrite [▸*, add.comm] },
+            end,
+            rewrite [+this],
             rewrite [-+incr_bind],
-            exact sorry
-            --apply ih _ HR₁ Hterm₁ Hterm₂
+            intro Hterm₁ Hterm₂,
+            apply congr_arg (sem.incr 1),
+            have loop.fix R₁ s' = loop.fix R₂ s',
+            begin
+              apply ih _ HR₁,
+              unfold loop.fix; exact neq_mzero_of_incr_neq_mzero (neq_mzero_of_incr_neq_mzero Hterm₁),
+              unfold loop.fix; exact neq_mzero_of_incr_neq_mzero (neq_mzero_of_incr_neq_mzero Hterm₂)
+            end,
+            note ih' := congr_arg (sem.incr k) this,
+            rewrite [↑loop.fix at ih'],
+            exact ih'
           },
           { esimp, intro Hterm₁ Hterm₂, exfalso, apply Hterm₂ rfl }
         },
