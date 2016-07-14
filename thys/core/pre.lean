@@ -35,21 +35,27 @@ option.bind m (λs, match s with
 end)
 definition sem.zero {a : Type₁} : sem a := none
 
-definition sem.is_monad_zero [instance] [constructor] : monad_zero sem :=
-monad_zero.mk @sem.return @sem.bind @sem.zero
+abbreviation return {a : Type₁} : a → sem a := sem.return
+abbreviation mzero  {a : Type₁} : sem a := sem.zero
+infixl ` >>= `:2 := sem.bind
+notation `do` binder ` ← ` x `; ` r:(scoped f, sem.bind x f) := r
+notation `dostep ` binder ` ← ` x `; ` r:(scoped f, sem.incr 1 (sem.bind x f)) := r
 
--- TODO: move into monad class
+
+definition sem.lift_opt [unfold 2] {a : Type₁} : option a → sem a :=
+option.rec sem.zero return
+
 attribute sem.bind [unfold 3]
+attribute sem.return [constructor]
 lemma return_bind {A B : Type₁} {a : A} {f : A → sem B} : (return a >>= f) = f a :=
 begin
-  rewrite [▸*, ↑sem.return],
+  esimp,
   cases f a with a',
   { esimp },
   { cases a', rewrite [▸*, !zero_add] }
 end
 lemma bind_return {A : Type₁} {m : sem A} : (m >>= return) = m :=
 begin
-  rewrite [▸*, ↑sem.return],
   cases m with a',
   { esimp },
   { cases a', esimp }
@@ -108,16 +114,16 @@ section
     subrelation.wf this (partial.inv_image.wf f H)
 
     private noncomputable definition F (x : State') (f : Π (x' : State'), R' x' x → sem State') : sem State' :=
-    do s ← monad_zero.of_option (sum.inl_opt x);
+    do s ← sem.lift_opt (sum.inl_opt x);
     dostep x' ← body s;
     match x' with
-    | inr r := monad.ret sem (inr r)
+    | inr r := return (inr r)
     | x'    := if H : R' x' x then f x' H else mzero
     end
 
     protected noncomputable definition loop.fix [irreducible] [Hwf: well_founded R] (s : State) : sem Res :=
     do x ← well_founded.fix F (inl s);
-    monad_zero.of_option (sum.inr_opt x)
+    sem.lift_opt (sum.inr_opt x)
 
     private noncomputable definition term_rel (s : State) :=
     if Hwf : well_founded R then loop.fix s ≠ mzero

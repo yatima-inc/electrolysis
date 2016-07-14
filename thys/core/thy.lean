@@ -140,9 +140,6 @@ mk : Πbase' s', loop_4_invar s' base' → length s' < length s → loop_4_step 
 
 abbreviation loop_4_res := sum.rec (loop_4_step s) binary_search_res
 
-attribute sem.return [constructor]
-attribute sem.incr [unfold 2]
-
 -- extract some more expensive parts of the proof
 section
   variables {x : T} {xs : list T}
