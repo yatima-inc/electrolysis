@@ -136,7 +136,8 @@ structure loop_4_invar :=
 omit self needle base s
 
 inductive loop_4_step : loop_4.state → Prop :=
-mk : Πbase' s', loop_4_invar s' base' → length s' < length s → loop_4_step (f, base', s')
+mk : Πbase' s', loop_4_invar s' base' → length s' ≤ length s / 2 → length s ≠ 0 →
+  loop_4_step (f, base', s')
 
 abbreviation loop_4_res := sum.rec (loop_4_step s) binary_search_res
 
@@ -207,14 +208,21 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     },
     { apply le_add_of_le_right, apply dec_trivial }
   },
-  { have Hwf : length s > length xs, from
-      calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
-                 ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
+  { have length s ≠ 0,
+    begin
+      intro H,
+      rewrite (eq_nil_of_length_eq_zero H) at Hs,
+      contradiction
+    end,
+    have Hwf : length xs ≤ length s / 2, from
+      calc length xs = length (x :: xs) - 1 : rfl
+                 ... ≤ length s / 2         : by
+                   rewrite [-Hs, length_dropn]; apply self_sub_half_sub_one_le_half,
     have x :: xs ≠ nil, by contradiction,
     rewrite [if_neg' this],
     have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
     rewrite [if_pos' this, ↑get_unchecked, nth_zero, ↑f],
-    --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle,
+    --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
     cases Ord'.ord_cmp_eq x needle with k H, cases H with k_le_max_cost cmp_eq,
     rewrite [cmp_eq, ↑ordering, ▸*],
     have nth_x : nth self (base + length s₁) = some x,
@@ -259,8 +267,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
                   (suppose needle = x, false.elim (lt.irrefl _ (this ▸ Hx_lt_needle)))
                   (suppose needle ∈ xs, this))
         ⦄,
-        exact calc length (dropn 1 (x :: xs)) = length xs : by rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel]
-                                          ... < length s  : Hwf },
+        rewrite [length_dropn, length_cons, ▸*, nat.add_sub_cancel],
+        exact Hwf, exact `length s ≠ 0` },
       { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                 rewrite [{_ + k}add.comm]),
         rewrite [{k + _}add.comm],
@@ -295,14 +303,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
                     (show needle ∈ x::xs, from Hs ▸ this),
                   false.elim (not_le_of_gt Hx_ge_needle this))
           ⦄,
-          { have length s ≠ 0,
-            begin
-              intro H,
-              rewrite (eq_nil_of_length_eq_zero H) at Hs,
-              contradiction
-            end,
-            calc length s₁ ≤ length s / 2 : length_firstn_le
-                        ... < length s     : div_lt_of_ne_zero this }
+          exact !length_firstn_le,
+          exact `length s ≠ 0`
         },
         { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                   rewrite [{_ + k}add.comm]),
@@ -321,7 +323,7 @@ private lemma R_wf [instance] : well_founded R := inv_image.wf'
 include Hsorted
 private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : sem.terminates_with
   binary_search_res
-  (length s * (15 + Ord'.max_cost T))
+  ((log₂ (2 * length s) + 1) * (16 + Ord'.max_cost T))
   (loop.fix loop_4 R (f, base, s)) :=
 begin
   eapply generalize_with_eq (length s), intro l,
@@ -339,11 +341,12 @@ begin
   { intro H, cases H with _ res k Hsem_eq Hstep Hmax_cost,
     rewrite Hsem_eq,
     cases res with st' r,
-    { cases Hstep with base' s' Hinvar' Hvar,
+    { cases Hstep with base' s' Hinvar' Hvar Hs_ne_nil,
       esimp,
-      have R (f, base', s') (f, base, s), from Hvar,
+      have R (f, base', s') (f, base, s), from
+        lt_of_le_of_lt Hvar (div_lt_of_ne_zero Hs_ne_nil),
       rewrite [if_pos' this],
-      cases ih _ Hvar _ _ Hinvar' rfl with _ res' k' Hsem'_eq Hres' Hmax_cost',
+      cases ih _ this _ _ Hinvar' rfl with _ res' k' Hsem'_eq Hres' Hmax_cost',
       clear ih,
       rewrite Hsem'_eq,      
       esimp,
@@ -351,15 +354,25 @@ begin
       exact Hres',
       exact calc k + k' + 1
           ≤ (15 + Ord'.max_cost T) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
-      ... ≤ (15 + Ord'.max_cost T) + length s' * (15 + Ord'.max_cost T) + 1 :
-        add_le_add_right (add_le_add_left Hmax_cost' _) _
-      ... ≤ length s * (15 + Ord'.max_cost T) : sorry
+      ... ≤ (15 + Ord'.max_cost T) + (log₂ (length s) + 1) * (16 + Ord'.max_cost T) + 1 :
+        add_le_add_right (add_le_add_left (le.trans Hmax_cost' (mul_le_mul_right _ (add_le_add_right
+          (log.monotone dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
+        _))) _) _
+      ... = (log₂ (length s) + 1 + 1) * (16 + Ord'.max_cost T) :
+        by rewrite [add.comm, -+add.assoc, nat.right_distrib (_ + 1), add.comm, one_mul]
+      ... = (log₂ (2 * length s) + 1) * (16 + Ord'.max_cost T) : begin
+        { rewrite [-log.rec (pos_of_ne_zero `length s ≠ 0`) (show 2 > 1, from dec_trivial)] }
+      end
     },
     { esimp,
       apply sem.terminates_with.mk rfl,
       apply Hstep,
-      apply sorry
-    }
+      exact calc k + 0 + 1
+          = k + 1 : by rewrite add_zero
+      ... ≤ 15 + Ord'.max_cost T + 1 : add_le_add_right Hmax_cost
+      ... = 16 + Ord'.max_cost T : by rewrite nat.add_right_comm
+      ... ≤ (log 2 (2 * length s) + 1) * (16 + Ord'.max_cost T) : by
+        rewrite [nat.right_distrib, one_mul]; apply le_add_left }
   }
 end
 
@@ -368,7 +381,7 @@ end loop_4
 include Hsorted
 theorem binary_search_by.sem : sem.terminates_with
   binary_search_res
-  (length self * (15 + Ord'.max_cost T))
+  ((log₂ (2 * length self) + 1) * (16 + Ord'.max_cost T))
   (binary_search_by self f) :=
 begin
   have loop_4_invar self 0, from ⦃loop_4_invar,
@@ -386,7 +399,7 @@ end
 
 theorem binary_search.sem : sem.terminates_with
   binary_search_res
-  (length self * (15 + Ord'.max_cost T) + 1)
+  ((log₂ (2 * length self) + 1) * (16 + Ord'.max_cost T) + 1)
   (binary_search self needle) :=
 begin
   cases binary_search_by.sem with  _ res k Hsem_eq Hres Hmax_cost,

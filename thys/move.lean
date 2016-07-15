@@ -1,4 +1,6 @@
 /- things that may or may not belong in the stdlib -/
+import algebra.interval
+import algebra.order_bigops
 import data.list
 import data.list.sorted
 
@@ -416,3 +418,112 @@ decidable.rec
   (λ Hc : c,    absurd Hc Hnc)
   (λ Hnc : ¬c,  eq.refl (@ite c (decidable.inr Hnc) A t e))
   H
+
+namespace nat
+section
+  open interval
+  open set
+
+  section
+    open finset
+
+    lemma not_finite_of_no_upper_bound {s : set ℕ} (Hno_ub : ∀x, ∃y, y ≥ x ∧ y ∈ s) : ¬finite s :=
+    suppose finite s,
+    obtain s' `s = to_set s'`, from this,
+    let x := Max₀ s' + 1 in
+    obtain y `y ≥ x` `y ∈ s`, from Hno_ub x,
+    have y ∈ s', from `s = to_set s'` ▸ `y ∈ s`,
+    have y ≤ Max₀ s', from le_Max₀ this,
+    show false, from not_le_of_gt (lt_of_succ_le `y ≥ x`) this
+  end
+
+  -- integral (floored) logarithm
+  noncomputable definition log (b x : ℕ) := Max₀ {y | b^y ≤ x}
+
+  parameter {b : ℕ}
+  variable  {x : ℕ}
+  premise (Hx : x ≥ 1)
+
+  attribute Max₀ log [reducible]
+
+  -- why did i prove this
+  lemma log_base_one_eq_zero (x : ℕ) : log 0 x = 0 :=
+  begin
+    have ¬finite {y | 0^y ≤ x}, begin
+      apply not_finite_of_no_upper_bound,
+      intro x, existsi succ x,
+      split,
+      exact le_succ _,
+      whnf, rewrite [zero_pow (zero_lt_succ x)], apply zero_le
+    end,
+    esimp [log, Max₀, set.Max],
+    rewrite [to_finset_of_not_finite this]
+  end
+
+  lemma log_zero_eq_zero : log b 0 = 0 :=
+  begin
+    cases eq_zero_or_pos b,
+    { rewrite [`b = 0`], apply log_base_one_eq_zero },
+    { have {y | b^y ≤ 0} = ∅, from eq_empty_of_forall_not_mem (take y,
+        suppose b^y ≤ 0,
+        have b^y = 0, from eq_zero_of_le_zero this,
+        have b^y > 0, from pow_pos_of_pos y `b > 0`,
+        show false, from ne_of_gt this `b^y = 0`),
+      rewrite [↑log, this, ↑Max₀, ↑set.Max, to_finset_empty] }
+  end
+
+  premise (Hb : b > 1)
+
+  private definition fin : finite {y | b^y ≤ x} :=
+  finite_subset (show {y | b^y ≤ x} ⊆ '[0, x], from
+    take y, suppose b^y ≤ x,
+    and.intro !nat.zero_le (le.trans (le_pow_self Hb y) this)
+  )
+
+  private definition nonempty : {y | b^y ≤ x} ≠ ∅ :=
+  ne_empty_of_mem (show b^0 ≤ x, from Hx)
+
+  lemma log.rec : log b (b * x) = log b x + 1 :=
+  have finite {y | b^y ≤ x}, from fin Hb,
+  have finite {y | b^y ≤ b * x}, from fin Hb,
+  have Hx' : b * x ≥ 1, from nat.mul_le_mul (le_of_lt Hb) Hx,
+  have log b x + 1 = Max y ∈ {y | b^y ≤ x}, y + 1, from eq.symm (Max_add_right _ _ (nonempty Hx)),
+  begin
+    rewrite this,
+    apply eq_of_le_of_ge,
+    { apply Max_le _ (nonempty Hx'),
+      intro y Hy, cases y with y',
+      { apply nat.zero_le },
+      { apply le_Max, apply le_of_mul_le_mul_left Hy (lt_of_succ_lt Hb) }
+    },
+    { apply Max_le _ (nonempty Hx),
+      intro y Hy,
+      apply le_Max, apply mul_le_mul_left b Hy
+    }
+  end
+
+  lemma log.monotone {x' : ℕ} (H : x ≤ x') : log b x ≤ log b x' :=
+  have finite {y | b^y ≤ x}, from fin Hb,
+  have finite {y | b^y ≤ x'}, from fin Hb,
+  begin
+    cases x,
+    { rewrite log_zero_eq_zero, apply zero_le },
+    { apply Max_le _ (nonempty !one_le_succ),
+      intro y Hy,
+      apply le_Max, apply le.trans Hy H }
+  end
+
+  notation `log₂` := log 2
+end
+end nat
+
+lemma nat.self_sub_half_sub_one_le_half (n : ℕ) : n - n / 2 - 1 ≤ n / 2 :=
+begin
+  rewrite [eq_div_mul_add_mod n 2 at {1}, -one_add_one_eq_two at {2}, left_distrib, +mul_one,
+    nat.add_assoc, nat.add_sub_cancel_left],
+  transitivity n / 2 + 1 - 1,
+  { apply nat.sub_le_sub_right,
+    apply add_le_add_left,
+    apply le_of_lt_succ (mod_lt _ dec_trivial) },
+  { rewrite [nat.add_sub_assoc (le_of_eq rfl)] }
+end
