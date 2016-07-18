@@ -59,7 +59,7 @@ export [unfold] option
 
 namespace list
 section
-  parameter {A : Type}
+  variable {A : Type}
   variable xs : list A
 
   -- first without [inhabited], last without predicate
@@ -147,6 +147,24 @@ section
   | [] n y := [y]
   | xs 0 y := y::xs
   | (x::xs) (succ n) y := x::insert_at xs n y
+
+  lemma ne_nil_of_mem {xs : list A} {x : A} (H : x ∈ xs) : xs ≠ nil :=
+  suppose xs = nil, this ▸ H
+
+  lemma ex_mem_of_ne_nil : Π{xs : list A}, xs ≠ nil → Σx : A, x ∈ xs
+  | []      H := false.rec _ (H rfl)
+  | (x::xs) _ := sigma.mk x (mem_cons x xs)
+
+  lemma ne_nil_of_product_ne_nil_left {xs ys : list A} (H : product xs ys ≠ nil) : xs ≠ nil :=
+  match ex_mem_of_ne_nil H with
+  | sigma.mk (x, y) Hmem := ne_nil_of_mem (mem_of_mem_product_left Hmem)
+  end
+
+  lemma product_ne_nil_of_ne_nil {xs ys : list A} (Hxs : xs ≠ nil) (Hys : ys ≠ nil) :
+    product xs ys ≠ nil :=
+  obtain x Hx, from ex_mem_of_ne_nil Hxs,
+  obtain y Hy, from ex_mem_of_ne_nil Hys,
+  ne_nil_of_mem (mem_product Hx Hy)
 end
 
 inductive prefixeq {A : Type} : list A → list A → Prop :=
@@ -178,7 +196,8 @@ section
     le := prefixeq, le_refl := refl, le_trans := @trans, le_antisymm := @antisymm
   ⦄
 
-  theorem nth_of_nth_prefixeq {i : ℕ} {xs ys : list A} {z : A} (Hxs : nth xs i = some z) (Hprefix : xs ⊑ₚ ys) : nth ys i = some z :=
+  theorem nth_of_nth_prefixeq {i : ℕ} {xs ys : list A} {z : A} (Hxs : nth xs i = some z)
+    (Hprefix : xs ⊑ₚ ys) : nth ys i = some z :=
   begin
     revert i Hxs,
     induction Hprefix with x z' xs ys Hprefix ih,
@@ -189,6 +208,11 @@ section
       { apply ih i Hxs }
     }
   end
+
+  theorem mem_of_mem_prefixeq {xs ys : list A} {z : A} (Hxs : z ∈ xs) (Hprefix : xs ⊑ₚ ys) :
+    z ∈ ys :=
+  obtain i Hi, from nth_of_mem Hxs,
+  mem_of_nth (nth_of_nth_prefixeq Hi Hprefix)
 
   theorem firstn_prefixeq : Π(n : ℕ) (xs : list A), firstn n xs ⊑ₚ xs
   | 0 xs             := !prefixeq_nil
@@ -527,3 +551,14 @@ begin
     apply le_of_lt_succ (mod_lt _ dec_trivial) },
   { rewrite [nat.add_sub_assoc (le_of_eq rfl)] }
 end
+
+namespace finset
+  lemma to_finset_ne_empty {A : Type} [decidable_eq A] {xs : list A} (H : xs ≠ []) :
+    to_finset xs ≠ ∅ :=
+  obtain x Hmem, from list.ex_mem_of_ne_nil H,
+  suppose to_finset xs = ∅,
+  this ▸ mem_to_finset Hmem
+
+  lemma mem_of_mem_to_finset {A : Type} [decidable_eq A] {xs : list A} {x : A} (H : x ∈ to_finset xs)
+    : x ∈ xs := mem_of_mem_erase_dup H
+end finset

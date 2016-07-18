@@ -5,7 +5,6 @@ import data.finset
 import data.list.sorted
 import move
 
-open [class] classical
 open core
 open eq.ops
 open list
@@ -18,7 +17,8 @@ open prod.ops
 open set
 
 -- doesn't seem to get picked up by class inference
-definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B} [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
+definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B}
+  [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
 attribute sem [reducible]
 
@@ -31,12 +31,33 @@ namespace cmp
   else Ordering.Greater
 
   structure Ord' [class] (T : Type₁) extends Ord T, decidable_linear_order T :=
-  (max_cost : ℕ)
-  (cmp_eq : ∀x y : T, ∃k, k ≤ max_cost ∧ cmp x y = some (ordering x y, k))
+  (cmp_eq : ∀x y : T, Σk, cmp x y = some (ordering x y, k))
 
-  lemma Ord'.ord_cmp_eq {T : Type₁} [Ord' T] (x y : T) :
-    ∃k, k ≤ Ord'.max_cost T ∧ Ord.cmp x y = some (ordering x y, k) := Ord'.cmp_eq x y -- HACK
+  namespace Ord'
+  section
+    parameters {T : Type₁} [Ord' T]
+
+    lemma ord_cmp_eq (x y : T) : Σk, Ord.cmp x y = some (ordering x y, k) := cmp_eq x y -- HACK
+
+    open finset
+    open prod
+
+    definition cmp_max_cost (y : T) (xs : list T) := Max x ∈ to_finset xs, sigma.pr1 (cmp_eq x y)
+
+    lemma le_cmp_max_cost {xs : list T} {x y : T} (Hx : x ∈ xs) {ord k} (H : cmp x y = some (ord, k)) :
+      k ≤ cmp_max_cost y xs :=
+    have sigma.pr1 (cmp_eq x y) ≤ cmp_max_cost y xs, from finset.le_Max _ (mem_to_finset Hx),
+    begin
+      revert this,
+      cases cmp_eq x y with k' Hcmp_eq,
+      injection H⁻¹ ⬝ Hcmp_eq with _ Hkk',
+      esimp, rewrite -Hkk', apply id
+    end
+  end
+  end Ord'
 end cmp
+
+open [class] classical
 
 open cmp
 open ops
@@ -108,6 +129,7 @@ parameter needle : T
 hypothesis Hsorted : sorted le self
 
 abbreviation f y := sem.incr 1 (Ord.cmp y needle)
+abbreviation cmp_max_cost := Ord'.cmp_max_cost needle self
 
 attribute FnMut.call_mut [unfold 4]
 attribute fn [constructor]
@@ -162,7 +184,7 @@ end
 
 private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with
   (loop_4_res s)
-  (15 + Ord'.max_cost T)
+  (15 + cmp_max_cost)
   (loop_4 (f, base, s)) :=
 have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
   (loop_4_invar.s_in_self Hinvar)
@@ -223,7 +245,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
     rewrite [if_pos' this, ↑get_unchecked, nth_zero, ↑f],
     --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
-    cases Ord'.ord_cmp_eq x needle with k H, cases H with k_le_max_cost cmp_eq,
+    cases Ord'.ord_cmp_eq x needle with k cmp_eq,
     rewrite [cmp_eq, ↑ordering, ▸*],
     have nth_x : nth self (base + length s₁) = some x,
     begin
@@ -231,6 +253,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       rewrite [nth_eq_first'_dropn, add.comm, -dropn_dropn, -nth_eq_first'_dropn, len_s₁],
       apply prefixeq.nth_of_nth_prefixeq this (loop_4_invar.s_in_self Hinvar)
     end,
+    have Hle_max_cost : k ≤ cmp_max_cost, from
+      Ord'.le_cmp_max_cost (mem_of_nth nth_x) cmp_eq,
     cases (decidable_lt : decidable (x < needle)) with Hx_lt_needle Hx_ge_needle,
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
@@ -272,7 +296,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                 rewrite [{_ + k}add.comm]),
         rewrite [{k + _}add.comm],
-        apply add_le_add_left `k ≤ Ord'.max_cost T` }
+        apply add_le_add_left Hle_max_cost }
     },
     { intro H, subst H,
       cases (has_decidable_eq : decidable (x = needle)) with Hfound Hnot_found,
@@ -281,7 +305,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                   rewrite [{_ + k}add.comm]),
           rewrite [{k + _}add.comm],
-          apply add_le_add dec_trivial `k ≤ Ord'.max_cost T` }
+          apply add_le_add dec_trivial Hle_max_cost }
       },
       { have Hx_ge_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
         apply sem.terminates_with.mk rfl,
@@ -309,7 +333,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                   rewrite [{_ + k}add.comm]),
           rewrite [{k + _}add.comm],
-          apply add_le_add dec_trivial `k ≤ Ord'.max_cost T` }
+          apply add_le_add dec_trivial Hle_max_cost }
       }
     }
   }
@@ -323,7 +347,7 @@ private lemma R_wf [instance] : well_founded R := inv_image.wf'
 include Hsorted
 private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : sem.terminates_with
   binary_search_res
-  ((log₂ (2 * length s) + 1) * (16 + Ord'.max_cost T))
+  ((log₂ (2 * length s) + 1) * (16 + cmp_max_cost))
   (loop.fix loop_4 R (f, base, s)) :=
 begin
   eapply generalize_with_eq (length s), intro l,
@@ -353,14 +377,17 @@ begin
       apply sem.terminates_with.mk rfl,
       exact Hres',
       exact calc k + k' + 1
-          ≤ (15 + Ord'.max_cost T) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
-      ... ≤ (15 + Ord'.max_cost T) + (log₂ (length s) + 1) * (16 + Ord'.max_cost T) + 1 :
-        add_le_add_right (add_le_add_left (le.trans Hmax_cost' (mul_le_mul_right _ (add_le_add_right
-          (log.monotone dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
-        _))) _) _
-      ... = (log₂ (length s) + 1 + 1) * (16 + Ord'.max_cost T) :
+          ≤ (15 + cmp_max_cost) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
+      ... ≤ (15 + cmp_max_cost) + (log₂ (length s) + 1) * (16 + cmp_max_cost) + 1 :
+        add_le_add_right (add_le_add_left
+          (show k' ≤ (log₂ (length s) + 1) * (16 + cmp_max_cost), from le.trans Hmax_cost' (mul_le_mul_right _
+            (show log₂ (2 * length s') + 1 ≤ log₂ (length s) + 1, from add_le_add_right
+              (log.monotone dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
+              _)))
+        _) _
+      ... = (log₂ (length s) + 1 + 1) * (16 + cmp_max_cost) :
         by rewrite [add.comm, -+add.assoc, nat.right_distrib (_ + 1), add.comm, one_mul]
-      ... = (log₂ (2 * length s) + 1) * (16 + Ord'.max_cost T) : begin
+      ... = (log₂ (2 * length s) + 1) * (16 + cmp_max_cost) : begin
         { rewrite [-log.rec (pos_of_ne_zero `length s ≠ 0`) (show 2 > 1, from dec_trivial)] }
       end
     },
@@ -369,9 +396,9 @@ begin
       apply Hstep,
       exact calc k + 0 + 1
           = k + 1 : by rewrite add_zero
-      ... ≤ 15 + Ord'.max_cost T + 1 : add_le_add_right Hmax_cost
-      ... = 16 + Ord'.max_cost T : by rewrite nat.add_right_comm
-      ... ≤ (log 2 (2 * length s) + 1) * (16 + Ord'.max_cost T) : by
+      ... ≤ 15 + cmp_max_cost + 1 : add_le_add_right Hmax_cost
+      ... = 16 + cmp_max_cost : by rewrite nat.add_right_comm
+      ... ≤ (log 2 (2 * length s) + 1) * (16 + cmp_max_cost) : by
         rewrite [nat.right_distrib, one_mul]; apply le_add_left }
   }
 end
@@ -381,7 +408,7 @@ end loop_4
 include Hsorted
 theorem binary_search_by.sem : sem.terminates_with
   binary_search_res
-  ((log₂ (2 * length self) + 1) * (16 + Ord'.max_cost T))
+  ((log₂ (2 * length self) + 1) * (16 + cmp_max_cost))
   (binary_search_by self f) :=
 begin
   have loop_4_invar self 0, from ⦃loop_4_invar,
@@ -399,7 +426,7 @@ end
 
 theorem binary_search.sem : sem.terminates_with
   binary_search_res
-  ((log₂ (2 * length self) + 1) * (16 + Ord'.max_cost T) + 1)
+  ((log₂ (2 * length self) + 1) * (16 + Ord'.cmp_max_cost needle self) + 1)
   (binary_search self needle) :=
 begin
   cases binary_search_by.sem with  _ res k Hsem_eq Hres Hmax_cost,
