@@ -41,7 +41,7 @@ impl<'a> Component<'a> {
             match *rv {
                 Rvalue::Use(ref op) => operand(op, uses),
                 Rvalue::UnaryOp(_, ref op) => operand(op, uses),
-                Rvalue::BinaryOp(_, ref o1, ref o2) => {
+                Rvalue::BinaryOp(_, ref o1, ref o2) | Rvalue::CheckedBinaryOp(_, ref o1, ref o2) => {
                     operand(o1, uses);
                     operand(o2, uses);
                 }
@@ -54,8 +54,7 @@ impl<'a> Component<'a> {
                 Rvalue::Cast(_, ref op, _) => operand(op, uses),
                 Rvalue::Repeat(ref op, _) => operand(op, uses),
                 Rvalue::Len(ref lv) => uses.push(lv),
-                Rvalue::Slice { ref input, .. } => uses.push(input),
-                Rvalue::Box(_) | Rvalue::InlineAsm(_) => {}
+                Rvalue::Box(_) | Rvalue::InlineAsm { .. } => {}
             }
         }
 
@@ -63,7 +62,7 @@ impl<'a> Component<'a> {
         let mut uses = Vec::new();
 
         for &bb in blocks {
-            for stmt in &trans.mir().basic_block_data(bb).statements {
+            for stmt in &trans.mir()[bb].statements {
                 match stmt.kind {
                     StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
                         defs.push(lv);
@@ -75,14 +74,14 @@ impl<'a> Component<'a> {
                     }
                 }
             }
-            if let Some(ref term) = trans.mir().basic_block_data(bb).terminator {
-                match *term {
-                    Terminator::Call { ref func, ref args, .. } => {
+            if let Some(ref term) = trans.mir()[bb].terminator {
+                match term.kind {
+                    TerminatorKind::Call { ref func, ref args, .. } => {
                         operand(func, &mut uses);
                         for arg in args {
                             operand(arg, &mut uses);
                         }
-                        defs.extend(trans.call_return_dests(term));
+                        defs.extend(trans.call_return_dests(&term.kind));
                     }
                     _ => {}
                 }

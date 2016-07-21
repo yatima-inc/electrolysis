@@ -5,10 +5,10 @@ use itertools::Itertools;
 use petgraph::graph::{self, Graph};
 use toml;
 
-use rustc_front::hir;
+use rustc::hir;
+use rustc::hir::def_id::DefId;
 use rustc::mir::mir_map::MirMap;
-use rustc::middle::def_id::DefId;
-use rustc::middle::ty::{self, Ty, TyCtxt};
+use rustc::ty::{self, Ty, TyCtxt};
 
 use item_path::item_path_str;
 use trans::item::ItemTranspiler;
@@ -28,7 +28,7 @@ pub fn try_unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
     }
 }
 
-pub fn name_def_id(tcx: &TyCtxt, did: DefId) -> String {
+pub fn name_def_id(tcx: TyCtxt, did: DefId) -> String {
     mk_lean_name(item_path_str(tcx, did))
 }
 
@@ -81,7 +81,7 @@ impl Deps {
 }
 
 pub struct CrateTranspiler<'a, 'tcx: 'a> {
-    pub tcx: &'a TyCtxt<'tcx>,
+    pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
     pub mir_map: &'a MirMap<'tcx>,
     pub config: Config<'a>,
     trans_results: HashMap<DefId, Result<Option<String>, String>>,
@@ -89,7 +89,7 @@ pub struct CrateTranspiler<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
-    pub fn new(tcx: &'a TyCtxt<'tcx>, mir_map: &'a MirMap<'tcx>, config: &'a ::toml::Value) -> CrateTranspiler<'a, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir_map: &'a MirMap<'tcx>, config: &'a ::toml::Value) -> CrateTranspiler<'a, 'tcx> {
         CrateTranspiler {
             tcx: tcx,
             mir_map: mir_map,
@@ -134,7 +134,7 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
         let res = self.config.config.lookup(&format!("replace.\"{}\"", name)).map(|res| Ok(Some(res.as_str().unwrap().to_string())));
         let res = res.unwrap_or_else(|| {
             // HACK: catch panics from rustc libs if we use an API in a wrong way
-            ::std::panic::recover(::std::panic::AssertRecoverSafe::new(|| {
+            ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
                 ItemTranspiler { sup: self, def_id: def_id }.transpile_def_id()
             })).map_err(|err| {
                 match err.downcast_ref::<String>() {

@@ -40,6 +40,10 @@ namespace option
     { existsi y, apply rfl }
   end
 
+  protected definition map [unfold 4] {A B : Type} (f : A → B) : option A → option B
+  | (some x) := some (f x)
+  | none     := none
+
   protected definition bind [unfold 4] {A B : Type} (f : A → option B) : option A → option B
   | (some x) := f x
   | none     := none

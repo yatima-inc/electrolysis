@@ -1,6 +1,6 @@
 // we require access to many rustc internals
 #![feature(rustc_private)]
-#![feature(box_patterns, recover, slice_patterns, advanced_slice_patterns)]
+#![feature(box_patterns, slice_patterns, advanced_slice_patterns)]
 
 extern crate itertools;
 extern crate petgraph;
@@ -9,8 +9,9 @@ extern crate toml;
 #[macro_use]
 extern crate rustc;
 extern crate rustc_const_eval;
+extern crate rustc_data_structures;
 extern crate rustc_driver;
-extern crate rustc_front;
+extern crate rustc_errors;
 extern crate rustc_metadata;
 extern crate rustc_mir;
 extern crate syntax;
@@ -31,18 +32,15 @@ use itertools::Itertools;
 use petgraph::algo::*;
 
 use syntax::ast::NodeId;
-use rustc_front::hir;
-use rustc_front::intravisit;
-use rustc::middle::cstore::CrateStore;
+use rustc::hir::{self, intravisit};
 
 use rustc_driver::driver;
-use syntax::diagnostics;
 use rustc::session;
 
 use trans::krate::{CrateTranspiler, name_def_id};
 
 fn main() {
-    let crate_name = match &std::env::args().collect_vec()[..] {
+    let crate_name = match std::env::args().collect_vec()[..] {
         [_, ref crate_name] => crate_name.clone(),
         _ => panic!("Expected crate name as single cmdline argument"),
     };
@@ -65,19 +63,20 @@ fn main() {
     // parse rustc options
     let rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'");
     let rustc_args = iter::once("rustc").chain(rustc_args.as_str().unwrap().split(" ")).map(|s| s.to_string());
-    let rustc_matches = rustc_driver::handle_options(rustc_args.collect()).expect("error parsing rustc args");
+    let rustc_matches = rustc_driver::handle_options(&rustc_args.collect_vec()).expect("error parsing rustc args");
     let mut options = session::config::build_session_options(&rustc_matches);
     options.crate_name = Some(crate_name);
     options.maybe_sysroot = Some(sysroot);
-    let input = match &rustc_matches.free[..] {
+    let input = match rustc_matches.free[..] {
         [ref file] => path::PathBuf::from(file),
         _ => panic!("expected input file"),
     };
 
     // some more rustc orchestration
-    let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(syntax::parse::token::get_ident_interner()));
-    let sess = session::build_session(options, Some(input.clone()),
-        diagnostics::registry::Registry::new(&rustc::DIAGNOSTICS),
+    let dep_graph = rustc::dep_graph::DepGraph::new(false);
+    let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(&dep_graph));
+    let sess = session::build_session(options, &dep_graph, Some(input.clone()),
+        rustc_errors::registry::Registry::new(&rustc::DIAGNOSTICS),
         cstore.clone()
     );
     let rustc_cfg = session::config::build_configuration(&sess);
@@ -188,7 +187,7 @@ namespace {}
     // write out each cyclic set, in dependencies-first order
     let mut failed = HashSet::new();
     for idx in toposort(&condensed) {
-        match &condensed[idx][..] {
+        match condensed[idx][..] {
             // a singleton set, meaning no cyclic dependencies!
             [def_id] => {
                 let name = name_def_id(tcx, def_id);
@@ -215,7 +214,7 @@ namespace {}
             }
 
             // cyclic dependencies, oh my
-            component => {
+            ref component => {
                 let succeeded = component.iter().filter_map(|def_id| trans_results.get(def_id).and_then(|trans| trans.as_ref().ok())).collect_vec();
                 if succeeded.len() == component.len() {
                     if succeeded.iter().all(|trans| trans.as_ref().unwrap().starts_with("inductive")) {

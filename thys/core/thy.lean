@@ -180,9 +180,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   { have Hwf : length s > length xs, from
       calc length xs < length (x :: xs) : lt_add_succ (length xs) 0
                  ... ≤ length s         : by rewrite [-Hs, length_dropn]; apply sub_le,
-    rewrite [if_neg (λHeq : _ :: _ = nil, list.no_confusion Heq)],
-    have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
-    rewrite [if_pos this, nth_zero, ↑f, Ord'.ord_cmp_eq x needle, ↑ordering, ▸*],
+    rewrite [if_neg (show _ :: _ ≠ nil, from list.no_confusion), nth_zero, ↑f,
+      Ord'.ord_cmp_eq x needle, ↑ordering, ▸*],
     have nth_x : nth self (base + length s₁) = some x,
     begin
       have nth s (length s / 2) = some x, by rewrite [nth_eq_first'_dropn, Hs, ▸*, nth_zero],
