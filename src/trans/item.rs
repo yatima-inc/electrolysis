@@ -5,13 +5,12 @@ use std::ops::Deref;
 use itertools::Itertools;
 
 use syntax::ast::{self, NodeId};
-use rustc_front::hir::{self, FnDecl, PatKind};
-use rustc::front;
-use rustc::front::map::definitions::DefPathData;
-use rustc::middle::def_id::DefId;
-use rustc::middle::subst::{ParamSpace, Subst, Substs};
-use rustc::middle::traits::*;
-use rustc::middle::ty::{self, Ty};
+use rustc::hir::{self, FnDecl, PatKind};
+use rustc::hir::map::definitions::DefPathData;
+use rustc::hir::def_id::DefId;
+use rustc::ty::subst::{ParamSpace, Subst, Substs};
+use rustc::traits::*;
+use rustc::ty::{self, Ty};
 
 use joins::Join;
 use trans::krate::{self, CrateTranspiler};
@@ -22,7 +21,7 @@ pub enum TraitImplLookup<'tcx> {
 }
 
 impl<'tcx> TraitImplLookup<'tcx> {
-    pub fn to_string<'a>(self, trans: &ItemTranspiler<'a, 'tcx>) -> String {
+    pub fn to_string<'a>(self, trans: &ItemTranspiler) -> String {
         match self {
             TraitImplLookup::Static { impl_def_id, params, substs } =>
                 format!("({} {})", trans.name_def_id(impl_def_id), substs.types.iter().map(|ty| {
@@ -63,13 +62,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         krate::name_def_id(self.tcx, did)
     }
 
-    fn transpile_trait_ref_args(&self, trait_ref: ty::TraitRef<'tcx>) -> Vec<String> {
+    fn transpile_trait_ref_args(&self, trait_ref: ty::TraitRef) -> Vec<String> {
         trait_ref.substs.types.iter().map(|ty| {
             self.transpile_ty(ty)
         }).collect()
     }
 
-    fn transpile_associated_type(&self, _trait_ref: ty::TraitRef<'tcx>, name: &ast::Name) -> String {
+    fn transpile_associated_type(&self, _trait_ref: ty::TraitRef, name: &ast::Name) -> String {
         // TODO: avoid name clashes without being too verbose
         //let prefix = self.name_def_id(trait_ref.def_id);
         format!("{}", name) //_{}", prefix, name)
@@ -108,7 +107,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     /// `Add<T, RHS=S>` ~> `'Add T'`
-    pub fn transpile_trait_ref_no_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>) -> String {
+    pub fn transpile_trait_ref_no_assoc_tys(&self, trait_ref: ty::TraitRef) -> String {
         (&self.name_def_id(trait_ref.def_id), self.transpile_trait_ref_args(trait_ref)).join(" ")
     }
 
@@ -120,7 +119,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     /// `Fn(&mut T) -> R` ~> `(R × T)'`
-    pub fn ret_ty(&self, fun_ty: &ty::BareFnTy<'tcx>) -> String {
+    pub fn ret_ty(&self, fun_ty: &ty::BareFnTy) -> String {
         let sig = fun_ty.sig.skip_binder();
         let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
         let mut outputs = match sig.output {
@@ -130,14 +129,14 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         format!("({})", outputs.join(" × "))
     }
 
-    pub fn transpile_ty(&self, ty: Ty<'tcx>) -> String {
+    pub fn transpile_ty(&self, ty: Ty) -> String {
         match ty.sty {
             // may as well go full classical
             ty::TypeVariants::TyBool => "Prop".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
-            ty::TypeVariants::TyTuple(ref tys) => match &tys[..] {
+            ty::TypeVariants::TyTuple(ref tys) => match tys[..] {
                 [] => "unit".to_string(),
                 _ => format!("({})", tys.iter().map(|ty| self.transpile_ty(ty)).join(" × ")),
             },
@@ -192,25 +191,23 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     //
     // very incomplete implementation gleaned from the rustc sources (though those never have to
     // construct a full tree of impls)
-    pub fn infer_trait_impl(&self, trait_ref: ty::TraitRef<'tcx>) -> TraitImplLookup<'tcx> {
-        use rustc::middle::infer;
-
+    pub fn infer_trait_impl<'b, 'c>(&self, trait_ref: ty::TraitRef<'tcx>, infcx: &'b ::rustc::infer::InferCtxt<'b, 'tcx, 'c>) -> TraitImplLookup<'tcx> {
         let span = ::syntax::codemap::DUMMY_SP;
-        let param_env = ty::ParameterEnvironment::for_item(self.tcx, self.node_id());
-        let pred = ty::Binder(trait_ref).to_poly_trait_predicate().subst(self.tcx, &param_env.free_substs);
-        let dbg_param_env = format!("{:?}", param_env.caller_bounds);
-        let infcx = infer::new_infer_ctxt(self.tcx, &self.tcx.tables, Some(param_env), ProjectionMode::Any);
-        let mut selcx = SelectionContext::new(&infcx);
+        let pred: ty::PolyTraitPredicate<'tcx> = ty::Binder(trait_ref).to_poly_trait_predicate();
+
+        let mut selcx = SelectionContext::new(infcx);
         let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
         let selection = selcx.select(&obligation).unwrap_or_else(|err| {
-            panic!("obligation select: {:?} {:?} {:?}", obligation, err, dbg_param_env)
+            panic!("obligation select: {:?} {:?}", obligation, err)
         }).unwrap();
 
         match selection {
             Vtable::VtableImpl(data) => {
                 let nested_traits = data.nested.iter().filter_map(|obl| match obl.predicate {
-                    ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) =>
-                        Some(self.infer_trait_impl(trait_pred.skip_binder().trait_ref).to_string(self)),
+                    ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
+                        let trait_ref = self.tcx.lift(&trait_pred.skip_binder().trait_ref).unwrap();
+                        Some(self.infer_trait_impl(trait_ref, infcx).to_string(self))
+                    }
                     _ => None,
                 }).collect();
 
@@ -218,12 +215,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 for obl in data.nested {
                     fulfill_cx.register_predicate_obligation(&infcx, obl);
                 }
-                let substs = infer::drain_fulfillment_cx_or_panic(span, &infcx, &mut fulfill_cx, data.substs);
+                let substs = infcx.drain_fulfillment_cx_or_panic(span, &mut fulfill_cx, &data.substs);
 
                 TraitImplLookup::Static {
                     impl_def_id: data.impl_def_id,
                     params: nested_traits,
-                    substs: substs
+                    substs: substs.clone()
                 }
             },
             Vtable::VtableParam(_) => {
@@ -244,7 +241,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     fn as_generic_ty_def(&self, attr: Option<&str>) -> String {
         let name = if let Some(attr) = attr { format!("{} {}", self.name(), attr) } else { self.name() };
         // traits are weird
-        let generics = if let front::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) =
+        let generics = if let hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) =
             self.tcx.map.get(self.node_id()) {
             self.tcx.lookup_trait_def(self.def_id).generics.clone()
         } else {
@@ -342,7 +339,6 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     fn transpile_trait_impl(&self) -> String {
         let trait_ref = self.tcx.impl_trait_ref(self.def_id).unwrap();
-
         let mut assoc_ty_substs = self.get_assoc_ty_substs(self.def_id);
         // For `type S = T`, extend `assoc_ty_substs` by `{'S': 'T'}`
         for item in self.tcx.impl_items.borrow().get(&self.def_id).unwrap() {
@@ -356,9 +352,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 format!(" [{}]", self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))
         });
 
-        let supertrait_impls = self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs))
-            .filter(|trait_pred| trait_pred.def_id() != trait_ref.def_id)
-            .map(|trait_pred| self.infer_trait_impl(trait_pred.trait_ref).to_string(self));
+        let supertrait_impls = self.tcx.normalizing_infer_ctxt(ProjectionMode::Any).enter(|infcx| {
+                self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs))
+                    .filter(|trait_pred| trait_pred.def_id() != trait_ref.def_id)
+                    .map(|trait_pred| self.infer_trait_impl(trait_pred.trait_ref, &infcx).to_string(self))
+                    .collect_vec()
+        });
 
         let only_path = format!("traits.\"{}\".only", &self.name_def_id(trait_ref.def_id));
         let only: Option<HashSet<_>> = self.config.config.lookup(&only_path).map(|only| ::toml_value_as_str_array(only).into_iter().collect());
@@ -381,12 +380,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         format!("definition {}{} := ⦃\n  {}\n⦄",
                 self.as_generic_ty_def(Some("[instance]")),
                 trait_params.join(""),
-                (self.transpile_trait_ref(trait_ref, &assoc_ty_substs), supertrait_impls.chain(items)).join(",\n  "))
+                (self.transpile_trait_ref(trait_ref, &assoc_ty_substs), supertrait_impls.into_iter().chain(items)).join(",\n  "))
     }
 
     fn transpile_fn(&self, name: String, decl: &FnDecl) -> String {
         let param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-            PatKind::Ident(_, ref ident, _) => krate::mk_lean_name(&*ident.node.name.as_str()),
+            PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, None) => krate::mk_lean_name(&*name.node.as_str()),
             _ => format!("p{}", i),
         }).collect_vec();
         let return_expr = {
@@ -404,16 +403,16 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     pub fn transpile_def_id(&self) -> Option<String> {
         let name = self.name();
         match self.tcx.map.def_key(self.def_id).disambiguated_data.data {
-            DefPathData::Impl(_) => {
+            DefPathData::Impl => {
                 if let Some(trait_ref) = self.tcx.impl_trait_ref(self.def_id) {
                     if !self.is_marker_trait(trait_ref.def_id) {
                         return Some(self.transpile_trait_impl())
                     }
                 }
             },
-            DefPathData::Type(_) => {
+            DefPathData::TypeNs(_) => {
                 // traits are weird
-                if let front::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) =
+                if let hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) =
                     self.tcx.map.get(self.node_id()) {
                     if !self.is_marker_trait(self.def_id) {
                         return Some(self.transpile_trait(&name))
@@ -426,8 +425,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     })
                 }
             }
-            DefPathData::Value(_) => {
-                if let Some(fn_like) = front::map::blocks::FnLikeNode::from_node(self.tcx.map.get(self.node_id())) {
+            DefPathData::ValueNs(_) => {
+                if let Some(fn_like) = hir::map::blocks::FnLikeNode::from_node(self.tcx.map.get(self.node_id())) {
                     return Some(self.transpile_fn(name, fn_like.decl()))
                 }
             }

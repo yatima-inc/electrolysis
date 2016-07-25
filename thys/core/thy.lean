@@ -194,7 +194,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
   rewrite [↑loop_4, ↑checked.shr],
   rewrite [of_int_one, pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
-  rewrite [split_at_eq s this, ▸*, is_empty_eq, ▸*],
+  rewrite [▸*, split_at_eq s this, ▸*, is_empty_eq, ▸*],
   let s₁ := firstn (length s / 2) s,
   let s₂ := dropn (length s / 2) s,
   have len_s₁ : length s₁ = length s / 2, by
@@ -241,9 +241,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
                  ... ≤ length s / 2         : by
                    rewrite [-Hs, length_dropn]; apply self_sub_half_sub_one_le_half,
     have x :: xs ≠ nil, by contradiction,
-    rewrite [if_neg' this],
-    have 0 < length (x :: xs), from lt_of_le_of_lt !zero_le (lt_add_succ (length xs) 0),
-    rewrite [if_pos' this, ↑get_unchecked, nth_zero, ↑f],
+    rewrite [if_neg' this, ↑get_unchecked, nth_zero, ↑f],
     --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
     cases Ord'.ord_cmp_eq x needle with k cmp_eq,
     rewrite [cmp_eq, ↑ordering, ▸*],

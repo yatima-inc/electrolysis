@@ -25,6 +25,11 @@ definition sem.incr [unfold 3] {a : Type₁} (n : ℕ) : sem a → sem a
 inductive sem.terminates_with {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
 mk : Π {ret x k}, ret = some (x, k) → H x → k ≤ max_cost → sem.terminates_with H max_cost ret
 
+definition sem.map [unfold 4] {a b : Type₁} (f : a → b) (m : sem a) : sem b :=
+option.map (λs, match s with
+| (x, k) := (f x, k)
+end) m
+
 definition sem.return {a : Type₁} (x : a) : sem a := some (x, 0)
 definition sem.bind {a b : Type₁} (m : sem a) (f : a → sem b) : sem b :=
 option.bind m (λs, match s with
