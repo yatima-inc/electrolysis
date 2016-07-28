@@ -1,14 +1,17 @@
 import data.nat data.list
+import theories.topology.limit
 import move
 
 open bool
 open eq.ops
 open int
+open list
 open nat
 open option
 open [notation] partial
 open prod
 open prod.ops
+open - [class] set
 open sum
 
 open option
@@ -227,7 +230,11 @@ section
   end,
   let R₀ := classical.some Hterm_rel in
   have well_founded R₀, from classical.dite_else_false (classical.some_spec Hterm_rel),
-  have loop.fix R₀ s ≠ none, from dif_pos this ▸ classical.some_spec Hterm_rel,
+  have term_rel R₀ s, from classical.some_spec Hterm_rel,
+  have loop.fix R₀ s ≠ none, begin
+    rewrite [↑term_rel at this {2}, dif_pos `well_founded R₀` at this],
+    apply this,
+  end,
   begin
     rewrite [↑loop, dif_pos Hterm_rel],
     apply fix_eq_fix Hterm this,

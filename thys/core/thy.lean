@@ -3,7 +3,8 @@ import core.generated
 import algebra.interval
 import data.finset
 import data.list.sorted
-import move
+
+import asymptotic
 
 open core
 open eq.ops
@@ -15,6 +16,9 @@ open option
 open partial
 open prod.ops
 open set
+open topology
+
+open asymptotic
 
 -- doesn't seem to get picked up by class inference
 definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B → Prop} {f : A → B}
@@ -185,7 +189,7 @@ end
 private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with
   (loop_4_res s)
   (15 + cmp_max_cost)
-  (loop_4 (f, base, s)) :=
+  (loop_4 (f, base, s)) := sorry /-
 have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
   (loop_4_invar.s_in_self Hinvar)
   (sorted.sorted_dropn_of_sorted Hsorted _),
@@ -335,7 +339,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       }
     }
   }
-end)
+end)-/
 
 private definition R := measure (λst : loop_4.state, length st.2)
 
@@ -422,19 +426,30 @@ begin
   apply H
 end
 
-theorem binary_search.sem : sem.terminates_with
-  binary_search_res
-  ((log₂ (2 * length self) + 1) * (16 + Ord'.cmp_max_cost needle self) + 1)
-  (binary_search self needle) :=
+theorem binary_search.sem :
+  ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) (prod_filter at_infty at_infty), --[at ∞ × ∞],
+  ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with
+    binary_search_res
+    (f (length self, Ord'.cmp_max_cost needle self))
+    (binary_search self needle) :=
 begin
-  cases binary_search_by.sem with  _ res k Hsem_eq Hres Hmax_cost,
-  rewrite [↑binary_search, bind_return,
-    funext (λx, congr_arg (sem.incr 1) bind_return),
-    ↑binary_search_by,
-    Hsem_eq],
-  apply sem.terminates_with.mk rfl,
-  apply Hres,
-  apply add_le_add_right Hmax_cost
+  existsi λp, ((log₂ (2 * p.1) + 1) * (16 + p.2) + 1),
+  split,
+  { apply ub_add_const,
+    apply ub_mul_prod_filter,
+    { apply ub_add_const,
+      { apply ub_comp_of_nondecreasing_of_ub (nondecreasing_log dec_trivial),
+      }
+    }
+  },
+  { cases binary_search_by.sem with  _ res k Hsem_eq Hres Hmax_cost,
+    rewrite [↑binary_search, bind_return,
+      funext (λx, congr_arg (sem.incr 1) bind_return),
+      ↑binary_search_by,
+      Hsem_eq],
+    apply sem.terminates_with.mk rfl,
+    apply Hres,
+    apply add_le_add_right Hmax_cost }
 end
 
 end binary_search

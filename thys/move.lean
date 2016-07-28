@@ -475,7 +475,7 @@ section
   attribute Max₀ log [reducible]
 
   -- why did i prove this
-  lemma log_base_one_eq_zero (x : ℕ) : log 0 x = 0 :=
+  lemma log_base_zero_eq_zero (x : ℕ) : log 0 x = 0 :=
   begin
     have ¬finite {y | 0^y ≤ x}, begin
       apply not_finite_of_no_upper_bound,
@@ -491,7 +491,7 @@ section
   lemma log_zero_eq_zero : log b 0 = 0 :=
   begin
     cases eq_zero_or_pos b,
-    { rewrite [`b = 0`], apply log_base_one_eq_zero },
+    { rewrite [`b = 0`], apply log_base_zero_eq_zero },
     { have {y | b^y ≤ 0} = ∅, from eq_empty_of_forall_not_mem (take y,
         suppose b^y ≤ 0,
         have b^y = 0, from eq_zero_of_le_zero this,
@@ -500,7 +500,8 @@ section
       rewrite [↑log, this, ↑Max₀, ↑set.Max, to_finset_empty] }
   end
 
-  premise (Hb : b > 1)
+  hypothesis (Hb : b > 1)
+  include Hb
 
   private definition fin : finite {y | b^y ≤ x} :=
   finite_subset (show {y | b^y ≤ x} ⊆ '[0, x], from
@@ -511,9 +512,28 @@ section
   private definition nonempty : {y | b^y ≤ x} ≠ ∅ :=
   ne_empty_of_mem (show b^0 ≤ x, from Hx)
 
+  lemma log_le {a : ℕ} (H : ∀ y, b ^ y ≤ x → y ≤ a)
+  : log b x ≤ a :=
+  let Hx := Hx in
+  begin
+    apply Max_le,
+    apply fin,
+    apply nonempty Hx,
+    apply H
+  end
+
+  lemma log_one_eq_zero : log b 1 = 0 :=
+  eq_zero_of_le_zero (log_le !le.refl (take y,
+    suppose b^y ≤ 1,
+    show y ≤ 0, begin
+      cases y,
+      { apply le.refl },
+      { exfalso, apply nat.lt_irrefl _ (lt_of_le_of_lt this (pow_gt_one Hb !zero_lt_succ)) }
+    end))
+
   lemma log.rec : log b (b * x) = log b x + 1 :=
-  have finite {y | b^y ≤ x}, from fin Hb,
-  have finite {y | b^y ≤ b * x}, from fin Hb,
+  have finite {y | b^y ≤ x}, from fin,
+  have finite {y | b^y ≤ b * x}, from fin,
   have Hx' : b * x ≥ 1, from nat.mul_le_mul (le_of_lt Hb) Hx,
   have log b x + 1 = Max y ∈ {y | b^y ≤ x}, y + 1, from eq.symm (Max_add_right _ _ (nonempty Hx)),
   begin
@@ -530,13 +550,22 @@ section
     }
   end
 
-  lemma log.monotone {x' : ℕ} (H : x ≤ x') : log b x ≤ log b x' :=
-  have finite {y | b^y ≤ x}, from fin Hb,
-  have finite {y | b^y ≤ x'}, from fin Hb,
+  lemma log_pow : log b (b^x) = x :=
+  begin
+    induction x with x ih,
+    { apply log_one_eq_zero },
+    { have b^x ≥ 1, from pow_ge_one _ (le_of_lt Hb),
+      rewrite [pow_succ, log.rec this, ih] }
+  end
+
+  lemma nondecreasing_log : nondecreasing (log b) :=
+  take x x',
+  assume H : x ≤ x',
+  have finite {y | b^y ≤ x'}, from fin,
   begin
     cases x,
     { rewrite log_zero_eq_zero, apply zero_le },
-    { apply Max_le _ (nonempty !one_le_succ),
+    { apply log_le !one_le_succ,
       intro y Hy,
       apply le_Max, apply le.trans Hy H }
   end
@@ -566,3 +595,67 @@ namespace finset
   lemma mem_of_mem_to_finset {A : Type} [decidable_eq A] {xs : list A} {x : A} (H : x ∈ to_finset xs)
     : x ∈ xs := mem_of_mem_erase_dup H
 end finset
+
+namespace set
+  open prod
+  open filter
+
+  definition prod {A B : Type} (a : set A) (b : set B) : set (A × B) :=
+  {p | pr1 p ∈ a ∧ pr2 p ∈ b}
+
+  namespace prod
+  section
+    variables {A B : Type}
+
+    notation a `*` b := prod a b
+
+    lemma univ : @univ A * @univ B = univ :=
+    eq_of_subset_of_subset
+    (take x H, !mem_univ)
+    (take x H, and.intro !mem_univ !mem_univ)
+
+    lemma subseteq {a₁ a₂ : set A} {b₁ b₂ : set B} (Ha : a₁ ⊆ a₂) (Hb : b₁ ⊆ b₂) :
+      a₁ * b₁ ⊆ a₂ * b₂ :=
+    take x Hx,
+    obtain Hx₁ Hx₂, from Hx,
+    and.intro (Ha Hx₁) (Hb Hx₂)
+
+    lemma subset_inter (a₁ a₂ : set A) (b₁ b₂ : set B) :
+      (a₁ ∩ a₂) * (b₁ ∩ b₂) ⊆ (a₁ * b₁) ∩ (a₂ * b₂) :=
+    take x H,
+    obtain Ha Hb₁ Hb₂, from H,
+    obtain Ha₁ Ha₂, from Ha,
+    and.intro (and.intro Ha₁ Hb₁) (and.intro Ha₂ Hb₂)
+  end
+  end prod
+
+  namespace prod_filter
+  section
+    parameters {A B : Type} (Fa : filter A) (Fb : filter B)
+    
+    definition sets := {p | ∃₀a ∈ Fa, ∃₀b ∈ Fb, prod a b ⊆ p}
+  end
+  end prod_filter
+
+  definition prod_filter {A B : Type} (Fa : filter A) (Fb : filter B) : filter (A × B) := ⦃filter,
+    sets := prod_filter.sets Fa Fb,
+    univ_mem_sets := bounded_exists.intro (univ_mem_sets Fa) (
+      bounded_exists.intro (univ_mem_sets Fb) (subset_univ _)
+    ),
+    inter_closed := take a b Ha Hb,
+    obtain a₁ Ha₁ b₁ Hb₁ H₁, from Ha,
+    obtain a₂ Ha₂ b₂ Hb₂ H₂, from Hb,
+    bounded_exists.intro (inter_closed Fa Ha₁ Ha₂) (
+      bounded_exists.intro (inter_closed Fb Hb₁ Hb₂) (subset_inter
+        (take x H,
+         obtain Ha Hb, from H,
+         H₁ (and.intro (and.left Ha) (and.left Hb)))
+        (take x H,
+         obtain Ha Hb, from H,
+         H₂ (and.intro (and.right Ha) (and.right Hb))))
+    ),
+    is_mono := take p₁ p₂ `p₁ ⊆ p₂` Hp₁,
+    obtain a Ha b Hb Hp₁, from Hp₁,
+    bounded_exists.intro Ha (bounded_exists.intro Hb (subset.trans Hp₁ `p₁ ⊆ p₂`))
+  ⦄
+end set
