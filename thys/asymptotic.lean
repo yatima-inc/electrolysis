@@ -134,13 +134,13 @@ namespace asymptotic
                   ... ≤ c₁ * (c₃ * g₁ (g₂ a)) : mul_le_mul_left _ Hc₃
                   ... = c₁ * c₃ * (g₁ ∘ g₂) a : mul.assoc))
 
-  lemma ub_add_absorb (H : f₂ ∈ 𝓞(f₁) F) : f₁ + f₂ ∈ 𝓞(f₁) F :=
-  obtain c Hc, from H,
-  exists.intro (1 + c) (eventually_mono Hc (
-    take a,
-    suppose f₂ a ≤ c * f₁ a,
-    calc f₁ a + f₂ a ≤ f₁ a + c * f₁ a : add_le_add_left this _
-                 ... = (1 + c) * f₁ a  : by rewrite [nat.right_distrib, one_mul]))
+  lemma ub_add (H₁ : f₁ ∈ 𝓞(g) F) (H₂ : f₂ ∈ 𝓞(g) F) : f₁ + f₂ ∈ 𝓞(g) F :=
+  obtain c₁ Hc₁, from H₁,
+  obtain c₂ Hc₂, from H₂,
+  exists.intro (c₁ + c₂) (eventually_mono (eventually_and Hc₁ Hc₂) (
+    take a Ha,
+    calc f₁ a + f₂ a ≤ c₁ * g a + c₂ * g a : add_le_add (and.left Ha) (and.right Ha)
+                 ... = (c₁ + c₂) * g a     : nat.right_distrib))
 
   lemma ub_mul_prod_filter {A B : Type} {f₁ g₁ : A → ℕ} {f₂ g₂ : B → ℕ} {F₁ : filter A}
     {F₂ : filter B} (H₁ : f₁ ∈ 𝓞(g₁) F₁) (H₂ : f₂ ∈ 𝓞(g₂) F₂) :
@@ -159,6 +159,11 @@ namespace asymptotic
     suppose a ≥ b^c,
     calc c * 1 = log b (b^c) : by rewrite [mul_one, log_pow H]
            ... ≤ log b a     : nondecreasing_log H this)
+
+  lemma id_unbounded : id ∈ ω(1) [at ∞] :=
+  take c, eventually_at_infty_intro (take a,
+    suppose a ≥ c,
+    show c * 1 ≤ a, by rewrite mul_one; apply this)
 
   lemma ub_of_eventually_le (H : eventually (λa, f₁ a ≤ f₂ a) F) : f₁ ∈ 𝓞(f₂) F :=
   exists.intro 1 (eventually_mono H (take a Ha,

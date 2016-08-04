@@ -127,6 +127,13 @@ open _T_.slice_SliceExt.binary_search_by
 
 parameter {T : Type₁}
 parameter [Ord' T]
+
+attribute FnMut.call_mut [unfold 4]
+attribute fn [constructor]
+
+-- use separate section for everything but the main theorem
+section
+
 parameter self : slice T
 parameter needle : T
 
@@ -134,9 +141,6 @@ hypothesis Hsorted : sorted le self
 
 abbreviation f y := sem.incr 1 (Ord.cmp y needle)
 abbreviation cmp_max_cost := Ord'.cmp_max_cost needle self
-
-attribute FnMut.call_mut [unfold 4]
-attribute fn [constructor]
 
 /- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
 
@@ -425,46 +429,43 @@ begin
   rewrite [↑binary_search_by, -!loop.fix_eq_loop this],
   apply H
 end
+end
 
 local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
 theorem binary_search.sem :
   ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
   ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with
-    binary_search_res
+    (binary_search_res self needle)
     (f (length self, Ord'.cmp_max_cost needle self))
     (binary_search self needle) :=
 begin
   existsi λp, (log₂ (2 * p.1) + 1) * (16 + p.2) + 1,
   split,
-  { have (λp, (log₂ (2 * p.1) + 1) * (16 + p.2)) ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞], from
+  { apply ub_add,
+    show (λp, (log₂ (2 * p.1) + 1) * (16 + p.2)) ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞], from
     ub_mul_prod_filter
       (calc (λa, log₂ (2 * a) + 1)
           ≼ (λa, log₂ a + 2) : ub_of_eventually_le (eventually_at_infty_intro (
             take a, suppose a ≥ 1,
             calc log₂ (2 * a) + 1 = log₂ a + 1 + 1 : { @log.rec 2 dec_trivial _ this }
                               ... ≤ log₂ a + 2     : le_of_eq !add.assoc))
-      ... ≼ log₂ : ub_add_absorb (
+      ... ≼ log₂ : ub_add asymptotic.le.refl (
             calc (λx, 2) ≼ (λx, 1) : ub_const
-                     ... ≼ log₂    : asymptotic.le_of_lt (@log_unbounded 2 dec_trivial)))
+                    ... ≼ log₂    : asymptotic.le_of_lt (@log_unbounded 2 dec_trivial)))
       (have (λa, 16) ≼ id, from ub_of_eventually_le (eventually_at_infty_intro (λx Hx, Hx)),
         calc (λa, 16 + a) = (λa, a + 16) : funext (λa, !add.comm)
-                      ... ≼ id           : ub_add_absorb this),
-    apply asymptotic.le.trans,
-    { apply ub_add_absorb,
+                      ... ≼ id           : ub_add asymptotic.le.refl this),
+    show (λp, 1) ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
+    begin
       rewrite [-mul_one 1 at {1}],
-      now,
-      { apply asymptotic.le.trans,
-        { apply sub_subset_ub, apply log_unbounded _ },
-      },
-    },
-    apply ub_mul_prod_filter,
-    { apply ub_add_const,
-      { apply ub_comp_of_nondecreasing_of_ub (nondecreasing_log dec_trivial),
-      }
-    }
+      apply ub_mul_prod_filter,
+      { apply asymptotic.le_of_lt, apply log_unbounded dec_trivial },
+      { apply asymptotic.le_of_lt, apply id_unbounded },
+    end
   },
-  { cases binary_search_by.sem with  _ res k Hsem_eq Hres Hmax_cost,
+  { intro self needle Hsorted,
+    cases binary_search_by.sem self needle Hsorted with  _ res k Hsem_eq Hres Hmax_cost,
     rewrite [↑binary_search, bind_return,
       funext (λx, congr_arg (sem.incr 1) bind_return),
       ↑binary_search_by,
