@@ -189,14 +189,14 @@ end
 private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with
   (loop_4_res s)
   (15 + cmp_max_cost)
-  (loop_4 (f, base, s)) := sorry /-
+  (loop_4 (f, base, s)) :=
 have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
   (loop_4_invar.s_in_self Hinvar)
   (sorted.sorted_dropn_of_sorted Hsorted _),
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
   rewrite [↑loop_4, ↑checked.shr],
-  rewrite [of_int_one, pow_one],
+  krewrite [of_int_one, pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
   rewrite [▸*, split_at_eq s this, ▸*, is_empty_eq, ▸*],
   let s₁ := firstn (length s / 2) s,
@@ -339,7 +339,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       }
     }
   }
-end)-/
+end)
 
 private definition R := measure (λst : loop_4.state, length st.2)
 
@@ -384,13 +384,13 @@ begin
         add_le_add_right (add_le_add_left
           (show k' ≤ (log₂ (length s) + 1) * (16 + cmp_max_cost), from le.trans Hmax_cost' (mul_le_mul_right _
             (show log₂ (2 * length s') + 1 ≤ log₂ (length s) + 1, from add_le_add_right
-              (log.monotone dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
+              (nondecreasing_log dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
               _)))
         _) _
       ... = (log₂ (length s) + 1 + 1) * (16 + cmp_max_cost) :
         by rewrite [add.comm, -+add.assoc, nat.right_distrib (_ + 1), add.comm, one_mul]
       ... = (log₂ (2 * length s) + 1) * (16 + cmp_max_cost) : begin
-        { rewrite [-log.rec (pos_of_ne_zero `length s ≠ 0`) (show 2 > 1, from dec_trivial)] }
+        { rewrite [-@log.rec 2 dec_trivial _ (pos_of_ne_zero `length s ≠ 0`)] }
       end
     },
     { esimp,
@@ -426,16 +426,38 @@ begin
   apply H
 end
 
+local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
+
 theorem binary_search.sem :
-  ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) (prod_filter at_infty at_infty), --[at ∞ × ∞],
+  ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
   ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with
     binary_search_res
     (f (length self, Ord'.cmp_max_cost needle self))
     (binary_search self needle) :=
 begin
-  existsi λp, ((log₂ (2 * p.1) + 1) * (16 + p.2) + 1),
+  existsi λp, (log₂ (2 * p.1) + 1) * (16 + p.2) + 1,
   split,
-  { apply ub_add_const,
+  { have (λp, (log₂ (2 * p.1) + 1) * (16 + p.2)) ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞], from
+    ub_mul_prod_filter
+      (calc (λa, log₂ (2 * a) + 1)
+          ≼ (λa, log₂ a + 2) : ub_of_eventually_le (eventually_at_infty_intro (
+            take a, suppose a ≥ 1,
+            calc log₂ (2 * a) + 1 = log₂ a + 1 + 1 : { @log.rec 2 dec_trivial _ this }
+                              ... ≤ log₂ a + 2     : le_of_eq !add.assoc))
+      ... ≼ log₂ : ub_add_absorb (
+            calc (λx, 2) ≼ (λx, 1) : ub_const
+                     ... ≼ log₂    : asymptotic.le_of_lt (@log_unbounded 2 dec_trivial)))
+      (have (λa, 16) ≼ id, from ub_of_eventually_le (eventually_at_infty_intro (λx Hx, Hx)),
+        calc (λa, 16 + a) = (λa, a + 16) : funext (λa, !add.comm)
+                      ... ≼ id           : ub_add_absorb this),
+    apply asymptotic.le.trans,
+    { apply ub_add_absorb,
+      rewrite [-mul_one 1 at {1}],
+      now,
+      { apply asymptotic.le.trans,
+        { apply sub_subset_ub, apply log_unbounded _ },
+      },
+    },
     apply ub_mul_prod_filter,
     { apply ub_add_const,
       { apply ub_comp_of_nondecreasing_of_ub (nondecreasing_log dec_trivial),
