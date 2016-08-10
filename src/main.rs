@@ -4,6 +4,7 @@
 
 extern crate itertools;
 extern crate petgraph;
+extern crate regex;
 extern crate toml;
 
 #[macro_use]
@@ -30,6 +31,7 @@ use std::path;
 
 use itertools::Itertools;
 use petgraph::algo::*;
+use regex::Regex;
 
 use syntax::ast::NodeId;
 use rustc::hir::{self, intravisit};
@@ -40,11 +42,6 @@ use rustc::session;
 use trans::krate::{CrateTranspiler, name_def_id};
 
 fn main() {
-    let crate_name = match std::env::args().collect_vec()[..] {
-        [_, ref crate_name] => crate_name.clone(),
-        _ => panic!("Expected crate name as single cmdline argument"),
-    };
-
     // get rust path from rustc itself
     let sysroot = std::process::Command::new("rustc")
         .arg("--print")
@@ -54,23 +51,37 @@ fn main() {
         .stdout;
     let sysroot = path::PathBuf::from(String::from_utf8(sysroot).unwrap().trim());
 
-    // load TOML config from 'thys/$crate/config.toml'
-    let mut config = String::new();
-    let mut config_file = File::open(path::Path::new("thys").join(&crate_name).join("config.toml")).expect("error opening crate config");
-    config_file.read_to_string(&mut config).unwrap();
-    let config: toml::Value = config.parse().unwrap();
+    let input = match std::env::args().collect_vec()[..] {
+        [_, ref input] => input.clone(),
+        _ => panic!("Expected .rs/.toml/crate name as single cmdline argument"),
+    };
+
+    let (crate_name, rustc_args, config) = if input.ends_with(".rs") {
+        ("test".to_string(), input, toml::Value::Table(toml::Table::new()))
+    } else {
+        let (crate_name, config_path) = if input.ends_with(".toml") {
+            ("test".to_string(), path::PathBuf::from(input))
+        } else {
+            let config_path = path::Path::new("thys").join(&input).join("config.toml");
+            (input, config_path)
+        };
+        // load TOML config from 'thys/$crate/config.toml'
+        let mut config = String::new();
+        let mut config_file = File::open(config_path).expect("error opening crate config");
+        config_file.read_to_string(&mut config).unwrap();
+        let config: toml::Value = config.parse().unwrap();
+        let rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'").as_str().unwrap().to_string();
+        (crate_name, rustc_args, config)
+    };
 
     // parse rustc options
-    let rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'");
-    let rustc_args = iter::once("rustc").chain(rustc_args.as_str().unwrap().split(" ")).map(|s| s.to_string());
+    let rustc_args = iter::once("rustc").chain(rustc_args.split(" ")).map(|s| s.to_string());
     let rustc_matches = rustc_driver::handle_options(&rustc_args.collect_vec()).expect("error parsing rustc args");
     let mut options = session::config::build_session_options(&rustc_matches);
     options.crate_name = Some(crate_name);
     options.maybe_sysroot = Some(sysroot);
-    let input = match rustc_matches.free[..] {
-        [ref file] => path::PathBuf::from(file),
-        _ => panic!("expected input file"),
-    };
+    options.crate_types = vec![rustc::session::config::CrateType::CrateTypeRlib];
+    let input = path::PathBuf::from(rustc_matches.free.iter().join(" "));
 
     // some more rustc orchestration
     let dep_graph = rustc::dep_graph::DepGraph::new(false);
@@ -128,13 +139,17 @@ fn toml_value_as_str_array(val: &::toml::Value) -> Vec<&str> {
 fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.unwrap();
-    let base = path::Path::new("thys").join(crate_name);
+    let input = match state.input {
+        &rustc::session::config::Input::File(ref path) => path.clone(),
+        _ => unreachable!(),
+    };
+    let base = input.parent().unwrap();
 
     let mut trans = CrateTranspiler::new(tcx, &state.mir_map.unwrap(), config);
     println!("Transpiling...");
 
     let targets = config.lookup("targets").map(|targets| {
-        toml_value_as_str_array(targets).into_iter().collect::<HashSet<_>>()
+        Regex::new(&format!("^{}$", toml_value_as_str_array(targets).into_iter().join("|"))).unwrap()
     });
 
     // find targets' DefIds and transpile them
@@ -143,7 +158,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
     for id in id_collector.ids {
         let def_id = tcx.map.local_def_id(id);
         let name = name_def_id(tcx, def_id);
-        if targets.iter().all(|targets| targets.contains(&*name)) {
+        if targets.iter().all(|targets| targets.is_match(&*name)) {
             trans.transpile(def_id);
         }
     }
@@ -163,8 +178,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
     for dep in crate_deps {
         try!(write!(f, "import {}\n", dep));
     }
-    try!(write!(f, "import data.nat data.list
-
+    try!(write!(f, "
 noncomputable theory
 
 open classical
@@ -177,7 +191,6 @@ open sum
         try!(write!(f, "open {}\n", crate_name));
     }
     try!(write!(f, "
-
 namespace {}
 
 ", crate_name));

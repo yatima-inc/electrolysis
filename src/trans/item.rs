@@ -411,18 +411,22 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 }
             },
             DefPathData::TypeNs(_) => {
-                // traits are weird
-                if let hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) =
-                    self.tcx.map.get(self.node_id()) {
-                    if !self.is_marker_trait(self.def_id) {
-                        return Some(self.transpile_trait(&name))
+                let dings = self.tcx.map.get(self.node_id());
+                match dings {
+                    hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) => {
+                        // traits are weird
+                        if !self.is_marker_trait(self.def_id) {
+                            return Some(self.transpile_trait(&name))
+                        }
                     }
-                } else {
-                    return Some(match self.tcx.lookup_item_type(self.def_id).ty.sty {
-                        ty::TypeVariants::TyEnum(ref adt_def, _) => self.transpile_enum(&name, adt_def),
-                        ty::TypeVariants::TyStruct(ref adt_def, _) => self.transpile_struct(adt_def.struct_variant()),
-                        _ => panic!("unimplemented: transpiling type {:?}", self.def_id),
-                    })
+                    hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemExternCrate(..), .. }) => { }
+                    _ => {
+                        return Some(match self.tcx.lookup_item_type(self.def_id).ty.sty {
+                            ty::TypeVariants::TyEnum(ref adt_def, _) => self.transpile_enum(&name, adt_def),
+                            ty::TypeVariants::TyStruct(ref adt_def, _) => self.transpile_struct(adt_def.struct_variant()),
+                            _ => panic!("unimplemented: transpiling type {:?}", self.def_id),
+                        })
+                    }
                 }
             }
             DefPathData::ValueNs(_) => {

@@ -19,7 +19,7 @@ pub fn item_path_str(tcx: TyCtxt, def_id: DefId) -> String {
 
 fn push_item_path(tcx: TyCtxt, buffer: &mut String, def_id: DefId)
 {
-    let key = tcx.map.def_key(def_id);
+    let key = tcx.def_key(def_id);
     match key.disambiguated_data.data {
         DefPathData::CrateRoot => {
             assert!(key.parent.is_none());
@@ -52,6 +52,7 @@ fn push_impl_path(tcx: TyCtxt, buffer: &mut String, impl_def_id: DefId)
     push(buffer, &self_ty);
 
     if let Some(trait_ref) = tcx.impl_trait_ref(impl_def_id) {
+        push(buffer, "as");
         // avoid nested :: separators
         push(buffer, &format!("{}", trait_ref).replace("::", "_"));
     }
