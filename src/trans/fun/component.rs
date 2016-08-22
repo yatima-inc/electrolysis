@@ -18,7 +18,7 @@ pub struct Component<'a> {
 impl<'a> Component<'a> {
     pub fn new(trans: &FnTranspiler, start: BasicBlock, blocks: &'a [BasicBlock], outer: Option<&'a Component<'a>>)
         -> Component<'a> {
-        let loops = mir_sccs(trans.mir(), start, blocks);
+        let loops = mir_sccs(trans.mir, start, blocks);
         let loops = loops.into_iter().filter(|l| l.len() > 1).collect();
         Component {
             outer: outer,
@@ -62,7 +62,7 @@ impl<'a> Component<'a> {
         let mut uses = Vec::new();
 
         for &bb in blocks {
-            for stmt in &trans.mir()[bb].statements {
+            for stmt in &trans.mir[bb].statements {
                 match stmt.kind {
                     StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
                         defs.push(lv);
@@ -74,7 +74,7 @@ impl<'a> Component<'a> {
                     }
                 }
             }
-            if let Some(ref term) = trans.mir()[bb].terminator {
+            if let Some(ref term) = trans.mir[bb].terminator {
                 match term.kind {
                     TerminatorKind::Call { ref func, ref args, .. } => {
                         operand(func, &mut uses);

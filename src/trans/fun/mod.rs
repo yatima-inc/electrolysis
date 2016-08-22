@@ -14,7 +14,7 @@ use rustc::ty::subst::Subst;
 use rustc_data_structures::indexed_vec::Idx;
 
 use self::component::Component;
-use joins::Join;
+use joins::*;
 use trans::item;
 use trans::krate::{self, mk_lean_name};
 
@@ -52,10 +52,12 @@ impl MaybeValue {
     fn partial<T: ToString>(val: T) -> MaybeValue { MaybeValue { val: val.to_string(), total: false } }
 }
 
+#[derive(Clone)]
 pub struct FnTranspiler<'a, 'tcx: 'a> {
     sup: &'a item::ItemTranspiler<'a, 'tcx>,
     param_names: Vec<String>,
     return_expr: String,
+    mir: &'a Mir<'tcx>,
     // helper definitions to be prepended to the translation
     prelude: Vec<String>,
     refs: HashMap<Local, &'a Lvalue<'tcx>>,
@@ -73,6 +75,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>, param_names: Vec<String>, return_expr: String) -> FnTranspiler<'a, 'tcx> {
         FnTranspiler {
             sup: sup,
+            mir: &sup.mir_map.map[&sup.node_id()],
             param_names: param_names,
             return_expr: return_expr,
             prelude: Default::default(),
@@ -80,13 +83,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn mir(&self) -> &'a Mir<'tcx> {
-        &self.mir_map.map[&self.node_id()]
-    }
-
     fn local_name(&self, lv: &Lvalue) -> String {
         match *lv {
-            Lvalue::Var(idx) => mk_lean_name(&*self.mir().var_decls[idx].name.as_str()),
+            Lvalue::Var(idx) => mk_lean_name(&*self.mir.var_decls[idx].name.as_str()),
             Lvalue::Temp(idx) => format!("t{}", idx.index()),
             Lvalue::Arg(idx) => self.param_names[idx.index()].clone(),
             Lvalue::ReturnPointer => "ret".to_string(),
@@ -113,8 +112,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn locals(&self) -> Vec<Lvalue<'tcx>> {
-        self.mir().var_decls.indices().map(Lvalue::Var)
-            .chain(self.mir().temp_decls.indices().map(Lvalue::Temp))
+        self.mir.var_decls.indices().map(Lvalue::Var)
+            .chain(self.mir.temp_decls.indices().map(Lvalue::Temp))
             .chain(iter::once(Lvalue::ReturnPointer))
             .collect()
     }
@@ -167,11 +166,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn lvalue_ty(&self, lv: &Lvalue<'tcx>) -> Ty<'tcx> {
-        self.mir().lvalue_ty(self.tcx, lv).to_ty(self.tcx)
+        self.mir.lvalue_ty(self.tcx, lv).to_ty(self.tcx)
     }
 
     fn lvalue_idx(&self, lv: &Lvalue) -> Option<Local> {
-        self.mir().local_index(lv).or_else(|| {
+        self.mir.local_index(lv).or_else(|| {
             match *lv {
                 Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                     self.lvalue_idx(base),
@@ -234,7 +233,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn transpile_constant(&self, c: &Constant) -> String {
         match c.literal {
             Literal::Value { ref value } => self.transpile_constval(value),
-            _ => panic!("unimplemented: constant {:?}", c),
+            Literal::Promoted { index }  => format!("promoted_{}", index.index()),
+            Literal::Item { def_id, .. } => self.name_def_id(def_id),
         }
     }
 
@@ -252,14 +252,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
-                    UnOp::Not if self.mir().operand_ty(self.tcx, operand).is_bool() => "bool.bnot",
+                    UnOp::Not if self.mir.operand_ty(self.tcx, operand).is_bool() => "bool.bnot",
                     UnOp::Not => "NOT",
                     UnOp::Neg => "-",
                 }, self.get_operand(operand)),
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
                 let (so1, so2) = (self.get_operand(o1), self.get_operand(o2));
                 return match op {
-                    BinOp::Sub if !self.mir().operand_ty(self.tcx, o1).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
+                    BinOp::Sub if !self.mir.operand_ty(self.tcx, o1).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
                     BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked.div", so1, so2)),
                     BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked.mod", so1, so2)),
                     BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, so2)),
@@ -286,16 +286,22 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     MaybeValue::partial(format!("sem.map (λx, (x, true)) ({})", val))
                 }
             }
-            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if self.mir().operand_ty(self.tcx, op).is_integral() && ty.is_integral() => {
+            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if self.mir.operand_ty(self.tcx, op).is_integral() && ty.is_integral() => {
                 format!("({}.of_num {})",
                         if ty.is_signed() { "int" } else { "nat" },
                         self.get_operand(op))
             }
+            Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
+            Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
                 return self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 let mut ops = ops.iter().map(|op| self.get_operand(op));
                 format!("({})", ops.join(", "))
+            }
+            Rvalue::Aggregate(AggregateKind::Vec, ref ops) => {
+                let mut ops = ops.iter().map(|op| self.get_operand(op));
+                format!("[{}]", ops.join(", "))
             }
             Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _), ref ops) => {
                 self.add_dep(adt_def.did);
@@ -328,9 +334,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 })).collect();
                 let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
                 let mut trans = FnTranspiler::new(&trans, param_names, "return ret".to_string());
-                let blocks = trans.mir().basic_blocks().indices().collect_vec();
-                let mut comp = Component::new(&trans, START_BLOCK, &blocks[..], None);
-                let body = trans.transpile_basic_block(START_BLOCK, &mut comp);
+                let body = trans.transpile_mir();
                 self.prelude.append(&mut trans.prelude);
                 format!("(λ{}, {})", trans.param_names.iter().skip(upvars.len()).join(" "), body)
             }
@@ -469,7 +473,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             return format!("loop ({}) {}", app, l_comp.state_val);
         }
 
-        let data = &self.mir()[bb];
+        let data = &self.mir[bb];
         let stmts = data.statements.iter().map(|s| self.transpile_statement(s)).collect_vec();
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match terminator.kind {
@@ -517,6 +521,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         stmts.into_iter().chain(terminator).join("")
     }
 
+    fn transpile_mir(&mut self) -> String {
+        let blocks = self.mir.basic_blocks().indices().collect_vec();
+        let mut comp = Component::new(&self, START_BLOCK, &blocks[..], None);
+        self.transpile_basic_block(START_BLOCK, &mut comp)
+    }
+
     fn ret_ty(&self) -> String {
         match self.tcx.lookup_item_type(self.def_id).ty.sty {
             ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) =>
@@ -531,13 +541,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             return "".to_string()
         }
 
-        let params = self.param_names.iter().zip(self.mir().arg_decls.iter()).map(|(name, arg)| {
+        let params = self.param_names.iter().zip(self.mir.arg_decls.iter()).map(|(name, arg)| {
             format!("({} : {})", name, self.transpile_ty(&arg.ty))
         }).collect_vec();
 
-        let blocks = self.mir().basic_blocks().indices().collect_vec();
-        let mut comp = Component::new(&self, START_BLOCK, &blocks[..], None);
-        let body = self.transpile_basic_block(START_BLOCK, &mut comp);
+        let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {
+            let body = FnTranspiler { mir: mir, ..self.clone() }.transpile_mir();
+            format!("let' promoted_{} ←\n{};", idx.index(), body)
+        }).collect_vec();
+
+        let body = (promoted, self.transpile_mir()).join("\n");
 
         let ty_params = self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
         let assoc_ty_substs = self.get_assoc_ty_substs(self.def_id);

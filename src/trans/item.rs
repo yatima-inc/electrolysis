@@ -122,11 +122,11 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     pub fn ret_ty(&self, fun_ty: &ty::BareFnTy) -> String {
         let sig = fun_ty.sig.skip_binder();
         let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
-        let mut outputs = match sig.output {
-            ty::FnOutput::FnConverging(out_ty) => iter::once(out_ty).chain(muts).map(|ty| self.transpile_ty(ty)),
-            ty::FnOutput::FnDiverging => panic!("unimplemented: diverging function"),
+        let out_ty = match sig.output {
+            ty::FnOutput::FnConverging(out_ty) => self.transpile_ty(out_ty),
+            ty::FnOutput::FnDiverging => "empty".to_string(),
         };
-        format!("({})", outputs.join(" × "))
+        format!("({})", (out_ty, muts.map(|ty| self.transpile_ty(ty))).join(" × "))
     }
 
     pub fn transpile_ty(&self, ty: Ty) -> String {
@@ -393,7 +393,11 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             let muts = sig.inputs.iter().zip(param_names.iter()).filter_map(|(ty, name)| {
                 krate::try_unwrap_mut_ref(ty).map(|_| name.clone())
             });
-            let ret = if sig.output.unwrap().is_nil() { "()" } else { "ret" };
+            let ret = match sig.output {
+                ty::FnOutput::FnConverging(ref ty) if ty.is_nil() => "()",
+                // doesn't matter if diverging
+                _ => "ret",
+            };
             format!("return ({})\n", (ret, muts).join(", "))
         };
 
