@@ -71,7 +71,7 @@ namespace slice
 
 /- The SliceExt trait declares all methods on slices. It has a single implementation
    for [T] (= slice T, rendered as _T_). -/
-open _T_.slice_SliceExt
+open _T_.as.slice_SliceExt
 
 section
 
@@ -88,12 +88,12 @@ congr_arg some (prod.eq
 
 -- s[start..]
 lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) :
-  _T_.ops_Index_ops_RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s, 2) :=
+  _T_.as.ops_Index_ops_RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s, 2) :=
 begin
   let st := RangeFrom.start r,
   have st ≤ length s ∧ length s ≤ length s, from and.intro H (le.refl _),
-  rewrite [↑_T_.ops_Index_ops_RangeFrom_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index,
-    return_bind, if_pos this],
+  rewrite [↑_T_.as.ops_Index_ops_RangeFrom_usize__.index, ↑_T_.as.ops_Index_ops_Range_usize__.index,
+    return_bind, if_pos' this],
   have firstn (length s - st) (dropn st s) = dropn st s, from
     firstn_all_of_ge (length_dropn st s ▸ le.refl _),
   rewrite this,
@@ -101,11 +101,11 @@ end
 
 -- s[..end]
 lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.end_ r ≤ length s) :
-  _T_.ops_Index_ops_RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s, 1) :=
+  _T_.as.ops_Index_ops_RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s, 1) :=
 begin
   let e := RangeTo.end_ r,
   have 0 ≤ e ∧ e ≤ length s, by simp,
-  rewrite [↑_T_.ops_Index_ops_RangeTo_usize__.index, ↑_T_.ops_Index_ops_Range_usize__.index, if_pos this],
+  rewrite [↑_T_.as.ops_Index_ops_RangeTo_usize__.index, ↑_T_.as.ops_Index_ops_Range_usize__.index, if_pos' this],
 end
 
 /- fn split_at(&self, mid: usize) -> (&[T], &[T])
@@ -123,7 +123,7 @@ by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 end
 
 section binary_search
-open _T_.slice_SliceExt.binary_search_by
+open _T_.as.slice_SliceExt.binary_search_by
 
 parameter {T : Type₁}
 parameter [Ord' T]

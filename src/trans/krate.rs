@@ -14,9 +14,12 @@ use item_path::item_path_str;
 use trans::item::ItemTranspiler;
 
 /// Turns strings into (mostly) valid Lean identifiers
-/// `std::[T]` ~> `std._T_`
+/// `std::[T]::_boo` ~> `std._T_.boo`
 pub fn mk_lean_name<S : AsRef<str>>(s: S) -> String {
-    let s = s.as_ref().replace("::", ".").replace(|c: char| c != '.' && !c.is_alphanumeric(), "_").trim_left_matches('_').to_owned();
+    let s = s.as_ref().replace("::", ".").replace(|c: char| c != '.' && !c.is_alphanumeric(), "_").to_string();
+    let rdot = s.rfind('.').map(|p| p + 1).unwrap_or(0);
+    let (l, r) = s.split_at(rdot);
+    let s = l.to_string() + r.trim_left_matches('_');
     if s == "end" || s.ends_with(".end") || s == "by" || s.ends_with(".by") { s + "_" } else { s }
 }
 

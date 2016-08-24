@@ -184,7 +184,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             return self.set_lvalue(lv, val)
         }
         if let Some(name) = self.lvalue_name(lv) {
-            return format!("let' {} ← {};\n", name, val)
+            if name == val { // no-op
+                return "".to_string()
+            } else {
+                return format!("let' {} ← {};\n", name, val)
+            }
         }
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
@@ -248,7 +252,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> MaybeValue {
         MaybeValue::total(match *rv {
             Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
-                return MaybeValue::partial(format!("slice._T_.slice_SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
+                return MaybeValue::partial(format!("slice._T_.as.slice_SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
@@ -296,8 +300,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
                 return self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
-                let mut ops = ops.iter().map(|op| self.get_operand(op));
-                format!("({})", ops.join(", "))
+                if ops.len() == 0 {
+                    "⋆".to_string()
+                } else {
+                    let mut ops = ops.iter().map(|op| self.get_operand(op));
+                    format!("({})", ops.join(", "))
+                }
             }
             Rvalue::Aggregate(AggregateKind::Vec, ref ops) => {
                 let mut ops = ops.iter().map(|op| self.get_operand(op));
@@ -370,10 +378,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn transpile_basic_block_rec(&mut self, bb: BasicBlock, comp: &Component) -> String {
         if comp.header == Some(bb) {
             // pass state to next iteration
-            format!("return (inl {})\n", comp.state_val)
+            format!("return (sum.inl {})\n", comp.state_val)
         } else if !comp.blocks.contains(&bb) {
             // leaving a loop
-            format!("do tmp__ ← {};\nreturn (inr tmp__)", self.transpile_basic_block(bb, &comp.outer.unwrap()))
+            format!("do tmp__ ← {};\nreturn (sum.inr tmp__)", self.transpile_basic_block(bb, &comp.outer.unwrap()))
         } else {
             self.transpile_basic_block(bb, comp)
         }
@@ -521,7 +529,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         stmts.into_iter().chain(terminator).join("")
     }
 
-    fn transpile_mir(&mut self) -> String {
+    pub fn transpile_mir(&mut self) -> String {
         let blocks = self.mir.basic_blocks().indices().collect_vec();
         let mut comp = Component::new(&self, START_BLOCK, &blocks[..], None);
         self.transpile_basic_block(START_BLOCK, &mut comp)

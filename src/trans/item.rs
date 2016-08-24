@@ -6,7 +6,6 @@ use itertools::Itertools;
 
 use syntax::ast::{self, NodeId};
 use rustc::hir::{self, FnDecl, PatKind};
-use rustc::hir::map::definitions::DefPathData;
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::{ParamSpace, Subst, Substs};
 use rustc::traits::*;
@@ -147,9 +146,9 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 inputs.chain(iter::once(format!("sem {}", self.ret_ty(data)))).join(" → ")
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
-            ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format!("({} {})",
-                                                                         &self.name_def_id(adt_def.did),
-                                                                         substs.types.iter().map(|ty| self.transpile_ty(ty)).join(" ")
+            ty::TypeVariants::TyEnum(ref adt_def, ref substs) => format!(
+                "({})",
+                (&self.name_def_id(adt_def.did), substs.types.iter().map(|ty| self.transpile_ty(ty))).join(" ")
             ),
             ty::TypeVariants::TyRef(_, ref data) => self.transpile_ty(data.ty),
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
@@ -264,9 +263,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 let mut fields = variant.fields.iter().map(|f| {
                     self.transpile_ty(f.unsubst_ty())
                 });
-                format!("inductive {} :=\nmk {{}} : {}",
-                        self.as_generic_ty_def(None),
-                        fields.join(" × "))
+                let name = self.as_generic_ty_def(None);
+                let applied_ty = (name.clone(), self.tcx.lookup_item_type(self.def_id).generics.types.map(|p| p.name.as_str().to_string())).join(" ");
+                format!("inductive {} :=\nmk {{}} : {} → {}",
+                        name,
+                        fields.join(" × "),
+                        applied_ty)
             }
             ty::VariantKind::Unit =>
                 format!("structure {} := mk {{}} ::", self.as_generic_ty_def(None)),
@@ -291,6 +293,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             }
         });
         format!("inductive {} :=\n{}", self.as_generic_ty_def(None), variants.join("\n"))
+    }
+
+    fn transpile_static(&self) -> String {
+        format!("definition {} : {} :=\n{}",
+                krate::name_def_id(self.tcx, self.def_id),
+                self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty),
+                ::trans::fun::FnTranspiler::new(self, vec![], "ret".to_string()).transpile_mir())
     }
 
     fn transpile_associated_types(&self, def_id: DefId) -> Vec<String> {
@@ -393,53 +402,62 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             let muts = sig.inputs.iter().zip(param_names.iter()).filter_map(|(ty, name)| {
                 krate::try_unwrap_mut_ref(ty).map(|_| name.clone())
             });
-            let ret = match sig.output {
-                ty::FnOutput::FnConverging(ref ty) if ty.is_nil() => "()",
-                // doesn't matter if diverging
-                _ => "ret",
-            };
-            format!("return ({})\n", (ret, muts).join(", "))
+            format!("return ({})\n", ("ret", muts).join(", "))
         };
 
         ::trans::fun::FnTranspiler::new(self, param_names, return_expr).transpile_fn(name)
     }
 
     pub fn transpile_def_id(&self) -> Option<String> {
+        use rustc::hir::map::Node;
+        use rustc::hir::Item_;
         let name = self.name();
-        match self.tcx.map.def_key(self.def_id).disambiguated_data.data {
-            DefPathData::Impl => {
-                if let Some(trait_ref) = self.tcx.impl_trait_ref(self.def_id) {
-                    if !self.is_marker_trait(trait_ref.def_id) {
-                        return Some(self.transpile_trait_impl())
+
+        let node = self.tcx.map.get(self.node_id());
+        if let Some(fn_like) = hir::map::blocks::FnLikeNode::from_node(node) {
+            return if let Node::NodeExpr(_) = node {
+                // closure
+                None
+            } else {
+                Some(self.transpile_fn(name, fn_like.decl()))
+            }
+        }
+
+        match node {
+            Node::NodeItem(item) => Some(match item.node {
+                Item_::ItemExternCrate(_) | Item_::ItemUse(_) | Item_::ItemMod(_)
+                | Item_::ItemForeignMod(_) => return None,
+                Item_::ItemStatic(_, hir::Mutability::MutMutable, _) =>
+                    panic!("unimplemented: mutable static {:?}", name),
+                Item_::ItemStatic(_, hir::Mutability::MutImmutable, _) | Item_::ItemConst(..) =>
+                    self.transpile_static(),
+                Item_::ItemEnum(..) | Item_::ItemStruct(..) =>
+                    match self.tcx.lookup_item_type(self.def_id).ty.sty {
+                        ty::TypeVariants::TyEnum(ref adt_def, _) =>
+                            self.transpile_enum(&name, adt_def),
+                        ty::TypeVariants::TyStruct(ref adt_def, _) =>
+                            self.transpile_struct(adt_def.struct_variant()),
+                        _ => unreachable!(),
+                    },
+                Item_::ItemTrait(..) => {
+                    if self.is_marker_trait(self.def_id) {
+                        return None
                     }
+                    self.transpile_trait(&name)
                 }
-            },
-            DefPathData::TypeNs(_) => {
-                let dings = self.tcx.map.get(self.node_id());
-                match dings {
-                    hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemTrait(..), .. }) => {
-                        // traits are weird
-                        if !self.is_marker_trait(self.def_id) {
-                            return Some(self.transpile_trait(&name))
+                Item_::ItemDefaultImpl(..) => return None,
+                Item_::ItemImpl(..) => {
+                    if let Some(trait_ref) = self.tcx.impl_trait_ref(self.def_id) {
+                        if !self.is_marker_trait(trait_ref.def_id) {
+                            return Some(self.transpile_trait_impl())
                         }
                     }
-                    hir::map::Node::NodeItem(&hir::Item { node: hir::Item_::ItemExternCrate(..), .. }) => { }
-                    _ => {
-                        return Some(match self.tcx.lookup_item_type(self.def_id).ty.sty {
-                            ty::TypeVariants::TyEnum(ref adt_def, _) => self.transpile_enum(&name, adt_def),
-                            ty::TypeVariants::TyStruct(ref adt_def, _) => self.transpile_struct(adt_def.struct_variant()),
-                            _ => panic!("unimplemented: transpiling type {:?}", self.def_id),
-                        })
-                    }
+                    return None
                 }
-            }
-            DefPathData::ValueNs(_) => {
-                if let Some(fn_like) = hir::map::blocks::FnLikeNode::from_node(self.tcx.map.get(self.node_id())) {
-                    return Some(self.transpile_fn(name, fn_like.decl()))
-                }
-            }
-            _ => {}
+                _ => panic!("unimplemented: {:?}", item),
+            }),
+            Node::NodeTraitItem(_) | Node::NodeVariant(_) => None,
+            _ => panic!("unimplemented: {:?}", node),
         }
-        None
     }
 }

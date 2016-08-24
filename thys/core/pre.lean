@@ -247,6 +247,12 @@ abbreviation u32 [parsing_only] := nat
 abbreviation u64 [parsing_only] := nat
 abbreviation usize [parsing_only] := nat
 
+abbreviation i8 [parsing_only] := int
+abbreviation i16 [parsing_only] := int
+abbreviation i32 [parsing_only] := int
+abbreviation i64 [parsing_only] := int
+abbreviation isize [parsing_only] := int
+
 abbreviation slice [parsing_only] := list
 
 definition checked.sub (x y : nat) : sem nat :=
@@ -267,9 +273,9 @@ namespace core
 
   abbreviation mem.swap {T : Type₁} (x y : T) : sem (unit × T × T) := return (unit.star,y,x)
 
-  abbreviation slice._T_.slice_SliceExt.len {T : Type₁} (self : slice T) : sem nat :=
+  abbreviation slice._T_.as.slice_SliceExt.len {T : Type₁} (self : slice T) : sem nat :=
   return (list.length self)
-  definition slice._T_.slice_SliceExt.get_unchecked {T : Type₁} (self : slice T) (index : usize)
+  definition slice._T_.as.slice_SliceExt.get_unchecked {T : Type₁} (self : slice T) (index : usize)
     : sem T :=
   option.rec mzero return (list.nth self index)
 

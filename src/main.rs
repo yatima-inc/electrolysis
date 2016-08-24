@@ -56,8 +56,8 @@ fn main() {
         _ => panic!("Expected .rs/.toml/crate name as single cmdline argument"),
     };
 
-    let (crate_name, rustc_args, config) = if input.ends_with(".rs") {
-        ("test".to_string(), input, toml::Value::Table(toml::Table::new()))
+    let (crate_name, base, rustc_args, config) = if input.ends_with(".rs") {
+        ("test".to_string(), path::PathBuf::from(&input).parent().unwrap().to_owned(), input, toml::Value::Table(toml::Table::new()))
     } else {
         let (crate_name, config_path) = if input.ends_with(".toml") {
             ("test".to_string(), path::PathBuf::from(input))
@@ -67,11 +67,11 @@ fn main() {
         };
         // load TOML config from 'thys/$crate/config.toml'
         let mut config = String::new();
-        let mut config_file = File::open(config_path).expect("error opening crate config");
+        let mut config_file = File::open(&config_path).expect("error opening crate config");
         config_file.read_to_string(&mut config).unwrap();
         let config: toml::Value = config.parse().unwrap();
         let rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'").as_str().unwrap().to_string();
-        (crate_name, rustc_args, config)
+        (crate_name, config_path.parent().unwrap().to_owned(), rustc_args, config)
     };
 
     // parse rustc options
@@ -99,7 +99,7 @@ fn main() {
             after_analysis: driver::PhaseController {
                 stop: rustc_driver::Compilation::Stop,
                 callback: Box::new(|state| {
-                    transpile_crate(&state, &config).unwrap();
+                    transpile_crate(&state, &config, &base).unwrap();
                 }),
                 run_callback_on_error: false,
             },
@@ -136,14 +136,9 @@ fn toml_value_as_str_array(val: &::toml::Value) -> Vec<&str> {
     val.as_slice().unwrap().iter().map(|t| t.as_str().unwrap()).collect()
 }
 
-fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Result<()> {
+fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &path::Path) -> io::Result<()> {
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.unwrap();
-    let input = match state.input {
-        &rustc::session::config::Input::File(ref path) => path.clone(),
-        _ => unreachable!(),
-    };
-    let base = input.parent().unwrap();
 
     let mut trans = CrateTranspiler::new(tcx, &state.mir_map.unwrap(), config);
     println!("Transpiling...");
@@ -163,10 +158,13 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
         }
     }
 
-    let (trans_results, trans::krate::Deps { crate_deps, graph, .. }) = trans.destruct();
+    let (trans_results, trans::krate::Deps { mut crate_deps, graph, .. }) = trans.destruct();
 
     // write out theory header, importing dependencies and the pre file, if existent
 
+    if crate_name != "core" {
+        crate_deps.insert("core".to_string()); // always include prelude
+    }
     let mut crate_deps = crate_deps.into_iter().map(|c| format!("{}.generated", c)).collect_vec();
     crate_deps.sort();
     let has_pre = base.join("pre.lean").exists();
@@ -181,11 +179,12 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value) -> io::Re
     try!(write!(f, "
 noncomputable theory
 
-open classical
-open int
-open nat
-open prod.ops
-open sum
+open [class] classical
+open [class] int
+open [notation] list
+open [class] nat
+open [notation] prod.ops
+open [notation] unit
 "));
     if has_pre {
         try!(write!(f, "open {}\n", crate_name));

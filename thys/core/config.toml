@@ -1,7 +1,7 @@
 rustc_args = "rust/src/libcore/lib.rs"
 
 targets = [
-"slice._T_.slice_SliceExt.binary_search",
+  "slice._T_.as.slice_SliceExt.binary_search",
 ]
 
 # items axiomatized in pre.lean
@@ -10,12 +10,12 @@ ignore = [
   "ops.FnOnce", "ops.FnMut", "ops.Fn",
   # unsafe
   "mem.swap",
-  "slice._T_.slice_SliceExt.len",
+  "slice._T_.as.slice_SliceExt.len",
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline
 [replace]
-"slice._T_.ops_Index_ops_Range_usize__.index" = """
+"slice._T_.as.ops_Index_ops_Range_usize__.index" = """
 /-
 /// Implements slicing with syntax `&self[begin .. end]`.
 ///
@@ -28,7 +28,7 @@ ignore = [
 /// Requires that `begin <= end` and `end <= self.len()`,
 /// otherwise slicing will panic.
 -/
-definition slice._T_.ops_Index_ops_Range_usize__.index {T : Type₁} (self : slice T) (index : ops.Range usize) : sem (slice T) :=
+definition slice._T_.as.ops_Index_ops_Range_usize__.index {T : Type₁} (self : slice T) (index : ops.Range usize) : sem (slice T) :=
 if ops.Range.start index ≤ ops.Range.end_ index ∧ ops.Range.end_ index ≤ list.length self
 then return (list.firstn (ops.Range.end_ index - ops.Range.start index) (list.dropn (ops.Range.start index) self))
 else mzero"""
