@@ -70,8 +70,8 @@ open result
 namespace slice
 
 /- The SliceExt trait declares all methods on slices. It has a single implementation
-   for [T] (= slice T, rendered as _T_). -/
-open _T_.as.slice_SliceExt
+   for [T] -/
+open «[T] as core.slice.SliceExt»
 
 section
 
@@ -88,11 +88,11 @@ congr_arg some (prod.eq
 
 -- s[start..]
 lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) :
-  _T_.as.ops_Index_ops_RangeFrom_usize__.index s r = some (dropn (RangeFrom.start r) s, 2) :=
+  «[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index s r = some (dropn (RangeFrom.start r) s, 2) :=
 begin
   let st := RangeFrom.start r,
   have st ≤ length s ∧ length s ≤ length s, from and.intro H (le.refl _),
-  rewrite [↑_T_.as.ops_Index_ops_RangeFrom_usize__.index, ↑_T_.as.ops_Index_ops_Range_usize__.index,
+  rewrite [↑«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index, ↑«[T] as core.ops.Index<core.ops.Range<usize>>».index,
     return_bind, if_pos' this],
   have firstn (length s - st) (dropn st s) = dropn st s, from
     firstn_all_of_ge (length_dropn st s ▸ le.refl _),
@@ -100,12 +100,13 @@ begin
 end
 
 -- s[..end]
-lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.end_ r ≤ length s) :
-  _T_.as.ops_Index_ops_RangeTo_usize__.index s r = some (firstn (RangeTo.end_ r) s, 1) :=
+lemma RangeTo_index_eq (r : RangeTo usize) (H : RangeTo.«end» r ≤ length s) :
+  «[T] as core.ops.Index<core.ops.RangeTo<usize>>».index s r = some (firstn (RangeTo.«end» r) s, 1) :=
 begin
-  let e := RangeTo.end_ r,
+  let e := RangeTo.«end» r,
   have 0 ≤ e ∧ e ≤ length s, by simp,
-  rewrite [↑_T_.as.ops_Index_ops_RangeTo_usize__.index, ↑_T_.as.ops_Index_ops_Range_usize__.index, if_pos' this],
+  rewrite [↑«[T] as core.ops.Index<core.ops.RangeTo<usize>>».index, ↑«[T] as core.ops.Index<core.ops.Range<usize>>».index,
+    if_pos' this],
 end
 
 /- fn split_at(&self, mid: usize) -> (&[T], &[T])
@@ -123,7 +124,7 @@ by rewrite [↑split_at, !RangeTo_index_eq H, !RangeFrom_index_eq H]
 end
 
 section binary_search
-open _T_.as.slice_SliceExt.binary_search_by
+open «[T] as core.slice.SliceExt».binary_search_by
 
 parameter {T : Type₁}
 parameter [Ord' T]

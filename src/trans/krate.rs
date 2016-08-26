@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use petgraph::graph::{self, Graph};
+use regex::Regex;
 use toml;
 
 use rustc::hir;
@@ -10,17 +11,22 @@ use rustc::hir::def_id::DefId;
 use rustc::mir::mir_map::MirMap;
 use rustc::ty::{self, Ty, TyCtxt};
 
-use item_path::item_path_str;
+use item_path;
 use trans::item::ItemTranspiler;
 
-/// Turns strings into (mostly) valid Lean identifiers
-/// `std::[T]::_boo` ~> `std._T_.boo`
-pub fn mk_lean_name<S : AsRef<str>>(s: S) -> String {
-    let s = s.as_ref().replace("::", ".").replace(|c: char| c != '.' && !c.is_alphanumeric(), "_").to_string();
-    let rdot = s.rfind('.').map(|p| p + 1).unwrap_or(0);
-    let (l, r) = s.split_at(rdot);
-    let s = l.to_string() + r.trim_left_matches('_');
-    if s == "end" || s.ends_with(".end") || s == "by" || s.ends_with(".by") { s + "_" } else { s }
+lazy_static! {
+    static ref LEAN_ID: Regex = Regex::new(r"^(_|[:alpha:])(_|'|[:alpha:]|\d)*$").unwrap();
+}
+
+/// Turns Rust identifiers into Lean ones
+/// `std::[T]` ~> `std.«[T]»`
+pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
+    where It : IntoIterator<Item=&'a S>, S : AsRef<str> + 'a {
+    parts.into_iter().map(|part| {
+        let part = part.as_ref().replace("::", ".");
+        if part != "by" && part != "end" && LEAN_ID.is_match(&part) { part.to_string() }
+        else { format!("«{}»", part) }
+    }).join(".")
 }
 
 pub fn try_unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
@@ -31,8 +37,12 @@ pub fn try_unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
     }
 }
 
-pub fn name_def_id(tcx: TyCtxt, did: DefId) -> String {
-    mk_lean_name(item_path_str(tcx, did))
+pub fn name_def_id(tcx: TyCtxt, def_id: DefId) -> String {
+    let mut buffer = Vec::new();
+    ty::item_path::with_forced_absolute_paths(|| {
+        item_path::push_item_path(tcx, &mut buffer, def_id);
+    });
+    mk_lean_name_from_parts(&buffer)
 }
 
 pub struct Config<'a> {
@@ -100,6 +110,10 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
             deps: Default::default(),
             config: Config::new(config),
         }
+    }
+
+    pub fn mk_lean_name<S : AsRef<str>>(&self, s: S) -> String {
+        mk_lean_name_from_parts(&[s])
     }
 
     pub fn destruct(self) -> (HashMap<DefId, Result<Option<String>, String>>, Deps) {

@@ -16,7 +16,7 @@ use rustc_data_structures::indexed_vec::Idx;
 use self::component::Component;
 use joins::*;
 use trans::item;
-use trans::krate::{self, mk_lean_name};
+use trans::krate;
 
 /// `get_tuple_elem('x', 1, 3)` ~> `'x.1.2'`
 fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
@@ -85,7 +85,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
     fn local_name(&self, lv: &Lvalue) -> String {
         match *lv {
-            Lvalue::Var(idx) => mk_lean_name(&*self.mir.var_decls[idx].name.as_str()),
+            Lvalue::Var(idx) => self.mk_lean_name(&*self.mir.var_decls[idx].name.as_str()),
             Lvalue::Temp(idx) => format!("t{}", idx.index()),
             Lvalue::Arg(idx) => self.param_names[idx.index()].clone(),
             Lvalue::ReturnPointer => "ret".to_string(),
@@ -152,7 +152,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         } else {
                             format!("({}.{} {})",
                                     self.name_def_id(adt_def.did),
-                                    mk_lean_name(&*adt_def.struct_variant().fields[field.index()].name.as_str()),
+                                    self.mk_lean_name(&*adt_def.struct_variant().fields[field.index()].name.as_str()),
                                     self.get_lvalue(base))
                         }
                     }
@@ -252,7 +252,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> MaybeValue {
         MaybeValue::total(match *rv {
             Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
-                return MaybeValue::partial(format!("slice._T_.as.slice_SliceExt.get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
+                return MaybeValue::partial(format!("«[T] as core.slice.SliceExt».get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
@@ -337,7 +337,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 };
                 let param_names = upvars.iter().map(|lv| self.lvalue_name(lv).unwrap()).chain(
                     decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-                        hir::PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, _) => krate::mk_lean_name(&name.node.to_string()),
+                        hir::PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, _) => self.mk_lean_name(&*name.node.as_str()),
                     _ => format!("p{}", i),
                 })).collect();
                 let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
@@ -567,7 +567,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
             let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| format!("({} : Type₁)", ty));
             let trait_param = format!("[{} : {}]",
-                                      mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)).replace('.', "_"),
+                                      self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)),
                                       self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs));
             free_assoc_tys.chain(iter::once(trait_param))
         }).collect_vec();

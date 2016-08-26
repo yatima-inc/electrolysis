@@ -223,7 +223,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 }
             },
             Vtable::VtableParam(_) => {
-                let param = krate::mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref)).replace('.', "_");
+                let param = self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref));
                 TraitImplLookup::Dynamic { param: param }
             }
             Vtable::VtableClosure(_) => {
@@ -253,7 +253,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         match variant.kind {
             ty::VariantKind::Struct => {
                 let mut fields = variant.fields.iter().map(|f| {
-                    format!("({} : {})", krate::mk_lean_name(&*f.name.as_str()), self.transpile_ty(f.unsubst_ty()))
+                    format!("({} : {})", self.mk_lean_name(&*f.name.as_str()), self.transpile_ty(f.unsubst_ty()))
                 });
                 format!("structure {} := mk {{}} ::\n{}",
                         self.as_generic_ty_def(None),
@@ -394,7 +394,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     fn transpile_fn(&self, name: String, decl: &FnDecl) -> String {
         let param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-            PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, None) => krate::mk_lean_name(&*name.node.as_str()),
+            PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, None) => self.mk_lean_name(&*name.node.as_str()),
             _ => format!("p{}", i),
         }).collect_vec();
         let return_expr = {

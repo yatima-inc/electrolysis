@@ -3,6 +3,8 @@
 #![feature(box_patterns, slice_patterns, advanced_slice_patterns)]
 
 extern crate itertools;
+#[macro_use]
+extern crate lazy_static;
 extern crate petgraph;
 extern crate regex;
 extern crate toml;
@@ -144,7 +146,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
     println!("Transpiling...");
 
     let targets = config.lookup("targets").map(|targets| {
-        Regex::new(&format!("^{}$", toml_value_as_str_array(targets).into_iter().join("|"))).unwrap()
+        Regex::new(&format!("^({})$", toml_value_as_str_array(targets).into_iter().join("|"))).unwrap()
     });
 
     // find targets' DefIds and transpile them

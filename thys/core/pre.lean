@@ -273,9 +273,9 @@ namespace core
 
   abbreviation mem.swap {T : Type₁} (x y : T) : sem (unit × T × T) := return (unit.star,y,x)
 
-  abbreviation slice._T_.as.slice_SliceExt.len {T : Type₁} (self : slice T) : sem nat :=
+  abbreviation «[T] as core.slice.SliceExt».len {T : Type₁} (self : slice T) : sem nat :=
   return (list.length self)
-  definition slice._T_.as.slice_SliceExt.get_unchecked {T : Type₁} (self : slice T) (index : usize)
+  definition «[T] as core.slice.SliceExt».get_unchecked {T : Type₁} (self : slice T) (index : usize)
     : sem T :=
   option.rec mzero return (list.nth self index)
 
