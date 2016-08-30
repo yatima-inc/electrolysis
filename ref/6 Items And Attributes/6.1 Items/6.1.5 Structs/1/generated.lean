@@ -11,12 +11,12 @@ open [notation] unit
 
 namespace test
 
-structure Point := «{{constructor}}» {} ::
+structure Point := mk {} ::
 (x : i32)
 (y : i32)
 
 definition main : sem (unit) :=
-let' p ← Point.«{{constructor}}» (10 : int) (11 : int);
+let' p ← Point.mk (10 : int) (11 : int);
 let' t0 ← (Point.x p);
 let' px ← t0;
 let' ret ← ⋆;

@@ -30,17 +30,17 @@ inductive cmp.Ordering :=
 | Equal {} : cmp.Ordering
 | Greater {} : cmp.Ordering
 
-structure ops.RangeFrom (Idx : Type₁) := «{{constructor}}» {} ::
+structure ops.RangeFrom (Idx : Type₁) := mk {} ::
 (start : Idx)
 
 inductive result.Result (T : Type₁) (E : Type₁) :=
 | Ok {} : T → result.Result T E
 | Err {} : E → result.Result T E
 
-structure ops.RangeTo (Idx : Type₁) := «{{constructor}}» {} ::
+structure ops.RangeTo (Idx : Type₁) := mk {} ::
 («end» : Idx)
 
-structure ops.Range (Idx : Type₁) := «{{constructor}}» {} ::
+structure ops.Range (Idx : Type₁) := mk {} ::
 (start : Idx)
 («end» : Idx)
 
@@ -66,7 +66,7 @@ let' t1 ← self;
 let' t3 ← (0 : nat);
 let' t5 ← (ops.RangeTo.«end» index);
 let' t4 ← t5;
-let' t2 ← ops.Range.«{{constructor}}» t3 t4;
+let' t2 ← ops.Range.mk t3 t4;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ t1 t2;
 let' t0 ← tmp__;
 let' ret ← t0;
@@ -80,7 +80,7 @@ let' t3 ← t4;
 let' t6 ← self;
 dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t6;
 let' t5 ← tmp__;
-let' t2 ← ops.Range.«{{constructor}}» t3 t5;
+let' t2 ← ops.Range.mk t3 t5;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ t1 t2;
 let' t0 ← tmp__;
 let' ret ← t0;
@@ -91,7 +91,7 @@ definition «[T] as core.slice.SliceExt».split_at {T : Type₁} (self : (slice 
 let' t3 ← self;
 let' t6 ← mid;
 let' t5 ← t6;
-let' t4 ← ops.RangeTo.«{{constructor}}» t5;
+let' t4 ← ops.RangeTo.mk t5;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeTo<usize>>».index _ t3 t4;
 let' t2 ← tmp__;
 let' t1 ← t2;
@@ -99,7 +99,7 @@ let' t0 ← t1;
 let' t10 ← self;
 let' t13 ← mid;
 let' t12 ← t13;
-let' t11 ← ops.RangeFrom.«{{constructor}}» t12;
+let' t11 ← ops.RangeFrom.mk t12;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ t10 t11;
 let' t9 ← tmp__;
 let' t8 ← t9;
@@ -170,7 +170,7 @@ let' t25 ← (base + t21, true);
 let' base ← t25.1;
 let' t28 ← tail;
 let' t30 ← (1 : nat);
-let' t29 ← ops.RangeFrom.«{{constructor}}» t30;
+let' t29 ← ops.RangeFrom.mk t30;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ t28 t29;
 let' t27 ← tmp__;
 let' t26 ← t27;

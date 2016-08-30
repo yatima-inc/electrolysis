@@ -12,11 +12,11 @@ open [notation] unit
 namespace test
 
 inductive Point :=
-«{{constructor}}» {} : i32 → i32 → Point
+mk {} : i32 → i32 → Point
 
 definition main : sem (unit) :=
-let' p ← Point.«{{constructor}}» (10 : int) (11 : int);
-let' x ← match p with Point.«{{constructor}}» x0 x1 := x0 end;
+let' p ← Point.mk (10 : int) (11 : int);
+let' x ← match p with Point.mk x0 x1 := x0 end;
 let' t0 ← x;
 let' px ← t0;
 let' ret ← ⋆;

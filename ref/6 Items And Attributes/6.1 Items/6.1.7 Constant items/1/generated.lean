@@ -27,14 +27,14 @@ definition STRING : string :=
 let' ret ← "bitstring";
 ret
 
-structure BitsNStrings := «{{constructor}}» {} ::
+structure BitsNStrings := mk {} ::
 (mybits : (vector u32 2))
 (mystring : string)
 
 definition BITS_N_STRINGS : (BitsNStrings) :=
 let' t1 ← STRING;
 let' t0 ← t1;
-let' ret ← BitsNStrings.«{{constructor}}» BITS t0;
+let' ret ← BitsNStrings.mk BITS t0;
 ret
 
 end test

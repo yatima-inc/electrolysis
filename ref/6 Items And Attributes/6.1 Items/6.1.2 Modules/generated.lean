@@ -12,6 +12,6 @@ open [notation] unit
 namespace test
 
 inductive foo.Bar :=
-«{{constructor}}» {} : (core.cmp.Ordering) → foo.Bar
+mk {} : (core.cmp.Ordering) → foo.Bar
 
 end test

@@ -264,7 +264,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       Ord'.le_cmp_max_cost (mem_of_nth nth_x) cmp_eq,
     cases (decidable_lt : decidable (x < needle)) with Hx_lt_needle Hx_ge_needle,
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
-      rewrite [RangeFrom_index_eq _ (RangeFrom.«{{constructor}}» _) this, ▸*],
+      rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
       intro H, rewrite -H,
       apply sem.terminates_with.mk rfl,
       { esimp, split,

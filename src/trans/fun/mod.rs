@@ -149,7 +149,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         get_tuple_elem(self.get_lvalue(base), field.index(), tys.len()),
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
                         if adt_def.struct_variant().kind == ty::VariantKind::Tuple {
-                            format!("match {} with {}.«{{{{constructor}}}}» {} := x{} end",
+                            format!("match {} with {}.mk {} := x{} end",
                                     self.get_lvalue(base),
                                     self.name_def_id(adt_def.did),
                                     (0..adt_def.struct_variant().fields.len()).map(|i| format!("x{}", i)).join(" "),
@@ -323,7 +323,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 let ops = ops.iter().map(|op| self.get_operand(op));
                 (format!("{}{}",
                          self.name_def_id(variant.did),
-                         if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().kind == ty::VariantKind::Struct { ".«{{constructor}}»" } else { "" }),
+                         if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().kind == ty::VariantKind::Struct { ".mk" } else { "" }),
                  ops).join(" ")
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {

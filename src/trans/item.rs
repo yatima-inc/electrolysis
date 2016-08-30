@@ -261,7 +261,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 let mut fields = variant.fields.iter().map(|f| {
                     format!("({} : {})", self.mk_lean_name(&*f.name.as_str()), self.transpile_ty(f.unsubst_ty()))
                 });
-                format!("structure {} := «{{{{constructor}}}}» {{}} ::\n{}",
+                format!("structure {} := mk {{}} ::\n{}",
                         self.as_generic_ty_def(None),
                         fields.join("\n"))
             }
@@ -271,13 +271,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 });
                 let name = self.as_generic_ty_def(None);
                 let applied_ty = (name.clone(), self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| p.name.as_str().to_string())).join(" ");
-                format!("inductive {} :=\n«{{{{constructor}}}}» {{}} : {} → {}",
+                format!("inductive {} :=\nmk {{}} : {} → {}",
                         name,
                         fields.join(" → "),
                         applied_ty)
             }
             ty::VariantKind::Unit =>
-                format!("structure {} := «{{{{constructor}}}}» {{}} ::", self.as_generic_ty_def(None)),
+                format!("structure {} := mk {{}} ::", self.as_generic_ty_def(None)),
         }
     }
 

@@ -26,8 +26,12 @@ pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
         let part = part.as_ref().replace("::", ".")
             // Lean identifiers starting with _ are reserved
             .trim_left_matches("_").to_string();
-        if part != "by" && part != "end" && LEAN_ID.is_match(&part) { part.to_string() }
-        else { format!("«{}»", part) }
+        match part.as_ref() {
+            "{{constructor}}" => "mk".to_string(),
+            "by" | "end" => format!("«{}»", part),
+            _ if LEAN_ID.is_match(&part) => part.to_string(),
+            _ => format!("«{}»", part),
+        }
     }).join(".")
 }
 
