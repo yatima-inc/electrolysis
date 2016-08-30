@@ -1,5 +1,4 @@
 import data.nat data.list
-import data.examples.vector
 import theories.topology.limit
 import loop_combinator
 

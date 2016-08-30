@@ -19,7 +19,7 @@ definition BIT2 : u32 :=
 let' ret ← (2 : nat);
 ret
 
-definition BITS : (vector u32 2) :=
+definition BITS : (list u32) :=
 let' ret ← [BIT1, BIT2];
 ret
 
@@ -28,7 +28,7 @@ let' ret ← "bitstring";
 ret
 
 structure BitsNStrings := mk {} ::
-(mybits : (vector u32 2))
+(mybits : (list u32))
 (mystring : string)
 
 definition BITS_N_STRINGS : (BitsNStrings) :=
