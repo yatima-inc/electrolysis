@@ -1,0 +1,1 @@
+Divergence is represented as `MonadZero.mzero` (in the simplest case, `none`). Because MIR distinguishes between normal and divergent control flow, calls to diverging functions are eagerly replaced by `mzero`.

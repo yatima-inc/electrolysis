@@ -1,0 +1,6 @@
+[package]
+name = "e10s-ref"
+version = "0.1.0"
+authors = ["Sebastian Ullrich <sebasti@nullri.ch>"]
+
+[dependencies]

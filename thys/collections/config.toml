@@ -1,0 +1,5 @@
+rustc_args = "rust/src/libcollections/lib.rs"
+
+targets = [
+"vec.Vec",
+]

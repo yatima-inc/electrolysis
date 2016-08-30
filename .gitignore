@@ -9,3 +9,4 @@ build.ninja
 *.clean
 *.ilean
 *.olean
+ref/index.html

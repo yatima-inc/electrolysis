@@ -1,0 +1,45 @@
+a.ref {
+    font-size: 13pt;
+}
+
+.code-pair {
+    display: flex;
+    flex-direction: row;
+}
+.code-pair > div {
+    flex: 1 100%;
+    display: flex; /* stretch vertically */
+}
+.code-pair > div.mir {
+    display: none;
+}
+.mir > pre {
+    overflow-x: scroll;
+    white-space: pre;
+    width: 400px;
+}
+
+nav a.fail::after {
+    content: " ✗";
+    color: red;
+}
+nav a.success::after {
+    content: " ✔";
+    color: green;
+}
+
+/* from https://doc.rust-lang.org/reference.html */
+
+/* Display the full TOC */
+nav {
+    column-count: auto;
+    -moz-column-count: auto;
+    -webkit-column-count: auto;
+}
+nav ul ul {
+    display: block;
+    padding-left: 2em;
+}
+#influences blockquote p:last-child {
+    color: #999;
+}
