@@ -146,9 +146,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         get_tuple_elem(self.get_lvalue(base), field.index(), tys.len()),
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
                         if adt_def.struct_variant().kind == ty::VariantKind::Tuple {
-                            format!("match {} with {} x := x end",
-                                    get_tuple_elem(self.get_lvalue(base), field.index(), adt_def.struct_variant().fields.len()),
-                                    self.name_def_id(adt_def.did))
+                            format!("match {} with {}.«{{{{constructor}}}}» {} := x{} end",
+                                    self.get_lvalue(base),
+                                    self.name_def_id(adt_def.did),
+                                    (0..adt_def.struct_variant().fields.len()).map(|i| format!("x{}", i)).join(" "),
+                                    field.index())
                         } else {
                             format!("({}.{} {})",
                                     self.name_def_id(adt_def.did),
@@ -315,11 +317,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 self.add_dep(adt_def.did);
 
                 let variant = &adt_def.variants[variant_idx];
-                let mut ops = ops.iter().map(|op| self.get_operand(op));
-                format!("{}{} {}",
-                        self.name_def_id(variant.did),
-                        if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().kind == ty::VariantKind::Struct { ".mk" } else { "" },
-                        ops.join(" "))
+                let ops = ops.iter().map(|op| self.get_operand(op));
+                (format!("{}{}",
+                         self.name_def_id(variant.did),
+                         if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().kind == ty::VariantKind::Struct { ".«{{constructor}}»" } else { "" }),
+                 ops).join(" ")
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
                 // start small with immutable closures: compile to Lean closure using
@@ -489,7 +491,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     rec!(target),
                 If { ref cond, targets: (bb_if, bb_else) } =>
                     // TODO: this duplicates all code after the if
-                    format!("if {} then\n{} else\n{}", self.get_operand(cond),
+                    format!("if {} then\n{}else\n{}", self.get_operand(cond),
                             rec!(bb_if),
                             rec!(bb_else)),
                 Return => self.return_expr.clone(),
@@ -555,7 +557,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {
             let body = FnTranspiler { mir: mir, ..self.clone() }.transpile_mir();
-            format!("let' promoted_{} ←\n{};", idx.index(), body)
+            format!("do promoted_{} ←\n{};", idx.index(), body)
         }).collect_vec();
 
         let body = (promoted, self.transpile_mir()).join("\n");

@@ -40,6 +40,10 @@ pub fn push_item_path(tcx: TyCtxt, buffer: &mut Vec<String>, def_id: DefId)
 
 fn push_impl_path(tcx: TyCtxt, buffer: &mut Vec<String>, impl_def_id: DefId)
 {
+    // we suppress the unnecessary parent path, but still need the crate root
+    if !impl_def_id.is_local() {
+        buffer.push(tcx.sess.cstore.crate_name(impl_def_id.krate).to_string());
+    }
     if let Some(trait_ref) = tcx.impl_trait_ref(impl_def_id) {
         buffer.push(format!("{} as {}",
                             tcx.lookup_item_type(impl_def_id).ty,

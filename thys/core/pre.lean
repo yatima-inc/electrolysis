@@ -1,4 +1,5 @@
 import data.nat data.list
+import data.examples.vector
 import theories.topology.limit
 import loop_combinator
 
@@ -28,7 +29,7 @@ definition checked.mod (x y : nat) : sem nat :=
 if y ≠ 0 then return (mod x y) else mzero
 
 /- TODO: actually check something -/
-definition checked.shl (x y : nat) : sem nat := return (x * 2^y)
+definition checked.shl (x : nat) (y : int) : sem nat := return (x * 2^nat.of_int y)
 definition checked.shr (x : nat) (y : int) : sem nat := return (div x (2^nat.of_int y))
 
 namespace core

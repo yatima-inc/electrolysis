@@ -23,7 +23,9 @@ lazy_static! {
 pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
     where It : IntoIterator<Item=&'a S>, S : AsRef<str> + 'a {
     parts.into_iter().map(|part| {
-        let part = part.as_ref().replace("::", ".");
+        let part = part.as_ref().replace("::", ".")
+            // Lean identifiers starting with _ are reserved
+            .trim_left_matches("_").to_string();
         if part != "by" && part != "end" && LEAN_ID.is_match(&part) { part.to_string() }
         else { format!("«{}»", part) }
     }).join(".")

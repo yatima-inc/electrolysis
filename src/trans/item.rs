@@ -156,6 +156,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)),
             ty::TypeVariants::TyStr => "string".to_string(),
             ty::TypeVariants::TyTrait(_) => panic!("unimplemented: trait objects"),
+            ty::TypeVariants::TyArray(ref ty, size) =>
+                format!("(vector {} {})", self.transpile_ty(ty), size),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.name_def_id(did),
                 None => panic!("unimplemented: ty {:?}", ty),
@@ -255,7 +257,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 let mut fields = variant.fields.iter().map(|f| {
                     format!("({} : {})", self.mk_lean_name(&*f.name.as_str()), self.transpile_ty(f.unsubst_ty()))
                 });
-                format!("structure {} := mk {{}} ::\n{}",
+                format!("structure {} := «{{{{constructor}}}}» {{}} ::\n{}",
                         self.as_generic_ty_def(None),
                         fields.join("\n"))
             }
@@ -265,13 +267,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 });
                 let name = self.as_generic_ty_def(None);
                 let applied_ty = (name.clone(), self.tcx.lookup_item_type(self.def_id).generics.types.map(|p| p.name.as_str().to_string())).join(" ");
-                format!("inductive {} :=\nmk {{}} : {} → {}",
+                format!("inductive {} :=\n«{{{{constructor}}}}» {{}} : {} → {}",
                         name,
-                        fields.join(" × "),
+                        fields.join(" → "),
                         applied_ty)
             }
             ty::VariantKind::Unit =>
-                format!("structure {} := mk {{}} ::", self.as_generic_ty_def(None)),
+                format!("structure {} := «{{{{constructor}}}}» {{}} ::", self.as_generic_ty_def(None)),
         }
     }
 
@@ -454,9 +456,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     }
                     return None
                 }
+                Item_::ItemTy(..) =>
+                    format!("definition {} := {}",
+                            self.as_generic_ty_def(None),
+                            self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty)),
                 _ => panic!("unimplemented: {:?}", item),
             }),
-            Node::NodeTraitItem(_) | Node::NodeVariant(_) => None,
+            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) => None,
             _ => panic!("unimplemented: {:?}", node),
         }
     }
