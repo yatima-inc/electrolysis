@@ -7,11 +7,14 @@ use std::ops::Deref;
 use itertools::Itertools;
 
 use rustc::hir;
+use rustc::hir::def_id::DefId;
 use rustc::mir::repr::*;
 use rustc::middle::const_val::ConstVal;
+use rustc::traits;
 use rustc::ty::{self, Ty};
-use rustc::ty::subst::Subst;
+use rustc::ty::subst::{Subst, Substs};
 use rustc_data_structures::indexed_vec::Idx;
+use syntax::ast;
 
 use self::component::Component;
 use joins::*;
@@ -75,7 +78,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>, param_names: Vec<String>, return_expr: String) -> FnTranspiler<'a, 'tcx> {
         FnTranspiler {
             sup: sup,
-            mir: &sup.mir_map.map[&sup.node_id()],
+            mir: &sup.mir_map.map[&sup.def_id],
             param_names: param_names,
             return_expr: return_expr,
             prelude: Default::default(),
@@ -168,7 +171,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn lvalue_ty(&self, lv: &Lvalue<'tcx>) -> Ty<'tcx> {
-        self.mir.lvalue_ty(self.tcx, lv).to_ty(self.tcx)
+        lv.ty(self.mir, self.tcx).to_ty(self.tcx)
     }
 
     fn lvalue_idx(&self, lv: &Lvalue) -> Option<Local> {
@@ -258,14 +261,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
                 format!("{} {}", match op {
-                    UnOp::Not if self.mir.operand_ty(self.tcx, operand).is_bool() => "bool.bnot",
+                    UnOp::Not if operand.ty(self.mir, self.tcx).is_bool() => "bool.bnot",
                     UnOp::Not => "NOT",
                     UnOp::Neg => "-",
                 }, self.get_operand(operand)),
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
                 let (so1, so2) = (self.get_operand(o1), self.get_operand(o2));
                 return match op {
-                    BinOp::Sub if !self.mir.operand_ty(self.tcx, o1).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
+                    BinOp::Sub if !o1.ty(self.mir, self.tcx).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
                     BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked.div", so1, so2)),
                     BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked.mod", so1, so2)),
                     BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, so2)),
@@ -292,7 +295,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     MaybeValue::partial(format!("sem.map (λx, (x, true)) ({})", val))
                 }
             }
-            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if self.mir.operand_ty(self.tcx, op).is_integral() && ty.is_integral() => {
+            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if op.ty(self.mir, self.tcx).is_integral() && ty.is_integral() => {
                 format!("({}.of_num {})",
                         if ty.is_signed() { "int" } else { "nat" },
                         self.get_operand(op))
@@ -374,6 +377,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         format!("do tmp__ ← {};\n{}", &val, self.set_lvalue(lv, "tmp__")),
                 }
             }
+            StatementKind::SetDiscriminant { .. } =>
+                panic!("unimplemented: statement {:?}", stmt),
+            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) => "".to_string()
         }
     }
 
@@ -403,25 +409,64 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
+    /// Locates the applicable definition of a method, given its name.
+    /// from trans::meth
+    fn get_impl_method<'t>(
+        tcx: ty::TyCtxt<'a, 't, 't>,
+        substs: &Substs<'t>,
+        impl_def_id: DefId,
+        impl_substs: &Substs<'t>,
+        name: ast::Name,
+    ) -> (DefId, Substs<'t>) {
+        let trait_def_id = tcx.trait_id_of_impl(impl_def_id).unwrap();
+        let trait_def = tcx.lookup_trait_def(trait_def_id);
+
+        match trait_def.ancestors(impl_def_id).fn_defs(tcx, name).next() {
+            Some(node_item) => {
+                let substs = tcx.normalizing_infer_ctxt(traits::Reveal::All).enter(|infcx| {
+                    let substs = substs.rebase_onto(tcx, trait_def_id, impl_substs);
+                    let substs = traits::translate_substs(&infcx, impl_def_id,
+                                                        substs, node_item.node);
+                    tcx.lift(&substs).unwrap_or_else(|| {
+                        bug!("trans::meth::get_impl_method: translate_substs \
+                            returned {:?} which contains inference types/regions",
+                            substs);
+                    })
+                });
+                (node_item.item.def_id, substs.clone())
+            }
+            None => {
+                bug!("method {:?} not found in {:?}", name, impl_def_id)
+            }
+        }
+    }
+
+    // All type generics including from parent items
+    fn full_generics(&self, def_id: DefId) -> Vec<&'tcx ty::TypeParameterDef<'tcx>> {
+        ::itertools::Unfold::new(Some(def_id), |opt_def_id| {
+            opt_def_id.map(|def_id| {
+                let g = self.tcx.lookup_generics(def_id);
+                *opt_def_id = g.parent;
+                g.types.iter()
+            })
+        }).flat_map(|t| t).collect()
+    }
+
     /// Desparately tries to figure out a call target, including implicit (type) parameters
     fn get_call_target(&self, func: &Operand<'tcx>) -> String {
         match *func {
             Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
                 let substs = substs.clone();
-                self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::ProjectionMode::Any).enter(|infcx| {
+                self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| {
                     let (def_id, substs): (_, ty::subst::Substs<'tcx>) = match self.tcx.trait_of_item(def_id) {
                         Some(trait_def_id) => {
                             // from trans::meth::trans_method_callee
-                            let trait_ref = substs.to_trait_ref(self.tcx, trait_def_id);
+                            let trait_ref = ty::TraitRef::from_method(self.tcx, trait_def_id, &substs);
 
                             match self.infer_trait_impl(trait_ref, &infcx) {
                                 item::TraitImplLookup::Static { impl_def_id, substs: impl_substs, .. }  => {
-                                    // figure out actual target of static call
                                     let method = self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap();
-                                    let trait_def = self.tcx.lookup_trait_def(method.container.id());
-                                    let method = trait_def.ancestors(impl_def_id).fn_defs(self.tcx, method.name).next().unwrap().item;
-                                    let impl_substs = impl_substs.with_method_from(&substs);
-                                    (method.def_id, if method.container.id() == impl_def_id { impl_substs } else { substs })
+                                    FnTranspiler::get_impl_method(self.tcx, &substs, impl_def_id, &impl_substs, method.name)
                                 }
                                 item::TraitImplLookup::Dynamic { .. } =>
                                     (def_id, substs)
@@ -433,15 +478,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     // analogous to transpile_fn - see there for examples
 
                     // TODO: should probably substitute and make explicit
-                    let ty_params = self.tcx.lookup_item_type(def_id).generics.types.iter().map(|_| "_".to_string()).collect_vec();
+                    let ty_params = self.full_generics(def_id).iter().map(|_| "_".to_string()).collect_vec();
                     let assoc_ty_substs = self.get_assoc_ty_substs(def_id);
                     let trait_params = self.trait_predicates_without_markers(def_id).flat_map(|trait_pred| {
                         let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
                         let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
                         let trait_ref: ty::TraitRef<'tcx> = trait_pred.trait_ref;
-                        let tcx: ty::TyCtxt<'a, 'tcx, 'tcx> = self.tcx;
-                        //let tcx: ty::TyCtxt<'c, 'tcx, 'c> = tcx;
-                        let trait_param = self.infer_trait_impl(trait_ref.subst(tcx, &substs), &infcx).to_string(self);
+                        let trait_param = self.infer_trait_impl(trait_ref.subst(self.tcx, &substs), &infcx).to_string(self);
                         free_assoc_tys.chain(iter::once(trait_param))
                     });
                     (format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" ")
@@ -562,7 +605,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         let body = (promoted, self.transpile_mir()).join("\n");
 
-        let ty_params = self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
+        let ty_params = self.full_generics(self.def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
         let assoc_ty_substs = self.get_assoc_ty_substs(self.def_id);
         // `where T : Iterator` ~> `'(Item : Type) [Iterator : Iterator T Item]'`
         let trait_params = self.trait_predicates_without_markers(self.def_id).flat_map(|trait_pred| {

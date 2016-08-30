@@ -16,8 +16,8 @@ let' ret ← ("ref/6 Items And Attributes/6.1 Items/6.1.3 Functions/6.1.3.2 Dive
 ret
 
 definition my_err (s : string) : sem (empty) :=
-let' t2 ← my_err.FILE_LINE;
-let' t1 ← t2;
+let' t3 ← my_err.FILE_LINE;
+let' t2 ← t3;
 mzero
 
 
@@ -28,8 +28,8 @@ if t0 then
 let' ret ← (42 : int);
 return (ret)
 else
-let' t5 ← "Bad number!";
-let' t4 ← t5;
+let' t8 ← "Bad number!";
+let' t7 ← t8;
 mzero
 
 

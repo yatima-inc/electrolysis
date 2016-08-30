@@ -44,7 +44,7 @@ namespace core
   option.rec mzero return (list.nth self index)
 
   namespace ops
-    structure FnOnce [class] (Args : Type₁) (Self : Type₁) (Output : Type₁) :=
+    structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
     (call_once : Self → Args → sem Output)
 
     -- easy without mutable closures
@@ -52,18 +52,18 @@ namespace core
     abbreviation Fn := FnOnce
 
     definition FnMut.call_mut [unfold_full] (Args : Type₁) (Self : Type₁) (Output : Type₁)
-      [FnOnce : FnOnce Args Self Output] : Self → Args → sem (Output × Self) := λself x,
-      do y ← @FnOnce.call_once Args Self Output FnOnce self x;
+      [FnOnce : FnOnce Self Args Output] : Self → Args → sem (Output × Self) := λself x,
+      do y ← @FnOnce.call_once Self Args Output FnOnce self x;
       return (y, self)
 
-    definition Fn.call (Args : Type₁) (Self : Type₁) (Output : Type₁)
-      [FnMut : FnMut Args Self Output] : Self → Args → sem Output := FnOnce.call_once Output
+    definition Fn.call (Self : Type₁) (Args : Type₁) (Output : Type₁)
+      [FnMut : FnMut Self Args Output] : Self → Args → sem Output := FnOnce.call_once Output
   end ops
 end core
 
 open core.ops
 
-definition fn [instance] {A B : Type₁} : FnOnce A (A → sem B) B := ⦃FnOnce,
+definition fn [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce,
   call_once := id
 ⦄
 

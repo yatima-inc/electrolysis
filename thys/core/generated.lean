@@ -30,17 +30,17 @@ inductive cmp.Ordering :=
 | Equal {} : cmp.Ordering
 | Greater {} : cmp.Ordering
 
-structure ops.RangeFrom (Idx : Type₁) := mk {} ::
+structure ops.RangeFrom (Idx : Type₁) := «{{constructor}}» {} ::
 (start : Idx)
 
 inductive result.Result (T : Type₁) (E : Type₁) :=
 | Ok {} : T → result.Result T E
 | Err {} : E → result.Result T E
 
-structure ops.RangeTo (Idx : Type₁) := mk {} ::
+structure ops.RangeTo (Idx : Type₁) := «{{constructor}}» {} ::
 («end» : Idx)
 
-structure ops.Range (Idx : Type₁) := mk {} ::
+structure ops.Range (Idx : Type₁) := «{{constructor}}» {} ::
 (start : Idx)
 («end» : Idx)
 
@@ -66,7 +66,7 @@ let' t1 ← self;
 let' t3 ← (0 : nat);
 let' t5 ← (ops.RangeTo.«end» index);
 let' t4 ← t5;
-let' t2 ← ops.Range.mk t3 t4;
+let' t2 ← ops.Range.«{{constructor}}» t3 t4;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ t1 t2;
 let' t0 ← tmp__;
 let' ret ← t0;
@@ -80,7 +80,7 @@ let' t3 ← t4;
 let' t6 ← self;
 dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t6;
 let' t5 ← tmp__;
-let' t2 ← ops.Range.mk t3 t5;
+let' t2 ← ops.Range.«{{constructor}}» t3 t5;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ t1 t2;
 let' t0 ← tmp__;
 let' ret ← t0;
@@ -91,7 +91,7 @@ definition «[T] as core.slice.SliceExt».split_at {T : Type₁} (self : (slice 
 let' t3 ← self;
 let' t6 ← mid;
 let' t5 ← t6;
-let' t4 ← ops.RangeTo.mk t5;
+let' t4 ← ops.RangeTo.«{{constructor}}» t5;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeTo<usize>>».index _ t3 t4;
 let' t2 ← tmp__;
 let' t1 ← t2;
@@ -99,7 +99,7 @@ let' t0 ← t1;
 let' t10 ← self;
 let' t13 ← mid;
 let' t12 ← t13;
-let' t11 ← ops.RangeFrom.mk t12;
+let' t11 ← ops.RangeFrom.«{{constructor}}» t12;
 dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ t10 t11;
 let' t9 ← tmp__;
 let' t8 ← t9;
@@ -125,65 +125,65 @@ return (ret)
 
 
 section
-parameters {T : Type₁} {F : Type₁}
-parameters [«ops.FnMut (T) F» : ops.FnMut (T) F (cmp.Ordering)]
+parameters {F : Type₁} {T : Type₁}
+parameters [«ops.FnMut F (T)» : ops.FnMut F (T) (cmp.Ordering)]
 parameters (self : (slice T)) (f : F)
 
 definition «[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((result.Result usize usize))) :=
 match state__ with (f, base, s) :=
-let' t3 ← s;
-let' t6 ← s;
-dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t6;
-let' t5 ← tmp__;
-do tmp__ ← sem.map (λx, (x, true)) (checked.shr t5 (1 : int));
-let' t7 ← tmp__;
-let' t4 ← t7.1;
-dostep tmp__ ← @«[T] as core.slice.SliceExt».split_at _ t3 t4;
-let' t2 ← tmp__;
-let' head ← t2.1;
-let' tail ← t2.2;
-let' t10 ← tail;
-dostep tmp__ ← @slice.SliceExt.is_empty _ _ («[T] as core.slice.SliceExt» T) t10;
-let' t9 ← tmp__;
-if t9 then
-do tmp__ ← let' t11 ← base;
-let' ret ← result.Result.Err t11;
+let' t4 ← s;
+let' t7 ← s;
+dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t7;
+let' t6 ← tmp__;
+do tmp__ ← sem.map (λx, (x, true)) (checked.shr t6 (1 : int));
+let' t8 ← tmp__;
+let' t5 ← t8.1;
+dostep tmp__ ← @«[T] as core.slice.SliceExt».split_at _ t4 t5;
+let' t3 ← tmp__;
+let' head ← t3.1;
+let' tail ← t3.2;
+let' t11 ← tail;
+dostep tmp__ ← @slice.SliceExt.is_empty _ _ («[T] as core.slice.SliceExt» T) t11;
+let' t10 ← tmp__;
+if t10 then
+do tmp__ ← let' t13 ← base;
+let' ret ← result.Result.Err t13;
 return (ret)
 ;
-return (sum.inr tmp__) else
-let' t17 ← list.length tail;
-let' t18 ← (0 : nat) < t17;
+return (sum.inr tmp__)else
+let' t19 ← list.length tail;
+let' t20 ← (0 : nat) < t19;
 do tmp__ ← «[T] as core.slice.SliceExt».get_unchecked tail (0 : nat);
-let' t16 ← tmp__;
-let' t15 ← t16;
-let' t14 ← (t15);
-dostep tmp__ ← @ops.FnMut.call_mut _ _ _ «ops.FnMut (T) F» f t14;
-match tmp__ with (t12, f) :=
-match t12 with
+let' t18 ← tmp__;
+let' t17 ← t18;
+let' t16 ← (t17);
+dostep tmp__ ← @ops.FnMut.call_mut _ _ _ «ops.FnMut F (T)» f t16;
+match tmp__ with (t14, f) :=
+match t14 with
 | cmp.Ordering.Less :=
-let' t21 ← head;
-dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t21;
-let' t20 ← tmp__;
-let' t22 ← (t20 + (1 : nat), true);
-let' t19 ← t22.1;
-let' t23 ← (base + t19, true);
-let' base ← t23.1;
-let' t26 ← tail;
-let' t28 ← (1 : nat);
-let' t27 ← ops.RangeFrom.mk t28;
-dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ t26 t27;
-let' t25 ← tmp__;
-let' t24 ← t25;
-let' s ← t24;
+let' t23 ← head;
+dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t23;
+let' t22 ← tmp__;
+let' t24 ← (t22 + (1 : nat), true);
+let' t21 ← t24.1;
+let' t25 ← (base + t21, true);
+let' base ← t25.1;
+let' t28 ← tail;
+let' t30 ← (1 : nat);
+let' t29 ← ops.RangeFrom.«{{constructor}}» t30;
+dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ t28 t29;
+let' t27 ← tmp__;
+let' t26 ← t27;
+let' s ← t26;
 return (sum.inl (f, base, s))
  | cmp.Ordering.Equal :=
-do tmp__ ← let' t30 ← base;
-let' t32 ← head;
-dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t32;
-let' t31 ← tmp__;
-let' t33 ← (t30 + t31, true);
-let' t29 ← t33.1;
-let' ret ← result.Result.Ok t29;
+do tmp__ ← let' t33 ← base;
+let' t35 ← head;
+dostep tmp__ ← @«[T] as core.slice.SliceExt».len _ t35;
+let' t34 ← tmp__;
+let' t36 ← (t33 + t34, true);
+let' t32 ← t36.1;
+let' ret ← result.Result.Ok t32;
 return (ret)
 ;
 return (sum.inr tmp__) | cmp.Ordering.Greater :=
@@ -201,7 +201,7 @@ let' s ← t1;
 loop («[T] as core.slice.SliceExt».binary_search_by.loop_4) (f, base, s)
 end
 
-structure cmp.PartialEq [class] (Rhs : Type₁) (Self : Type₁)  :=
+structure cmp.PartialEq [class] (Self : Type₁) (Rhs : Type₁)  :=
 (eq : Self → Rhs → sem (Prop))
 
 structure cmp.Eq [class] (Self : Type₁) extends cmp.PartialEq Self Self 
@@ -210,7 +210,7 @@ inductive option.Option (T : Type₁) :=
 | None {} : option.Option T
 | Some {} : T → option.Option T
 
-structure cmp.PartialOrd [class] (Rhs : Type₁) (Self : Type₁) extends cmp.PartialEq Rhs Self :=
+structure cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁) extends cmp.PartialEq Self Rhs :=
 (partial_cmp : Self → Rhs → sem ((option.Option (cmp.Ordering))))
 
 structure cmp.Ord [class] (Self : Type₁) extends cmp.Eq Self, cmp.PartialOrd Self Self :=

@@ -72,6 +72,7 @@ impl<'a> Component<'a> {
                         defs.push(lv);
                         rvalue(rv, &mut uses);
                     }
+                    _ => {}
                 }
             }
             if let Some(ref term) = trans.mir[bb].terminator {
