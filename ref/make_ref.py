@@ -14,6 +14,10 @@ def success(path):
     fail = False
     for f in os.listdir(path):
         p = os.path.join(path, f)
+        if f == 'lib.rs':
+            lib = open(p).read()
+            if 'FIXME' in lib:
+                return False  # wrong if there are passing sub items
         if f == 'generated.lean':
             gen = open(p).read()
             if 'unimplemented' in gen or 'compiler error' in gen:
@@ -22,9 +26,9 @@ def success(path):
                 ok = True
         if os.path.isdir(p):
             s = success(p)
-            if s == False:
+            if s != True:
                 fail = True
-            if s:
+            if s != False:
                 ok = True
     if ok and fail or not ok and not fail:
         return None
@@ -40,9 +44,12 @@ def toc(path):
             if ' ' in f:
                 anchor = '-'.join(f.split(' ')[1:]).lower()
                 s = success(p)
+                name = f
+                if f.endswith('.'):
+                    name = ' '.join(name.split(' ')[1:])[:-1]
                 yield """<li><a class="{}" href="#{}">{}</a>""".format(
                     "success" if s else "fail" if s == False else "",
-                    anchor, f)
+                    anchor, name)
                 yield from toc(p)
                 yield "</li>"
     yield "</ul>"
