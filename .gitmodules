@@ -1,6 +1,6 @@
-[submodule "librustc"]
+[submodule "rust"]
 	path = rust
-	url = https://github.com/Kha/rust.git
+	url = https://github.com/rust-lang/rust
 [submodule "thys/petgraph/src"]
 	path = thys/petgraph/src
 	url = https://github.com/bluss/petgraph
