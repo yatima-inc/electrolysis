@@ -3,16 +3,40 @@ from pathlib import Path
 
 ref = Path('ref')
 
-def task_electrolysis():
-    for p in ref.rglob('lib.rs'):
+def task_cargo_build():
+    return {
+        'actions': ['cargo build'],
+        'targets': ['target/debug/electrolysis'],
+    }
+
+def task_electrolysis_thys():
+    for crate in ['core']:
+        p = Path('thys') / crate
+        yield {
+            'name': str(crate),
+            'actions': [['cargo', 'run', crate]],
+            'file_dep': [p / 'config.toml', 'target/debug/electrolysis'],
+            'targets': [p / 'generated.lean'],
+        }
+
+def task_linja_thys():
+    # relies on ninja dependency management
+    return {
+        'task_dep': ['electrolysis_thys'],
+        'actions': ['(cd thys; linja)'],
+    }
+
+def task_electrolysis_ref():
+    for p in list(ref.rglob('lib.rs')):
         yield {
             'name': str(p),
             'actions': [['cargo', 'run', p]],
             'file_dep': [p, 'target/debug/electrolysis'],
+            'task_dep': ['electrolysis_thys'],
             'targets': [p.with_name('generated.lean')],
         }
 
-@create_after(executed='electrolysis', target_regex='ref/index\.html')
+@create_after(executed='electrolysis_ref', target_regex=r'ref/index\.html')
 def task_ref():
     return {
         'actions': ['(cd ref; ./make_ref.py)'],
@@ -20,10 +44,8 @@ def task_ref():
         'targets': ['ref/index.html'],
     }
 
-@create_after(executed='electrolysis')
-def task_linja():
-    # note: uses ninja depedency management
+def task_linja_ref():
     return {
-        'file_dep': list(ref.rglob('*.lean')),
+        'task_dep': ['linja_thys', 'electrolysis_ref'],
         'actions': ['(cd ref; linja)'],
     }
