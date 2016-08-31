@@ -153,6 +153,7 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
             return
         }
 
+        println!("{}...", name);
         self.deps.borrow_mut().get_def_idx(def_id); // add to dependency graph
         let res = self.config.config.lookup(&format!("replace.\"{}\"", name)).map(|res| Ok(Some(res.as_str().unwrap().to_string())));
         let res = res.unwrap_or_else(|| {
