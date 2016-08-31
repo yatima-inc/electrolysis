@@ -14,6 +14,16 @@ namespace test
 inductive Foo :=
 | Bar {} : Foo
 
-/- main: unimplemented: rvalue tmp0 as u32 (Misc) -/
+definition Foo.discr (self : Foo) : isize := match self with
+| Foo.Bar := 123
+end
+
+definition main : sem (unit) :=
+let' t0 ← Foo.Bar;
+do tmp__ ← (isize_to_u32 (Foo.discr t0));
+let' x ← tmp__;
+let' ret ← ⋆;
+return (ret)
+
 
 end test

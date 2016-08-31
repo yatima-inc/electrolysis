@@ -2,6 +2,7 @@ import data.nat data.list
 import theories.topology.limit
 import loop_combinator
 
+open int
 open nat
 
 abbreviation u8 [parsing_only] := nat
@@ -17,6 +18,12 @@ abbreviation i64 [parsing_only] := int
 abbreviation isize [parsing_only] := int
 
 abbreviation slice [parsing_only] := list
+
+definition isize_to_usize (x : isize) : sem usize :=
+if x ≥ 0 then return (nat.of_int x)
+else mzero
+
+abbreviation isize_to_u32 [parsing_only] := isize_to_usize
 
 definition checked.sub (x y : nat) : sem nat :=
 if x ≥ y then return (x-y) else mzero

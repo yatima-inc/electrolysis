@@ -1,0 +1,5 @@
+rustc_args = "thys/petgraph/src/src/lib.rs --crate-name petgraph --crate-type lib -L dependency=thys/petgraph/src/target/debug/deps --extern fixedbitset=thys/petgraph/src/target/debug/deps/libfixedbitset-0ba3fe99bd419295.rlib"
+
+targets = [
+  "algo.scc",
+]

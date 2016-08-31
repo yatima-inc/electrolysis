@@ -11,7 +11,7 @@ use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::*;
 use rustc::ty::{self, Ty};
 
-use joins::Join;
+use joins::*;
 use trans::krate::{self, CrateTranspiler};
 
 pub enum TraitImplLookup<'tcx> {
@@ -277,7 +277,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                         applied_ty)
             }
             ty::VariantKind::Unit =>
-                format!("structure {} := mk {{}} ::", self.as_generic_ty_def(None)),
+                format!("structure {} := mk {{}} ::",
+                        self.as_generic_ty_def(None)),
         }
     }
 
@@ -298,7 +299,20 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 ref data => panic!("unimplemented: enum variant {:?}", data)
             }
         });
-        format!("inductive {} :=\n{}", self.as_generic_ty_def(None), variants.join("\n"))
+        // if no variants have data attached, add a function to extrac the discriminant
+        let discr = if adt_def.variants.iter().all(|variant| variant.kind == ty::VariantKind::Unit) {
+            let discrs = adt_def.variants.iter().map(|variant| {
+                format!("| {}.{} := {}", name, variant.name,
+                        variant.disr_val.to_u64_unchecked() as i64)
+            }).join("\n");
+            format!("\n\ndefinition {}.discr {} : isize := match self with\n{}\nend",
+                    name,
+                    (generics.types.iter().map(|p| format!("{{{} : Type₁}}", p.name)),
+                     &format!("(self : {})", applied_ty)).join(" "),
+                    discrs)
+        } else { "".to_string() };
+        format!("inductive {} :=\n{}{}",
+                self.as_generic_ty_def(None), variants.join("\n"), discr)
     }
 
     fn transpile_static(&self) -> String {

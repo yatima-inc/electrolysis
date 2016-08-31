@@ -15,6 +15,11 @@ inductive Animal :=
 | Dog {} : Animal
 | Cat {} : Animal
 
+definition Animal.discr (self : Animal) : isize := match self with
+| Animal.Dog := 0
+| Animal.Cat := 1
+end
+
 definition main : sem (unit) :=
 let' a ← Animal.Dog;
 let' a ← Animal.Cat;

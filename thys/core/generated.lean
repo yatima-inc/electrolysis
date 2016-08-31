@@ -30,6 +30,12 @@ inductive cmp.Ordering :=
 | Equal {} : cmp.Ordering
 | Greater {} : cmp.Ordering
 
+definition cmp.Ordering.discr (self : cmp.Ordering) : isize := match self with
+| cmp.Ordering.Less := -1
+| cmp.Ordering.Equal := 0
+| cmp.Ordering.Greater := 1
+end
+
 structure ops.RangeFrom (Idx : Type₁) := mk {} ::
 (start : Idx)
 
@@ -151,14 +157,15 @@ let' ret ← result.Result.Err t13;
 return (ret)
 ;
 return (sum.inr tmp__)else
+let' t15 ← f;
 let' t19 ← list.length tail;
 let' t20 ← (0 : nat) < t19;
 do tmp__ ← «[T] as core.slice.SliceExt».get_unchecked tail (0 : nat);
 let' t18 ← tmp__;
 let' t17 ← t18;
 let' t16 ← (t17);
-dostep tmp__ ← @ops.FnMut.call_mut _ _ _ «ops.FnMut F (T)» f t16;
-match tmp__ with (t14, f) :=
+dostep tmp__ ← @ops.FnMut.call_mut _ _ _ «ops.FnMut F (T)» t15 t16;
+match tmp__ with (t14, t15) :=
 match t14 with
 | cmp.Ordering.Less :=
 let' t23 ← head;
@@ -175,6 +182,7 @@ dostep tmp__ ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ t
 let' t27 ← tmp__;
 let' t26 ← t27;
 let' s ← t26;
+let' f ← t15;
 return (sum.inl (f, base, s))
  | cmp.Ordering.Equal :=
 do tmp__ ← let' t33 ← base;
@@ -184,10 +192,12 @@ let' t34 ← tmp__;
 let' t36 ← (t33 + t34, true);
 let' t32 ← t36.1;
 let' ret ← result.Result.Ok t32;
+let' f ← t15;
 return (ret)
 ;
 return (sum.inr tmp__) | cmp.Ordering.Greater :=
 let' s ← head;
+let' f ← t15;
 return (sum.inl (f, base, s))
 end
 end
