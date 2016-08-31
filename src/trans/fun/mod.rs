@@ -21,6 +21,15 @@ use joins::*;
 use trans::item;
 use trans::krate;
 
+/// `mk_tuple("x", "y")` ~> `"(x, y)"`
+fn mk_tuple<It: Iterator<Item=String>>(it: It) -> String {
+    match it.collect_vec()[..] {
+        [] => "⋆".to_string(),
+        [ref x] => x.clone(),
+        ref xs => format!("({})", xs.into_iter().join(", "))
+    }
+}
+
 /// `get_tuple_elem('x', 1, 3)` ~> `'x.1.2'`
 fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
     let fsts = iter::repeat(".1").take(len - idx - 1);
@@ -330,16 +339,19 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     hir::Expr_::ExprClosure(_, ref decl, _, _) => decl,
                     _ => unreachable!(),
                 };
-                let param_names = upvars.iter().map(|lv| self.lvalue_name(lv).unwrap()).chain(
+                let param_names = iter::once("upvars".to_string()).chain(
                     decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
                         hir::PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, _) => self.mk_lean_name(&*name.node.as_str()),
-                    _ => format!("p{}", i),
+                        _ => format!("p{}", i),
                 })).collect();
                 let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
                 let mut trans = FnTranspiler::new(&trans, param_names, "return ret".to_string());
                 let body = trans.transpile_mir();
                 self.prelude.append(&mut trans.prelude);
-                format!("(λ{}, {})", trans.param_names.iter().skip(upvars.len()).join(" "), body)
+                format!("(λ {}, {}) {}",
+                        trans.param_names.iter().join(" "),
+                        body,
+                        mk_tuple(upvars.iter().map(|lv| self.get_lvalue(lv))))
             }
             Rvalue::Len(ref lv) => format!("list.length {}", self.get_lvalue(lv)),
             _ => panic!("unimplemented: rvalue {:?}", rv),

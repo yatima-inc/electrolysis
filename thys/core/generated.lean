@@ -229,11 +229,11 @@ structure cmp.Ord [class] (Self : Type₁) extends cmp.Eq Self, cmp.PartialOrd S
 definition «[T] as core.slice.SliceExt».binary_search {T : Type₁} [«cmp.Ord T» : cmp.Ord T] (self : (slice T)) (x : T) : sem ((result.Result usize usize)) :=
 let' t0 ← self;
 let' t2 ← x;
-let' t1 ← (λp, let' t0 ← p;
-let' t1 ← t2;
+let' t1 ← (λ upvars p, let' t0 ← p;
+let' t1 ← upvars;
 dostep tmp__ ← @cmp.Ord.cmp _ «cmp.Ord T» t0 t1;
 let' ret ← tmp__;
-return ret);
+return ret) t2;
 dostep tmp__ ← @«[T] as core.slice.SliceExt».binary_search_by _ _ fn t0 t1;
 let' ret ← tmp__;
 return (ret)
