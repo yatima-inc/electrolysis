@@ -96,15 +96,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn deref_mut(&self, lv: &Lvalue) -> Option<&Lvalue<'tcx>> {
-        self.lvalue_idx(lv).and_then(|idx| self.refs.get(&idx).cloned())
-    }
-
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
-        if let Some(lv) = self.deref_mut(lv) {
-            return self.lvalue_name(lv)
-        }
-
         match *lv {
             Lvalue::Var(..) | Lvalue::Temp(..) | Lvalue::Arg(..) | Lvalue::ReturnPointer => Some(self.local_name(lv)),
             Lvalue::Static(did) => Some(self.name_def_id(did)),
@@ -122,9 +114,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> String {
-        if let Some(lv) = self.deref_mut(lv) {
-            return self.get_lvalue(lv)
-        }
         if let Some(name) = self.lvalue_name(lv) {
             return name
         }
@@ -185,9 +174,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> String {
-        if let Some(lv) = self.deref_mut(lv) {
-            return self.set_lvalue(lv, val)
-        }
         if let Some(name) = self.lvalue_name(lv) {
             if name == val { // no-op
                 return "".to_string()
@@ -212,17 +198,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    // TODO: obsolete with copy-at-drop
     fn bind_lvalues<'b>(&self, lvs: Vec<&'b Lvalue<'tcx>>, val: &str, cont: &str) -> String {
-        let (direct_dests, indirect_dests): (Vec<_>, Vec<_>) = lvs.into_iter().map(|lv| {
-            match self.lvalue_name(lv) {
-                Some(name) => (name, None),
-                None => (self.local_name(lv), Some(self.set_lvalue(self.deref_mut(lv).unwrap(), &self.local_name(lv))))
-            }
-        }).unzip();
-        let indirect_dests = indirect_dests.into_iter().filter_map(|x| x).join("");
+        let dests = lvs.into_iter().map(|lv| self.lvalue_name(lv).expect("oops: non-atomic bind_lvalues target")).collect_vec();
         format!("dostep tmp__ ← {};\n{}", val,
-                detuplize("tmp__", &direct_dests[..], &(indirect_dests + cont)))
+                detuplize("tmp__", &dests[..], cont))
     }
 
     fn transpile_constval(&self, val: &ConstVal) -> String {
@@ -302,7 +281,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
             Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
-            Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
+            Rvalue::Ref(_, _, ref lv) =>
                 return self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 if ops.len() == 0 {
@@ -361,10 +340,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             StatementKind::Assign(ref lv, ref rv) => {
                 if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
                     let idx = self.lvalue_idx(lv).unwrap_or_else(|| {
-                        panic!("unimplemented: storing {:?}", lv)
+                        panic!("unimplemented: storing &mut in {:?}", lv)
                     });
                     self.refs.insert(idx, lsource);
-                    return "".to_string()
                 }
                 if *lv != Lvalue::ReturnPointer && self.lvalue_ty(lv).is_nil() {
                     // optimization/rustc_mir workaround: don't save '()'
@@ -379,7 +357,15 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             StatementKind::SetDiscriminant { .. } =>
                 panic!("unimplemented: statement {:?}", stmt),
-            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) => "".to_string()
+            StatementKind::StorageLive(_) => "".to_string(),
+            StatementKind::StorageDead(ref lv) => {
+                if let Some(idx) = self.lvalue_idx(lv) {
+                    if let Some(lsource) = self.refs.get(&idx) {
+                        return self.set_lvalue(lsource, &self.lvalue_name(lv).unwrap());
+                    }
+                }
+                "".to_string()
+            }
         }
     }
 
