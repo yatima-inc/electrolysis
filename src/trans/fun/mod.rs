@@ -270,6 +270,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         BinOp::Ne => "≠",
                         BinOp::Ge => "≥",
                         BinOp::Gt => ">",
+                        BinOp::BitOr => "||",
+                        BinOp::BitAnd => "&&",
                         _ => panic!("unimplemented: operator {:?}", op),
                     }, so2))
                 }

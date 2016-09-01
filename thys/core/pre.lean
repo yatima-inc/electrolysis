@@ -2,7 +2,9 @@ import data.nat data.list
 import theories.topology.limit
 import loop_combinator
 
+open bool
 open int
+open list
 open nat
 
 abbreviation u8 [parsing_only] := nat
@@ -38,6 +40,29 @@ if y ≠ 0 then return (mod x y) else mzero
 definition checked.shl (x : nat) (y : int) : sem nat := return (x * 2^nat.of_int y)
 definition checked.shr (x : nat) (y : int) : sem nat := return (div x (2^nat.of_int y))
 
+definition nat.to_bits (n : ℕ) : list bool :=
+nat.strong_rec_on n (λ n rec,
+if H : n = 0 then []
+else (if n % 2 = 1 then tt else ff) :: rec (n / 2) (div_lt_of_ne_zero H))
+
+definition nat.of_bits : list bool → ℕ
+| [] := 0
+| (x::xs) := (if x = tt then 1 else 0) + 2 * nat.of_bits xs
+
+definition bitand (x y : nat) : nat :=
+nat.of_bits (map₂ band (nat.to_bits x) (nat.to_bits y))
+
+infix && := bitand
+
+definition bitor (x y : nat) : nat :=
+have rec : list bool → list bool → list bool
+| xs []           := xs
+| [] ys           := ys
+| (x::xs) (y::ys) := (x || y) :: rec xs ys,
+nat.of_bits (rec (nat.to_bits x) (nat.to_bits y))
+
+infix || := bitor
+
 namespace core
   abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)
 
@@ -48,6 +73,9 @@ namespace core
   definition «[T] as core.slice.SliceExt».get_unchecked {T : Type₁} (self : slice T) (index : usize)
     : sem T :=
   option.rec mzero return (list.nth self index)
+
+  /- This trait has way too many freaky dependencies -/
+  structure fmt.Debug [class] (Self : Type₁) := mk ::
 
   namespace ops
     structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
