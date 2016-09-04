@@ -169,6 +169,11 @@ section
   obtain x Hx, from ex_mem_of_ne_nil Hxs,
   obtain y Hy, from ex_mem_of_ne_nil Hys,
   ne_nil_of_mem (mem_product Hx Hy)
+
+  definition update : list A → ℕ → A → option (list A)
+  | []      _       _ := none
+  | (x::xs) 0       y := some (y::xs)
+  | (x::xs) (n + 1) y := option.map (λxs', x::xs') (update xs n y) 
 end
 
 inductive prefixeq {A : Type} : list A → list A → Prop :=

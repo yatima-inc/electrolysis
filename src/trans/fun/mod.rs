@@ -195,14 +195,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
                 self.set_lvalue(base, val),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) => {
-                let base_name = self.lvalue_name(base).ok_or_else(|| format!("ugh, nested fields assignments? {:?}", lv)).unwrap();
                 match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
                         let field_name = adt_def.struct_variant().fields[field.index()].name;
-                        format!("let' {} ← ⦃ {}, {} := {}, {} ⦄;\n", base_name, self.name_def_id(adt_def.did), field_name, val, base_name)
+                        self.set_lvalue(base, &format!("⦃ {}, {} := {}, {} ⦄", self.name_def_id(adt_def.did), field_name, val, self.get_lvalue(base)))
                     },
                     ref ty => panic!("unimplemented: setting field of {:?}", ty),
                 }
+            }
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref index) }) => {
+                self.set_lvalue(base, &format!("(list.update {} {} {})", self.get_lvalue(base), self.get_operand(index), val))
             }
             _ => panic!("unimplemented: setting lvalue {:?}", lv),
         }
