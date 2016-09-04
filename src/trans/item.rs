@@ -296,10 +296,9 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 let mut fields = variant.fields.iter().map(|f| {
                     self.transpile_ty(f.unsubst_ty())
                 });
-                let name = self.as_generic_ty_def(None);
-                let applied_ty = (name.clone(), self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| p.name.as_str().to_string())).join(" ");
+                let applied_ty = (self.name(), self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| p.name.as_str().to_string())).join(" ");
                 format!("inductive {} :=\nmk {{}} : {} → {}",
-                        name,
+                        self.as_generic_ty_def(None),
                         fields.join(" → "),
                         applied_ty)
             }
@@ -365,7 +364,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             .map(|trait_pred| self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))
             .collect_vec();
         let extends = if supertraits.is_empty() { "".to_owned() } else {
-            format!("extends {}", supertraits.into_iter().join(", "))
+            format!(" extends {}", supertraits.into_iter().join(", "))
         };
 
         let only_path = format!("traits.\"{}\".only", name);
