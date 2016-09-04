@@ -43,6 +43,10 @@ pub fn try_unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
     }
 }
 
+pub fn unwrap_mut_ref<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
+    try_unwrap_mut_ref(ty).unwrap_or(ty)
+}
+
 pub fn name_def_id(tcx: TyCtxt, def_id: DefId) -> String {
     let mut buffer = Vec::new();
     ty::item_path::with_forced_absolute_paths(|| {

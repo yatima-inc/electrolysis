@@ -140,7 +140,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             // `Fn(&mut T) -> R` ~> `'T -> sem (R × T)'`
             ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) => {
                 let sig = data.sig.skip_binder();
-                let inputs = sig.inputs.iter().map(|ty| self.transpile_ty(ty));
+                let inputs = sig.inputs.iter().map(|ty| self.transpile_ty(krate::unwrap_mut_ref(ty)));
                 inputs.chain(iter::once(format!("sem {}", self.ret_ty(data)))).join(" → ")
             },
             ty::TypeVariants::TyStruct(ref adt_def, ref substs) |
@@ -148,7 +148,9 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 "({})",
                 (&self.name_def_id(adt_def.did), substs.types().map(|ty| self.transpile_ty(ty))).join(" ")
             ),
-            ty::TypeVariants::TyRef(_, ref data) => self.transpile_ty(data.ty),
+            ty::TypeVariants::TyRef(_, ty::TypeAndMut {
+                mutbl: hir::Mutability::MutImmutable, ref ty
+            }) => self.transpile_ty(ty),
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
             ty::TypeVariants::TyProjection(ref proj) => self.transpile_associated_type(proj.trait_ref, &proj.item_name),
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)),

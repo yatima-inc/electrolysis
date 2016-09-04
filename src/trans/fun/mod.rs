@@ -426,7 +426,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     /// Locates the applicable definition of a method, given its name.
-    /// from trans::meth
+    // from trans::meth
     fn get_impl_method<'t>(
         tcx: ty::TyCtxt<'a, 't, 't>,
         substs: &Substs<'t>,
@@ -525,7 +525,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 .filter(|v| l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
             // vars that are redefined by l ~> loop state
             let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.locals().into_iter().filter_map(|v| {
-                let ty = self.transpile_ty(self.lvalue_ty(&v));
+                // safe to unwrap since we write back the value anyway
+                let ty = self.transpile_ty(krate::unwrap_mut_ref(self.lvalue_ty(&v)));
                 let name = self.lvalue_name(&v).unwrap();
                 if defs.contains(&name) && l_defs.contains(&name) {
                     Some((ty, name))
@@ -611,7 +612,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
 
         let params = self.param_names.iter().zip(self.mir.arg_decls.iter()).map(|(name, arg)| {
-            format!("({} : {})", name, self.transpile_ty(&arg.ty))
+            format!("({} : {})", name, self.transpile_ty(krate::unwrap_mut_ref(&arg.ty)))
         }).collect_vec();
 
         let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {
