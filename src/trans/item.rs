@@ -467,17 +467,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let name = self.name();
 
         let node = self.tcx.map.get(self.node_id());
-        if let Some(fn_like) = hir::map::blocks::FnLikeNode::from_node(node) {
-            return if let Node::NodeExpr(_) = node {
-                // closure
-                None
-            } else {
-                Some(self.transpile_fn(name, fn_like.decl()))
-            }
-        }
-
-        match node {
-            Node::NodeItem(item) => Some(match item.node {
+        Some(match node {
+            Node::NodeItem(item) => match item.node {
                 Item_::ItemExternCrate(_) | Item_::ItemUse(_) | Item_::ItemMod(_)
                 | Item_::ItemForeignMod(_) => return None,
                 Item_::ItemStatic(_, hir::Mutability::MutMutable, _) =>
@@ -511,10 +502,15 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     format!("definition {} := {}",
                             self.as_generic_ty_def(None),
                             self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty)),
-                _ => panic!("unimplemented: {:?}", item),
-            }),
-            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) => None,
+                Item_::ItemFn(ref decl, ..) =>
+                    self.transpile_fn(name, decl),
+            },
+            Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, Some(_)), .. })
+            | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), ..}) =>
+                self.transpile_fn(name, &*sig.decl),
+            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) =>
+                return None,
             _ => panic!("unimplemented: {:?}", node),
-        }
+        })
     }
 }
