@@ -290,21 +290,21 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     MaybeValue::partial(format!("sem.map (λx, (x, true)) ({})", val))
                 }
             }
-            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if op.ty(self.mir, self.tcx).is_integral() && ty.is_integral() => {
-                return MaybeValue::partial(format!("({}_to_{} {})",
-                                                   self.transpile_ty(op.ty(self.mir, self.tcx)),
-                                                   self.transpile_ty(ty),
-                                                   self.get_operand(op)))
-            }
-            Rvalue::Cast(CastKind::Misc, ref op, ref ty) if match op.ty(self.mir, self.tcx).sty {
-                ty::TypeVariants::TyEnum(..) => true,
-                _ => false,
-            } && ty.is_integral() => {
+            Rvalue::Cast(CastKind::Misc, ref op, ref dest_ty) => {
                 let op_ty = op.ty(self.mir, self.tcx);
-                return MaybeValue::partial(format!("(isize_to_{} ({}.discr {}))",
-                                                   self.transpile_ty(ty),
-                                                   self.name_def_id(op_ty.ty_to_def_id().unwrap()),
-                                                   self.get_operand(op)))
+                return MaybeValue::partial(if op_ty.is_integral() || op_ty.is_bool() {
+                    format!("({}_to_{} {})",
+                            self.transpile_ty(op_ty),
+                            self.transpile_ty(dest_ty),
+                            self.get_operand(op))
+                } else if let ty::TypeVariants::TyEnum(..) = op_ty.sty {
+                    format!("(isize_to_{} ({}.discr {}))",
+                            self.transpile_ty(dest_ty),
+                            self.name_def_id(op_ty.ty_to_def_id().unwrap()),
+                            self.get_operand(op))
+                } else {
+                    panic!("unimplemented: cast from {:?} to {:?}", op_ty, dest_ty)
+                })
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
             Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),

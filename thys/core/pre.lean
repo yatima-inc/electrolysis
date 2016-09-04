@@ -7,6 +7,8 @@ open int
 open list
 open nat
 
+open [class] classical
+
 abbreviation u8 [parsing_only] := nat
 abbreviation u16 [parsing_only] := nat
 abbreviation u32 [parsing_only] := nat
@@ -24,6 +26,9 @@ abbreviation slice [parsing_only] := list
 definition isize_to_usize (x : isize) : sem usize :=
 if x ≥ 0 then return (nat.of_int x)
 else mzero
+
+noncomputable definition Prop_to_usize (x : Prop) : sem usize :=
+return (if x then 1 else 0)
 
 abbreviation isize_to_u32 [parsing_only] := isize_to_usize
 
