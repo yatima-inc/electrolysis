@@ -20,6 +20,7 @@ use self::component::Component;
 use joins::*;
 use trans::item;
 use trans::krate;
+use trans::TransResult;
 
 /// `mk_tuple("x", "y")` ~> `"(x, y)"`
 fn mk_tuple<It: Iterator<Item=String>>(it: It) -> String {
@@ -468,13 +469,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         match *func {
             Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
                 let substs = substs.clone();
-                self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| {
+                self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| -> TransResult {
                     let (def_id, substs): (_, ty::subst::Substs<'tcx>) = match self.tcx.trait_of_item(def_id) {
                         Some(trait_def_id) => {
                             // from trans::meth::trans_method_callee
                             let trait_ref = ty::TraitRef::from_method(self.tcx, trait_def_id, &substs);
 
-                            match self.infer_trait_impl(trait_ref, &infcx) {
+                            match self.infer_trait_impl(trait_ref, &infcx)? {
                                 item::TraitImplLookup::Static { impl_def_id, substs: impl_substs, .. }  => {
                                     let method = self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap();
                                     FnTranspiler::get_impl_method(self.tcx, &substs, impl_def_id, &impl_substs, method.name)
@@ -491,15 +492,15 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     // TODO: should probably substitute and make explicit
                     let ty_params = self.full_generics(def_id).iter().map(|_| "_".to_string()).collect_vec();
                     let assoc_ty_substs = self.get_assoc_ty_substs(def_id);
-                    let trait_params = self.trait_predicates_without_markers(def_id).flat_map(|trait_pred| {
+                    let trait_params = try_iter!(self.trait_predicates_without_markers(def_id).map(|trait_pred| -> TransResult<_> {
                         let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
                         let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
                         let trait_ref: ty::TraitRef<'tcx> = trait_pred.trait_ref;
-                        let trait_param = self.infer_trait_impl(trait_ref.subst(self.tcx, &substs), &infcx).to_string(self);
-                        free_assoc_tys.chain(iter::once(trait_param))
-                    });
-                    (format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" ")
-                })
+                        let trait_param = self.infer_trait_impl(trait_ref.subst(self.tcx, &substs), &infcx)?.to_string(self);
+                        Ok(free_assoc_tys.chain(iter::once(trait_param)))
+                    })).flat_map(|x| x);
+                    Ok((format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" "))
+                }).unwrap()
             }
             Operand::Constant(_) => unreachable!(),
             Operand::Consume(ref lv) => self.get_lvalue(lv),

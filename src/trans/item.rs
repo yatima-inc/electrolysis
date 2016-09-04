@@ -12,6 +12,7 @@ use rustc::traits::*;
 use rustc::ty::{self, Ty};
 
 use joins::*;
+use trans::TransResult;
 use trans::krate::{self, CrateTranspiler};
 
 pub enum TraitImplLookup<'tcx> {
@@ -201,25 +202,31 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     //
     // very incomplete implementation gleaned from the rustc sources (though those never have to
     // construct a full tree of impls)
-    pub fn infer_trait_impl<'b, 'c>(&self, trait_ref: ty::TraitRef<'tcx>, infcx: &'b ::rustc::infer::InferCtxt<'b, 'tcx, 'c>) -> TraitImplLookup<'tcx> {
+    pub fn infer_trait_impl<'b, 'c>(&self, trait_ref: ty::TraitRef<'tcx>, infcx: &'b ::rustc::infer::InferCtxt<'b, 'tcx, 'c>) -> TransResult<TraitImplLookup<'tcx>> {
         let span = ::syntax::codemap::DUMMY_SP;
         let pred: ty::PolyTraitPredicate<'tcx> = ty::Binder(trait_ref).to_poly_trait_predicate();
 
         let mut selcx = SelectionContext::new(infcx);
         let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
-        let selection = selcx.select(&obligation).unwrap_or_else(|err| {
-            panic!("obligation select: {:?} {:?}", obligation, err)
-        }).unwrap();
+        let selection = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+            selcx.select(&obligation)
+        }))
+            .map_err(|_| format!("obligation select crash: {:?}", obligation))?
+            .map_err(|err| {
+                format!("obligation select: {:?} {:?}", obligation, err)
+            })?
+            .ok_or(format!("empty selection result: {:?}", obligation))?;
 
-        match selection {
+        Ok(match selection {
             Vtable::VtableImpl(data) => {
                 let nested_traits = data.nested.iter().filter_map(|obl| match obl.predicate {
                     ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
-                        let trait_ref = self.tcx.lift(&trait_pred.skip_binder().trait_ref).unwrap();
-                        Some(self.infer_trait_impl(trait_ref, infcx).to_string(self))
+                        let trait_ref = &trait_pred.skip_binder().trait_ref;
+                        let trait_ref = self.tcx.lift(trait_ref).ok_or(format!("failed to lift {:?}", trait_ref));
+                        Some(trait_ref.and_then(|trait_ref| self.infer_trait_impl(trait_ref, infcx).map(|t| t.to_string(self))))
                     }
                     _ => None,
-                }).collect();
+                }).collect::<Result<Vec<_>, _>>()?;
 
                 let mut fulfill_cx = FulfillmentContext::new();
                 for obl in data.nested {
@@ -243,8 +250,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     param: "fn".to_string()
                 }
             },
-            vtable => panic!("unimplemented: vtable {:?}", vtable),
-        }
+            vtable => throw!("unimplemented: vtable {:?}", vtable),
+        })
     }
 
     // `self.def_id=Iterator, attr=Some('[class]')` ~> `'Iterator [class] (T : Type₁)'`
@@ -380,13 +387,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let mut trait_params = self.trait_predicates_without_markers(self.def_id).map(|trait_pred| {
                 format!(" [{}]", self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs))
         });
-
-        let supertrait_impls = self.tcx.normalizing_infer_ctxt(Reveal::All).enter(|infcx| {
-                self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs))
-                    .filter(|trait_pred| trait_pred.def_id() != trait_ref.def_id)
-                    .map(|trait_pred| self.infer_trait_impl(trait_pred.trait_ref, &infcx).to_string(self))
-                    .collect_vec()
-        });
+        let supertrait_impls = self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
+            self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs))
+                .filter(|trait_pred| trait_pred.def_id() != trait_ref.def_id)
+                .map(|trait_pred| self.infer_trait_impl(trait_pred.trait_ref, &infcx).map(|t| t.to_string(self)))
+                .collect::<Result<Vec<_>, _>>()
+        }).unwrap();
 
         let only_path = format!("traits.\"{}\".only", &self.name_def_id(trait_ref.def_id));
         let only: Option<HashSet<_>> = self.config.config.lookup(&only_path).map(|only| ::toml_value_as_str_array(only).into_iter().collect());

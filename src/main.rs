@@ -1,6 +1,7 @@
 // we require access to many rustc internals
 #![feature(rustc_private)]
-#![feature(box_patterns, slice_patterns, advanced_slice_patterns)]
+#![feature(box_patterns, slice_patterns, advanced_slice_patterns, dotdot_in_tuple_patterns)]
+#![feature(question_mark)]
 #![feature(conservative_impl_trait)]
 
 extern crate itertools;
@@ -19,6 +20,9 @@ extern crate rustc_errors;
 extern crate rustc_metadata;
 extern crate rustc_mir;
 extern crate syntax;
+
+macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
+macro_rules! try_iter { ($arg: expr) => { $arg.collect::<Result<Vec<_>, _>>()?.into_iter() } }
 
 mod item_path;
 mod joins;
@@ -157,7 +161,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
         let def_id = tcx.map.local_def_id(id);
         let name = name_def_id(tcx, def_id);
         if targets.iter().all(|targets| targets.is_match(&*name)) {
-            trans.transpile(def_id);
+            trans.transpile(def_id, targets.is_none());
         }
     }
 
