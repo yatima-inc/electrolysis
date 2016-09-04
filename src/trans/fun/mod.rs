@@ -258,12 +258,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 }, self.get_operand(operand)),
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
                 let (so1, so2) = (self.get_operand(o1), self.get_operand(o2));
+                let signed_o2 = if o2.ty(self.mir, self.tcx).is_signed() { so2.clone() }
+                else { format!("(int.of_nat {})", so2) };
                 return match op {
                     BinOp::Sub if !o1.ty(self.mir, self.tcx).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
                     BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked.div", so1, so2)),
                     BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked.mod", so1, so2)),
-                    BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, so2)),
-                    BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked.shr", so1, so2)),
+                    BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, signed_o2)),
+                    BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked.shr", so1, signed_o2)),
                     _ => MaybeValue::total(format!("{} {} {}", so1, match op {
                         BinOp::Add => "+",
                         BinOp::Mul => "*",
