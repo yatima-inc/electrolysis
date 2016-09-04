@@ -9,7 +9,7 @@ use rustc::hir::{self, FnDecl, PatKind};
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::*;
-use rustc::ty::{self, Ty};
+use rustc::ty::{self, Lift, Ty};
 
 use joins::*;
 use trans::TransResult;
@@ -21,7 +21,7 @@ pub enum TraitImplLookup<'tcx> {
 }
 
 impl<'tcx> TraitImplLookup<'tcx> {
-    pub fn to_string<'a>(self, trans: &ItemTranspiler) -> String {
+    pub fn to_string<'a>(self, trans: &ItemTranspiler<'a, 'tcx>) -> String {
         match self {
             TraitImplLookup::Static { impl_def_id, params, substs } =>
                 format!("({} {})", trans.name_def_id(impl_def_id), substs.types().map(|ty| {
@@ -62,7 +62,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         krate::name_def_id(self.tcx, did)
     }
 
-    fn transpile_trait_ref_args(&self, trait_ref: ty::TraitRef) -> Vec<String> {
+    fn transpile_trait_ref_args(&self, trait_ref: ty::TraitRef<'tcx>) -> Vec<String> {
         trait_ref.substs.types().map(|ty| {
             self.transpile_ty(ty)
         }).collect()
@@ -74,7 +74,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         format!("{}", name) //_{}", prefix, name)
     }
 
-    /// `where Item = u32` ~> `{'Item': 'u32'}`
+    /// `Item = u32` ~> `{'Item': 'u32'}`
     pub fn get_assoc_ty_substs(&self, def_id: DefId) -> HashMap<String, String> {
         self.tcx.lookup_predicates(def_id).predicates.into_iter().filter_map(|trait_pred| match trait_pred {
             ty::Predicate::Projection(ty::Binder(proj_pred)) => {
@@ -107,7 +107,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     /// `Add<T, RHS=S>` ~> `'Add T'`
-    pub fn transpile_trait_ref_no_assoc_tys(&self, trait_ref: ty::TraitRef) -> String {
+    pub fn transpile_trait_ref_no_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>) -> String {
         (&self.name_def_id(trait_ref.def_id), self.transpile_trait_ref_args(trait_ref)).join(" ")
     }
 
@@ -119,14 +119,32 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     /// `Fn(&mut T) -> R` ~> `(R × T)'`
-    pub fn ret_ty(&self, fun_ty: &ty::BareFnTy) -> String {
+    pub fn ret_ty(&self, fun_ty: &ty::BareFnTy<'tcx>) -> String {
         let sig = fun_ty.sig.skip_binder();
         let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
         let out_ty = self.transpile_ty(sig.output);
         format!("({})", (out_ty, muts.map(|ty| self.transpile_ty(ty))).join(" × "))
     }
 
-    pub fn transpile_ty(&self, ty: Ty) -> String {
+    pub fn normalize_ty(&self, value: Ty<'tcx>) -> Ty<'tcx> {
+        self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
+            let mut selcx = SelectionContext::new(&infcx);
+            normalize(&mut selcx, ObligationCause::dummy(), &value).value
+                .lift_to_tcx(self.tcx)
+                .unwrap_or(value)
+        })
+    }
+
+    fn normalize_trait_ref(&self, value: ty::TraitRef<'tcx>) -> ty::TraitRef<'tcx> {
+        self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
+            let mut selcx = SelectionContext::new(&infcx);
+            normalize(&mut selcx, ObligationCause::dummy(), &value).value
+                .lift_to_tcx(self.tcx)
+                .unwrap_or(value)
+        })
+    }
+
+    pub fn transpile_ty(&self, ty: Ty<'tcx>) -> String {
         match ty.sty {
             // may as well go full classical
             ty::TypeVariants::TyBool => "Prop".to_string(),
@@ -375,15 +393,22 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 else { format!(":=\n{}", items.join("\n")) })
     }
 
-    fn transpile_trait_impl(&self) -> String {
-        let trait_ref = self.tcx.impl_trait_ref(self.def_id).unwrap();
-        let mut assoc_ty_substs = self.get_assoc_ty_substs(self.def_id);
+    fn trait_impl_substs(&self, trait_ref: ty::TraitRef) -> HashMap<String, String> {
+        let mut substs = self.get_assoc_ty_substs(self.def_id);
+
         // For `type S = T`, extend `assoc_ty_substs` by `{'S': 'T'}`
         for item in self.tcx.impl_items.borrow().get(&self.def_id).unwrap() {
             if let ty::ImplOrTraitItem::TypeTraitItem(ref assoc_ty) = self.tcx.impl_or_trait_item(item.def_id()) {
-                assoc_ty_substs.insert(self.transpile_associated_type(trait_ref, &assoc_ty.name), self.transpile_ty(assoc_ty.ty.unwrap()));
+                let ty = self.normalize_ty(assoc_ty.ty.unwrap());
+                substs.insert(self.transpile_associated_type(trait_ref, &assoc_ty.name), self.transpile_ty(ty));
             }
         }
+        substs
+    }
+
+    fn transpile_trait_impl(&self) -> String {
+        let trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
+        let assoc_ty_substs = self.trait_impl_substs(trait_ref);
 
         // `Self : Iterator<Item=T>` ~> `'[Iterator T]'`
         let mut trait_params = self.trait_predicates_without_markers(self.def_id).map(|trait_pred| {

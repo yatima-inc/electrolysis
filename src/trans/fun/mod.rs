@@ -598,7 +598,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn ret_ty(&self) -> String {
-        match self.tcx.lookup_item_type(self.def_id).ty.sty {
+        match self.normalize_ty(self.tcx.lookup_item_type(self.def_id).ty).sty {
             ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) =>
                 self.sup.ret_ty(data),
             _ => unreachable!(),
