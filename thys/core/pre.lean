@@ -9,6 +9,10 @@ open nat
 
 open [class] classical
 
+structure lens (Outer Inner : Type₁) :=
+(get : Outer → sem Inner)
+(set : Outer → Inner → sem Outer)
+
 abbreviation u8 [parsing_only] := nat
 abbreviation u16 [parsing_only] := nat
 abbreviation u32 [parsing_only] := nat

@@ -507,7 +507,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, Some(_)), .. })
             | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), ..}) =>
                 self.transpile_fn(name, &*sig.decl),
-            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) =>
+            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) | Node::NodeExpr(..) =>
                 return None,
             _ => panic!("unimplemented: {:?}", node),
         })

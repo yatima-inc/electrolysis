@@ -54,6 +54,21 @@ fn unwrap_refs<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
     }
 }
 
+/// `*x.f[1]` ~> `x`
+fn lvalue_base<'a, 'tcx>(lv: &'a Lvalue<'tcx>) -> &'a Lvalue<'tcx> {
+    match lv {
+        &Lvalue::Projection(ref proj) => lvalue_base(&proj.base),
+        _ => lv,
+    }
+}
+
+fn lvalue_of_operand<'a, 'tcx>(op: &'a Operand<'tcx>) -> &'a Lvalue<'tcx> {
+    match *op {
+        Operand::Consume(ref lv) => lv,
+        Operand::Constant(_) => panic!("not an lvalue: {:?}", op),
+    }
+}
+
 /// Value that indicates whether evaluating it can panic
 struct MaybeValue {
     val: String,
@@ -63,6 +78,57 @@ struct MaybeValue {
 impl MaybeValue {
     fn total<T: ToString>(val: T) -> MaybeValue { MaybeValue { val: val.to_string(), total: true } }
     fn partial<T: ToString>(val: T) -> MaybeValue { MaybeValue { val: val.to_string(), total: false } }
+
+    fn to_partial(self) -> String {
+        if self.total {
+            format!("return ({})", self.val)
+        } else { self.val }
+    }
+    fn to_total(self) -> String {
+        if !self.total {
+            panic!("MaybeValue::to_total called on partial value {}", self.val)
+        }
+        self.val
+    }
+
+    fn and_then<F: FnOnce(String) -> MaybeValue>(self, depth: u32, f: F) -> MaybeValue {
+        if self.total {
+            f(format!("({})", self.val))
+        } else {
+            let tmp = format!("«$tmp{}»", depth);
+            let new = f(tmp.clone());
+            MaybeValue::partial(format!(
+                "do {} ← {};\n{}", tmp, self.val, new.to_partial()))
+        }
+    }
+    fn map<F: FnOnce(String) -> String>(self, depth: u32, f: F) -> String {
+        self.and_then(depth, |var| MaybeValue::partial(f(var))).val
+    }
+
+    fn and_then_multi<It, F>(depth: u32, vals: It, f: F) -> MaybeValue
+        where It: Iterator<Item=MaybeValue>,
+              F: FnOnce(Vec<String>) -> MaybeValue,
+    {
+        fn rec<It, F>(depth: u32, mut vals: It, mut vars: Vec<String>, f: F) -> MaybeValue
+            where It: Iterator<Item=MaybeValue>,
+            F: FnOnce(Vec<String>) -> MaybeValue,
+        {
+            match vals.next() {
+                None => f(vars),
+                Some(val) => val.and_then(depth, |var| {
+                    vars.push(var);
+                    rec(depth + 1, vals, vars, f)
+                })
+            }
+        }
+        rec(depth, vals, Vec::new(), f)
+    }
+    fn map_multi<It, F>(depth: u32, vals: It, f: F) -> String
+        where It: Iterator<Item=MaybeValue>,
+              F: FnOnce(Vec<String>) -> String,
+    {
+        MaybeValue::and_then_multi(depth, vals, |vars| MaybeValue::partial(f(vars))).val
+    }
 }
 
 #[derive(Clone)]
@@ -110,8 +176,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         match *lv {
             Lvalue::Var(..) | Lvalue::Temp(..) | Lvalue::Arg(..) | Lvalue::ReturnPointer => Some(self.local_name(lv)),
             Lvalue::Static(did) => Some(self.name_def_id(did)),
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
-                self.lvalue_name(base),
             Lvalue::Projection(_) => None,
         }
     }
@@ -123,14 +187,22 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             .collect()
     }
 
-    fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> String {
+    fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> MaybeValue {
         if let Some(name) = self.lvalue_name(lv) {
-            return name
+            return MaybeValue::total(name)
         }
 
         match *lv {
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
-                self.get_lvalue(base),
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) => {
+                if let Some(src) = self.mir.local_index(base).and_then(|idx| self.refs.get(&idx)) {
+                    // read from a &mut
+                    self.get_lvalue(base).and_then(0, |base| {
+                        MaybeValue::partial(format!("lens.get {} {}", base, self.local_name(src)))
+                    })
+                } else {
+                    self.get_lvalue(base)
+                }
+            }
             // glorious HACK: downcasting to an enum item should only happen directly after
             // a `match`, so just use the variable introduced in the `match`
             Lvalue::Projection(box Projection {
@@ -140,16 +212,20 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     elem: ProjectionElem::Downcast(..),
                 }),
             }) =>
-                format!("{}_{}", self.get_lvalue(base), field.index()),
+                MaybeValue::total(format!("{}_{}", self.local_name(base), field.index())),
+            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
+                self.get_lvalue(base).and_then(0, |base| self.get_operand(idx).and_then(1, |idx| {
+                    MaybeValue::partial(format!("«[T] as core.slice.SliceExt».get_unchecked {} {}", base, idx))
+                })),
             // `x.0`, `x.f`
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) =>
-                match unwrap_refs(self.lvalue_ty(base)).sty {
+                self.get_lvalue(base).and_then(0, |sbase| MaybeValue::total(match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyTuple(ref tys) =>
-                        get_tuple_elem(self.get_lvalue(base), field.index(), tys.len()),
+                        get_tuple_elem(sbase, field.index(), tys.len()),
                     ty::TypeVariants::TyStruct(ref adt_def, _) => {
                         if adt_def.struct_variant().kind == ty::VariantKind::Tuple {
                             format!("match {} with {}.mk {} := x{} end",
-                                    self.get_lvalue(base),
+                                    sbase,
                                     self.name_def_id(adt_def.did),
                                     (0..adt_def.struct_variant().fields.len()).map(|i| format!("x{}", i)).join(" "),
                                     field.index())
@@ -157,14 +233,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                             format!("({}.{} {})",
                                     self.name_def_id(adt_def.did),
                                     self.mk_lean_name(&*adt_def.struct_variant().fields[field.index()].name.as_str()),
-                                    self.get_lvalue(base))
+                                    sbase)
                         }
                     }
                     ty::TypeVariants::TyClosure(..) =>
                         // captured variables become parameters
                         self.param_names[field.index()].clone(),
                     ref ty => panic!("unimplemented: accessing field of {:?}", ty),
-                },
+                })),
             _ => panic!("unimplemented: loading {:?}", lv),
         }
     }
@@ -173,17 +249,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         lv.ty(self.mir, self.tcx).to_ty(self.tcx)
     }
 
-    fn lvalue_idx(&self, lv: &Lvalue) -> Option<Local> {
-        self.mir.local_index(lv).or_else(|| {
-            match *lv {
-                Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
-                    self.lvalue_idx(base),
-                _ => None,
-            }
-        })
-    }
-
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> String {
+        if let Some(src) = self.mir.local_index(lv).and_then(|idx| self.refs.get(&idx)) {
+            // writing through a &mut
+            return format!("do {src} ← lens.set {lens} {src} {val};\n",
+                           src=self.local_name(src),
+                           lens=self.local_name(lv),
+                           val=val)
+        }
         if let Some(name) = self.lvalue_name(lv) {
             if name == val { // no-op
                 return "".to_string()
@@ -192,20 +265,26 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
         }
         match *lv {
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) =>
-                self.set_lvalue(base, val),
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) => {
-                match unwrap_refs(self.lvalue_ty(base)).sty {
-                    ty::TypeVariants::TyStruct(ref adt_def, _) => {
-                        let field_name = adt_def.struct_variant().fields[field.index()].name;
-                        self.set_lvalue(base, &format!("⦃ {}, {} := {}, {} ⦄", self.name_def_id(adt_def.did), field_name, val, self.get_lvalue(base)))
-                    },
-                    ref ty => panic!("unimplemented: setting field of {:?}", ty),
-                }
-            }
-            Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref index) }) => {
-                self.set_lvalue(base, &format!("(list.update {} {} {})", self.get_lvalue(base), self.get_operand(index), val))
-            }
+            Lvalue::Projection(box Projection { ref base, ref elem }) =>
+                self.get_lvalue(base).map(0, |sbase| match *elem {
+                    ProjectionElem::Deref =>
+                        self.set_lvalue(base, val),
+                    ProjectionElem::Field(ref field, _) => {
+                        match unwrap_refs(self.lvalue_ty(base)).sty {
+                            ty::TypeVariants::TyStruct(ref adt_def, _) => {
+                                let field_name = adt_def.struct_variant().fields[field.index()].name;
+                                self.set_lvalue(base, &format!("⦃ {}, {} := {}, {} ⦄", self.name_def_id(adt_def.did), field_name, val, sbase))
+                            },
+                            ref ty => panic!("unimplemented: setting field of {:?}", ty),
+                        }
+                    }
+                    ProjectionElem::Index(ref index) => {
+                        self.get_operand(index).map(0, |index| {
+                            self.set_lvalue(base, &format!("(list.update {} {} {})", sbase, index, val))
+                        })
+                    }
+                    _ => panic!("unimplemented: setting lvalue {:?}", lv),
+                }),
             _ => panic!("unimplemented: setting lvalue {:?}", lv),
         }
     }
@@ -238,53 +317,52 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn get_operand(&self, op: &Operand<'tcx>) -> String {
+    fn get_operand(&self, op: &Operand<'tcx>) -> MaybeValue {
         match *op {
             Operand::Consume(ref lv) => self.get_lvalue(lv),
-            Operand::Constant(ref c) => self.transpile_constant(c),
+            Operand::Constant(ref c) => MaybeValue::total(self.transpile_constant(c)),
         }
     }
 
     fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> MaybeValue {
-        MaybeValue::total(match *rv {
-            Rvalue::Use(Operand::Consume(Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }))) =>
-                return MaybeValue::partial(format!("«[T] as core.slice.SliceExt».get_unchecked {} {}", self.get_lvalue(base), self.get_operand(idx))),
+        match *rv {
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) =>
-                format!("{} {}", match op {
+                self.get_operand(operand).and_then(0, |soperand| MaybeValue::total(format!("{} {}", match op {
                     UnOp::Not if operand.ty(self.mir, self.tcx).is_bool() => "bool.bnot",
                     UnOp::Not => "NOT",
                     UnOp::Neg => "-",
-                }, self.get_operand(operand)),
+                }, soperand))),
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
-                let (so1, so2) = (self.get_operand(o1), self.get_operand(o2));
-                let signed_o2 = if o2.ty(self.mir, self.tcx).is_signed() { so2.clone() }
-                else { format!("(int.of_nat {})", so2) };
-                return match op {
-                    BinOp::Sub if !o1.ty(self.mir, self.tcx).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
-                    BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked.div", so1, so2)),
-                    BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked.mod", so1, so2)),
-                    BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, signed_o2)),
-                    BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked.shr", so1, signed_o2)),
-                    _ => MaybeValue::total(format!("{} {} {}", so1, match op {
-                        BinOp::Add => "+",
-                        BinOp::Mul => "*",
-                        BinOp::Eq => "=",
-                        BinOp::Lt => "<",
-                        BinOp::Le => "≤",
-                        BinOp::Ne => "≠",
-                        BinOp::Ge => "≥",
-                        BinOp::Gt => ">",
-                        BinOp::BitOr => "||",
-                        BinOp::BitAnd => "&&",
-                        _ => panic!("unimplemented: operator {:?}", op),
-                    }, so2))
-                }
+                self.get_operand(o1).and_then(0, |so1| self.get_operand(o2).and_then(1, |so2| {
+                    let signed_o2 = if o2.ty(self.mir, self.tcx).is_signed() { so2.clone() }
+                    else { format!("(int.of_nat {})", so2) };
+                    match op {
+                        BinOp::Sub if !o1.ty(self.mir, self.tcx).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
+                        BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked.div", so1, so2)),
+                        BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked.mod", so1, so2)),
+                        BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, signed_o2)),
+                        BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked.shr", so1, signed_o2)),
+                        _ => MaybeValue::total(format!("{} {} {}", so1, match op {
+                            BinOp::Add => "+",
+                            BinOp::Mul => "*",
+                            BinOp::Eq => "=",
+                            BinOp::Lt => "<",
+                            BinOp::Le => "≤",
+                            BinOp::Ne => "≠",
+                            BinOp::Ge => "≥",
+                            BinOp::Gt => ">",
+                            BinOp::BitOr => "||",
+                            BinOp::BitAnd => "&&",
+                            _ => panic!("unimplemented: operator {:?}", op),
+                        }, so2))
+                    }
+                }))
             }
             // checked operators used in `Assert`, which we ignore anyway
             Rvalue::CheckedBinaryOp(op, ref o1, ref o2) => {
                 let MaybeValue { val, total } = self.get_rvalue(&Rvalue::BinaryOp(op, o1.clone(), o2.clone()));
-                return if total {
+                if total {
                     MaybeValue::total(format!("({}, true)", val))
                 } else {
                     MaybeValue::partial(format!("sem.map (λx, (x, true)) ({})", val))
@@ -292,53 +370,55 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             Rvalue::Cast(CastKind::Misc, ref op, ref dest_ty) => {
                 let op_ty = op.ty(self.mir, self.tcx);
-                return MaybeValue::partial(if op_ty.is_integral() || op_ty.is_bool() {
-                    format!("({}_to_{} {})",
-                            self.transpile_ty(op_ty),
-                            self.transpile_ty(dest_ty),
-                            self.get_operand(op))
-                } else if let ty::TypeVariants::TyEnum(..) = op_ty.sty {
-                    format!("(isize_to_{} ({}.discr {}))",
-                            self.transpile_ty(dest_ty),
-                            self.name_def_id(op_ty.ty_to_def_id().unwrap()),
-                            self.get_operand(op))
-                } else {
-                    panic!("unimplemented: cast from {:?} to {:?}", op_ty, dest_ty)
-                })
+                self.get_operand(op).and_then(0, |operand| MaybeValue::partial(
+                    if op_ty.is_integral() || op_ty.is_bool() {
+                        format!("({}_to_{} {})",
+                                self.transpile_ty(op_ty),
+                                self.transpile_ty(dest_ty),
+                                operand)
+                    } else if let ty::TypeVariants::TyEnum(..) = op_ty.sty {
+                        format!("(isize_to_{} ({}.discr {}))",
+                                self.transpile_ty(dest_ty),
+                                self.name_def_id(op_ty.ty_to_def_id().unwrap()),
+                                operand)
+                    } else {
+                        panic!("unimplemented: cast from {:?} to {:?}", op_ty, dest_ty)
+                    }))
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
             Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
             Rvalue::Ref(_, _, ref lv) =>
-                return self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
+                self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 if ops.len() == 0 {
-                    "⋆".to_string()
+                    MaybeValue::total("⋆")
                 } else {
-                    let mut ops = ops.iter().map(|op| self.get_operand(op));
-                    format!("({})", ops.join(", "))
+                    MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
+                        MaybeValue::total(format!("({})", ops.join(", ")))
+                    })
                 }
             }
             Rvalue::Aggregate(AggregateKind::Vec, ref ops) => {
-                let mut ops = ops.iter().map(|op| self.get_operand(op));
-                format!("[{}]", ops.join(", "))
+                MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
+                    MaybeValue::total(format!("[{}]", ops.join(", ")))
+                })
             }
             Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _), ref ops) => {
                 self.add_dep(adt_def.did);
 
                 let variant = &adt_def.variants[variant_idx];
-                let ops = ops.iter().map(|op| self.get_operand(op));
-                (format!("{}{}",
-                         self.name_def_id(variant.did),
-                         if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().kind == ty::VariantKind::Struct { ".mk" } else { "" }),
-                 ops).join(" ")
+                MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
+                    MaybeValue::total(
+                        (format!("{}{}",
+                                 self.name_def_id(variant.did),
+                                 if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().kind == ty::VariantKind::Struct { ".mk" } else { "" }),
+                         ops).join(" "))
+                })
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
                 // start small with immutable closures: compile to Lean closure using
                 // recursive FnTranspiler
-                let upvars = ops.iter().map(|op| match *op {
-                    Operand::Consume(ref lv) => lv,
-                    Operand::Constant(_) => unreachable!(),
-                }).collect_vec();
+                let upvars = ops.iter().map(lvalue_of_operand).collect_vec();
                 if upvars.iter().any(|lv| krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).map(|_| lv).is_some()) {
                     panic!("unimplemented: mutable capturing closure")
                 }
@@ -355,24 +435,50 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 let mut trans = FnTranspiler::new(&trans, param_names, "return ret".to_string());
                 let body = trans.transpile_mir();
                 self.prelude.append(&mut trans.prelude);
-                format!("(λ {}, {}) {}",
+                MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)), |upvars| {
+                    MaybeValue::total(format!(
+                        "(λ {}, {}) {}",
                         trans.param_names.iter().join(" "),
                         body,
-                        mk_tuple(upvars.iter().map(|lv| self.get_lvalue(lv))))
+                        mk_tuple(upvars.into_iter())))
+                })
             }
-            Rvalue::Len(ref lv) => format!("list.length {}", self.get_lvalue(lv)),
+            Rvalue::Len(ref lv) => self.get_lvalue(lv).and_then(0, |lv| {
+                MaybeValue::total(format!("list.length {}", lv))
+            }),
             _ => panic!("unimplemented: rvalue {:?}", rv),
-        })
+        }
+    }
+
+    fn mk_lens(&self, lv: &Lvalue<'tcx>) -> String {
+        let var = self.local_name(lvalue_base(lv));
+        let var_ty = self.transpile_ty(unwrap_refs(self.lvalue_ty(lvalue_base(lv))));
+        format!("lens.mk (λ {}, {}) (λ ({} : {}) val, {}return {})",
+                var, self.get_lvalue(lv).to_partial(),
+                var, var_ty, self.set_lvalue(lv, "val"), var)
     }
 
     fn transpile_statement(&mut self, stmt: &'a Statement<'tcx>) -> String {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
-                    let idx = self.lvalue_idx(lv).unwrap_or_else(|| {
+                    let src_idx = self.mir.local_index(lvalue_base(lsource)).unwrap();
+                    let dst_idx = self.mir.local_index(lv).unwrap_or_else(|| {
                         panic!("unimplemented: storing &mut in {:?}", lv)
                     });
-                    self.refs.insert(idx, lsource);
+                    if let &Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) = lsource {
+                        if let Some(src) = self.mir.local_index(base).and_then(|idx| self.refs.get(&idx)).cloned() {
+                            // &mut reborrow ~> just copy lens
+                            self.refs.insert(dst_idx, src);
+                            return format!("let' {} ← {};\n", self.local_name(lv), self.local_name(base))
+                        }
+                    }
+                    if self.refs.contains_key(&src_idx) {
+                        panic!("unimplemented: recursive borrow {:?} -> {:?}", lsource, lv)
+                    }
+                    let set = self.set_lvalue(lv, &self.mk_lens(lsource));
+                    self.refs.insert(dst_idx, lvalue_base(lsource));
+                    return set
                 }
                 if *lv != Lvalue::ReturnPointer && self.lvalue_ty(lv).is_nil() {
                     // optimization/rustc_mir workaround: don't save '()'
@@ -387,15 +493,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             StatementKind::SetDiscriminant { .. } =>
                 panic!("unimplemented: statement {:?}", stmt),
-            StatementKind::StorageLive(_) => "".to_string(),
-            StatementKind::StorageDead(ref lv) => {
-                if let Some(idx) = self.lvalue_idx(lv) {
-                    if let Some(lsource) = self.refs.get(&idx) {
-                        return self.set_lvalue(lsource, &self.lvalue_name(lv).unwrap());
-                    }
-                }
-                "".to_string()
-            }
+            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) =>
+                "".to_string(),
         }
     }
 
@@ -421,7 +520,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 });
                 iter::once(lv).chain(muts).collect()
             }
-            _ => vec![],
+            _ => unreachable!(),
         }
     }
 
@@ -507,7 +606,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 }).unwrap()
             }
             Operand::Constant(_) => unreachable!(),
-            Operand::Consume(ref lv) => self.get_lvalue(lv),
+            Operand::Consume(ref lv) => self.get_lvalue(lv).to_total(),
         }
     }
 
@@ -521,13 +620,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let (defs, _) = Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self);
             let (l_defs, l_uses) = Component::defs_uses(l_comp.blocks.iter(), self);
             // vars that are used by l, but not (re)defined ~> parameters
-            let nonlocal_uses = self.locals().into_iter().map(|v| self.lvalue_name(&v).unwrap())
+            let nonlocal_uses = self.locals().into_iter().map(|v| self.local_name(&v))
                 .filter(|v| l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
             // vars that are redefined by l ~> loop state
             let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.locals().into_iter().filter_map(|v| {
                 // safe to unwrap since we write back the value anyway
                 let ty = self.transpile_ty(krate::unwrap_mut_ref(self.lvalue_ty(&v)));
-                let name = self.lvalue_name(&v).unwrap();
+                let name = self.local_name(&v);
                 if defs.contains(&name) && l_defs.contains(&name) {
                     Some((ty, name))
                 } else { None }
@@ -551,20 +650,36 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     rec!(target),
                 If { ref cond, targets: (bb_if, bb_else) } =>
                     // TODO: this duplicates all code after the if
-                    format!("if {} then\n{}else\n{}", self.get_operand(cond),
-                            rec!(bb_if),
-                            rec!(bb_else)),
+                    self.get_operand(cond).map(0, |cond| format!(
+                        "if {} then\n{}else\n{}", cond,
+                        rec!(bb_if),
+                        rec!(bb_else))),
                 Return => self.return_expr.clone(),
-                Call { ref func, ref args, destination: Some((_, target)), ..  } => {
-                    let call = (self.get_call_target(func), args.iter().map(|op| self.get_operand(op))).join(" ");
-                    let rec = rec!(target);
-                    self.bind_lvalues(self.call_return_dests(&terminator.kind), &call, &rec)
+                Call { ref func, ref args, destination: Some((ref ret_lv, target)), ..  } => {
+                    MaybeValue::map_multi(0, args.iter().map(|op| {
+                        if let Operand::Consume(ref lv) = *op {
+                            if krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some() {
+                                // dereference &mut arguments
+                                return self.get_lvalue(&lv.clone().deref())
+                            }
+                        }
+                        self.get_operand(op)
+                    }).collect_vec().into_iter(), |sargs| {
+                        if krate::try_unwrap_mut_ref(self.lvalue_ty(ret_lv)).is_some() {
+                            // &mut return type
+                            self.refs.insert(self.mir.local_index(ret_lv).unwrap(), lvalue_base(lvalue_of_operand(&args[0])));
+                        }
+                        let rec = rec!(target);
+                        let call_target = self.get_call_target(func);
+                        let call = (call_target, sargs).join(" ");
+                        self.bind_lvalues(self.call_return_dests(&terminator.kind), &call, &rec)
+                    })
                 }
                 // diverging call
                 Call { destination: None, .. } | Unreachable =>
                     "mzero\n".to_string(),
                 Switch { ref discr, ref adt_def, ref targets } => {
-                    let value = self.get_lvalue(discr);
+                    let value = self.local_name(discr);
                     let mut arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
                         // binding names used by `get_lvalue`
                         let vars = (0..var.fields.len()).into_iter().map(|i| format!("{}_{}", value, i));
@@ -573,15 +688,17 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     format!("match {} with\n{}end\n", value, arms.join(" "))
                 },
                 SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
-                    let arms = values.iter().zip(targets).map(|(val, &target)| {
-                        format!("| {} :=\n{}", self.transpile_constval(val), rec!(target))
-                    }).collect_vec();
-                    let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap()));
-                    format!("match {} with\n{}\nend\n", self.get_lvalue(discr),
-                            arms.into_iter().chain(iter::once(fallback)).join(""))
+                    self.get_lvalue(discr).map(0, |discr| {
+                        let arms = values.iter().zip(targets).map(|(val, &target)| {
+                            format!("| {} :=\n{}", self.transpile_constval(val), rec!(target))
+                        }).collect_vec();
+                        let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap()));
+                        format!("match {} with\n{}\nend\n", discr,
+                                arms.into_iter().chain(iter::once(fallback)).join(""))
+                    })
                 },
                 // out-of-bounds/overflow checks - already part of core/pre.lean or ignored
-                TerminatorKind::Assert { target, .. } => rec!(target),
+                Assert { target, .. } => rec!(target),
                 Drop { target, .. } => rec!(target),
                 Resume => String::new(),
                 _ => panic!("unimplemented: terminator {:?}", terminator),
