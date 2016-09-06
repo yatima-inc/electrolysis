@@ -6,6 +6,7 @@ import data.list.sorted
 
 import asymptotic
 
+open [unfold] bool
 open core
 open eq.ops
 open list
@@ -61,8 +62,6 @@ namespace cmp
   end Ord'
 end cmp
 
-open [class] classical
-
 open cmp
 open ops
 open result
@@ -78,13 +77,18 @@ section
 parameter {T : Type₁}
 variable (s : slice T)
 
-lemma is_empty_eq : SliceExt.is_empty T s = some (s = [], 1) :=
-congr_arg some (prod.eq
-  (propext (iff.intro
-    eq_nil_of_length_eq_zero
-    (λHeq, Heq⁻¹ ▸ length_nil)
-  ))
-  rfl)
+lemma is_empty_eq [decidable_eq T] : SliceExt.is_empty T s = some (s =ᵈ [], 1) :=
+begin
+  apply congr_arg some,
+  apply prod.eq,
+  { esimp,
+    apply bool.of_decidable_eq_of_decidable_of_iff,
+    exact iff.intro
+      eq_nil_of_length_eq_zero
+      (λHeq, Heq⁻¹ ▸ length_nil)
+  },
+  apply rfl,
+end
 
 -- s[start..]
 lemma RangeFrom_index_eq (r : RangeFrom usize) (H : RangeFrom.start r ≤ length s) :
@@ -191,6 +195,8 @@ section
     ... = base + (length s₁ + 1) + length (dropn 1 (x::xs)) : by simp
 end
 
+attribute list.has_decidable_eq [unfold 3 4]
+
 private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with
   (loop_4_res s)
   (15 + cmp_max_cost)
@@ -210,7 +216,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     rewrite [length_firstn_eq, min_eq_left this],
   eapply generalize_with_eq (dropn (length s / 2) s),
   intro s' Hs, cases s' with x xs,
-  { rewrite [if_pos' rfl],
+  { rewrite [▸*, if_pos' rfl],
     intro H, rewrite -H,
     have Hs : s = nil, begin
       have 0 = length s - length s / 2, from Hs ▸ !length_dropn,
@@ -249,8 +255,8 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       calc length xs = length (x :: xs) - 1 : rfl
                  ... ≤ length s / 2         : by
                    rewrite [-Hs, length_dropn]; apply self_sub_half_sub_one_le_half,
-    have x :: xs ≠ nil, by contradiction,
-    rewrite [if_neg' this, ↑get_unchecked, nth_zero, ↑f],
+    have bool.ff ≠ bool.tt, by contradiction,
+    rewrite [▸*, if_neg' this, ↑get_unchecked, nth_zero, ↑f],
     --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
     cases Ord'.ord_cmp_eq x needle with k cmp_eq,
     rewrite [cmp_eq, ↑ordering, ▸*],
@@ -262,7 +268,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     end,
     have Hle_max_cost : k ≤ cmp_max_cost, from
       Ord'.le_cmp_max_cost (mem_of_nth nth_x) cmp_eq,
-    cases (decidable_lt : decidable (x < needle)) with Hx_lt_needle Hx_ge_needle,
+    cases (decidable_lt x needle) with Hx_lt_needle Hx_ge_needle,
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
       intro H, rewrite -H,

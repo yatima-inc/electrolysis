@@ -7,8 +7,6 @@ open int
 open list
 open nat
 
-open [class] classical
-
 structure lens (Outer Inner : Type₁) :=
 (get : Outer → sem Inner)
 (set : Outer → Inner → sem Outer)
@@ -31,8 +29,8 @@ definition isize_to_usize (x : isize) : sem usize :=
 if x ≥ 0 then return (nat.of_int x)
 else mzero
 
-noncomputable definition Prop_to_usize (x : Prop) : sem usize :=
-return (if x then 1 else 0)
+definition bool_to_usize (x : bool) : sem usize :=
+return (if x = tt then 1 else 0)
 
 abbreviation isize_to_u32 [parsing_only] := isize_to_usize
 
@@ -71,6 +69,13 @@ have rec : list bool → list bool → list bool
 nat.of_bits (rec (nat.to_bits x) (nat.to_bits y))
 
 infix || := bitor
+
+infix `=ᵈ`:50 := λ a b, bool.of_decidable (_ : decidable (a = b))
+infix `≠ᵈ`:50 := λ a b, bool.of_decidable (decidable_ne a b)
+infix `≤ᵈ`:50 := λ a b, bool.of_decidable (decidable_le a b)
+infix `<ᵈ`:50 := λ a b, bool.of_decidable (decidable_lt a b)
+infix `≥ᵈ`:50 := λ a b, b ≤ᵈ a
+infix `>ᵈ`:50 := λ a b, b <ᵈ a
 
 namespace core
   abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)

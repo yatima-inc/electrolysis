@@ -11,6 +11,12 @@ open option
 
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
+namespace bool
+  definition of_decidable {P : Prop} : decidable P → bool
+  | (decidable.inl _) := tt
+  | (decidable.inr _) := ff
+end bool
+
 namespace nat
   open int
 

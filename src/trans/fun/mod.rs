@@ -297,7 +297,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
     fn transpile_constval(&self, val: &ConstVal) -> String {
         match *val {
-            ConstVal::Bool(b) => b.to_string(),
+            ConstVal::Bool(b) => (if b {"tt"} else {"ff"}).to_string(),
             ConstVal::Integral(i) => match i.int_type().unwrap() {
                 ::syntax::attr::IntType::SignedInt(_) =>
                     format!("({} : int)", i.to_u64_unchecked() as i64),
@@ -346,12 +346,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         _ => MaybeValue::total(format!("{} {} {}", so1, match op {
                             BinOp::Add => "+",
                             BinOp::Mul => "*",
-                            BinOp::Eq => "=",
-                            BinOp::Lt => "<",
-                            BinOp::Le => "≤",
-                            BinOp::Ne => "≠",
-                            BinOp::Ge => "≥",
-                            BinOp::Gt => ">",
+                            BinOp::Eq => "=ᵈ",
+                            BinOp::Lt => "<ᵈ",
+                            BinOp::Le => "≤ᵈ",
+                            BinOp::Ne => "≠ᵈ",
+                            BinOp::Ge => "≥ᵈ",
+                            BinOp::Gt => ">ᵈ",
                             BinOp::BitOr => "||",
                             BinOp::BitAnd => "&&",
                             _ => panic!("unimplemented: operator {:?}", op),
@@ -365,7 +365,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 if total {
                     MaybeValue::total(format!("({}, true)", val))
                 } else {
-                    MaybeValue::partial(format!("sem.map (λx, (x, true)) ({})", val))
+                    MaybeValue::partial(format!("sem.map (λx, (x, tt)) ({})", val))
                 }
             }
             Rvalue::Cast(CastKind::Misc, ref op, ref dest_ty) => {
@@ -651,7 +651,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 If { ref cond, targets: (bb_if, bb_else) } =>
                     // TODO: this duplicates all code after the if
                     self.get_operand(cond).map(0, |cond| format!(
-                        "if {} then\n{}else\n{}", cond,
+                        "if {} = tt then\n{}else\n{}", cond,
                         rec!(bb_if),
                         rec!(bb_else))),
                 Return => self.return_expr.clone(),

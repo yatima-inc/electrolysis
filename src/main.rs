@@ -186,6 +186,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
     try!(write!(f, "
 noncomputable theory
 
+open bool
 open [class] classical
 open [class] int
 open [notation] list

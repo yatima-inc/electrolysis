@@ -146,8 +146,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     pub fn transpile_ty(&self, ty: Ty<'tcx>) -> String {
         match ty.sty {
-            // may as well go full classical
-            ty::TypeVariants::TyBool => "Prop".to_string(),
+            ty::TypeVariants::TyBool => "bool".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
