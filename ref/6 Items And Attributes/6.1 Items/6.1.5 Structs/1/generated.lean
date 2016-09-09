@@ -2,7 +2,9 @@ import core.generated
 
 noncomputable theory
 
+open bool
 open [class] classical
+open [notation] function
 open [class] int
 open [notation] list
 open [class] nat
@@ -16,10 +18,10 @@ structure Point := mk {} ::
 (y : i32)
 
 definition main : sem (unit) :=
-let' p ← Point.mk (10 : int) (11 : int);
-let' t0 ← (Point.x p);
-let' px ← t0;
-let' ret ← ⋆;
+let' p ← (Point.mk ((10 : int)) ((11 : int)));
+let' t0 ← ((Point.x (p)));
+let' px ← (t0);
+let' ret ← (⋆);
 return (ret)
 
 

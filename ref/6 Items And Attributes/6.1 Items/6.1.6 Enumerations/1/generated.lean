@@ -2,7 +2,9 @@ import core.generated
 
 noncomputable theory
 
+open bool
 open [class] classical
+open [notation] function
 open [class] int
 open [notation] list
 open [class] nat
@@ -21,9 +23,9 @@ definition Animal.discr (self : Animal) : isize := match self with
 end
 
 definition main : sem (unit) :=
-let' a ← Animal.Dog;
-let' a ← Animal.Cat;
-let' ret ← ⋆;
+let' a ← (Animal.Dog);
+let' a ← (Animal.Cat);
+let' ret ← (⋆);
 return (ret)
 
 

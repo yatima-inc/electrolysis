@@ -12,9 +12,18 @@ open option
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
 namespace bool
-  definition of_decidable {P : Prop} : decidable P → bool
-  | (decidable.inl _) := tt
-  | (decidable.inr _) := ff
+  open decidable
+
+  definition of_decidable [unfold 2] {P : Prop} : decidable P → bool
+  | (inl _) := tt
+  | (inr _) := ff
+
+  definition of_decidable_eq_of_decidable_of_iff {P Q : Prop} (H : P ↔ Q) :
+    Π(p : decidable P) (q : decidable Q), of_decidable p = of_decidable q
+  | (inl a) (inl b) := rfl
+  | (inl a) (inr b) := false.elim (b (iff.mp H a))
+  | (inr a) (inl b) := false.elim (a (iff.mpr H b))
+  | (inr a) (inr b) := rfl
 end bool
 
 namespace nat

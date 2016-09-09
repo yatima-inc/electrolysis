@@ -451,7 +451,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let return_expr = {
             let sig = self.tcx.lookup_item_type(self.def_id).ty.fn_sig().skip_binder();
             let muts = sig.inputs.iter().zip(param_names.iter()).filter_map(|(ty, name)| {
-                krate::try_unwrap_mut_ref(ty).map(|_| name.clone())
+                krate::try_unwrap_mut_ref(ty).map(|_| name.clone() + "ₐ")
             });
             format!("return ({})\n", ("ret", muts).join(", "))
         };

@@ -10,7 +10,7 @@ def task_cargo_build():
     }
 
 def task_electrolysis_thys():
-    for crate in ['core']:
+    for crate in ['core', 'alloc', 'collections', 'fixedbitset']:
         p = Path('thys') / crate
         yield {
             'name': str(crate),

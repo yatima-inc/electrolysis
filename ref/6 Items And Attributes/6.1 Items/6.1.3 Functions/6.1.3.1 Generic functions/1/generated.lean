@@ -2,7 +2,9 @@ import core.generated
 
 noncomputable theory
 
+open bool
 open [class] classical
+open [notation] function
 open [class] int
 open [notation] list
 open [class] nat
@@ -11,8 +13,10 @@ open [notation] unit
 
 namespace test
 
-definition foo {A : Type₁} {B : Type₁} (x : A) (y : B) : sem (unit) :=
-let' ret ← ⋆;
+definition foo {A : Type₁} {B : Type₁} (xₐ : A) (yₐ : B) : sem (unit) :=
+let' x ← (xₐ);
+let' y ← (yₐ);
+let' ret ← (⋆);
 return (ret)
 
 

@@ -1,7 +1,11 @@
 rustc_args = "rust/src/libcore/lib.rs"
 
 targets = [
-  '«\[T\] as core.slice.SliceExt».binary_search',
+  '«\[T\] as core.slice.SliceExt».(binary_search|get)',
+  #petgraph
+  "marker.PhantomData", "marker.Copy", "iter.iterator.Iterator",
+  "«&'a u32 as core.ops.BitAnd<u32>»",
+  "«u32 as core.clone.Clone»",
   #ref
   "«i32 as core.default.Default»"
 ]

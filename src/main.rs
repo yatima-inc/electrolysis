@@ -188,6 +188,7 @@ noncomputable theory
 
 open bool
 open [class] classical
+open [notation] function
 open [class] int
 open [notation] list
 open [class] nat

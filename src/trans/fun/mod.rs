@@ -46,19 +46,11 @@ fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
     }
 }
 
-/// `&mut &T` ~> `T`
+/// `&&T` ~> `T`
 fn unwrap_refs<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
     match ty.sty {
-        ty::TypeVariants::TyRef(_, ty::TypeAndMut { ty, .. }) => unwrap_refs(ty),
+        ty::TypeVariants::TyRef(_, ty::TypeAndMut { ty, mutbl: hir::Mutability::MutImmutable }) => unwrap_refs(ty),
         _ => ty
-    }
-}
-
-/// `*x.f[1]` ~> `x`
-fn lvalue_base<'a, 'tcx>(lv: &'a Lvalue<'tcx>) -> &'a Lvalue<'tcx> {
-    match lv {
-        &Lvalue::Projection(ref proj) => lvalue_base(&proj.base),
-        _ => lv,
     }
 }
 
@@ -139,7 +131,7 @@ pub struct FnTranspiler<'a, 'tcx: 'a> {
     mir: &'a Mir<'tcx>,
     // helper definitions to be prepended to the translation
     prelude: Vec<String>,
-    refs: HashMap<Local, &'a Lvalue<'tcx>>,
+    refs: HashMap<Local, Lvalue<'tcx>>,
 }
 
 impl<'a, 'tcx> Deref for FnTranspiler<'a, 'tcx> {
@@ -166,7 +158,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         match *lv {
             Lvalue::Var(idx) => self.mk_lean_name(&*self.mir.var_decls[idx].name.as_str()),
             Lvalue::Temp(idx) => format!("t{}", idx.index()),
-            Lvalue::Arg(idx) => self.param_names[idx.index()].clone(),
+            Lvalue::Arg(idx) => self.param_names[idx.index()].clone() + "ₐ",
             Lvalue::ReturnPointer => "ret".to_string(),
             _ => panic!("not a local: {:?}", lv),
         }
@@ -187,6 +179,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             .collect()
     }
 
+    fn deref_mut(&self, lv: &Lvalue<'tcx>) -> Option<Lvalue<'tcx>> {
+        self.mir.local_index(lv).and_then(|idx| self.refs.get(&idx).cloned())
+    }
+
     fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> MaybeValue {
         if let Some(name) = self.lvalue_name(lv) {
             return MaybeValue::total(name)
@@ -194,7 +190,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) => {
-                if let Some(src) = self.mir.local_index(base).and_then(|idx| self.refs.get(&idx)) {
+                if let Some(ref src) = self.deref_mut(base) {
                     // read from a &mut
                     self.get_lvalue(base).and_then(0, |base| {
                         MaybeValue::partial(format!("lens.get {} {}", base, self.local_name(src)))
@@ -236,9 +232,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     sbase)
                         }
                     }
-                    ty::TypeVariants::TyClosure(..) =>
-                        // captured variables become parameters
-                        self.param_names[field.index()].clone(),
+                    ty::TypeVariants::TyClosure(_, ref substs) =>
+                        // captured variables become a tuple parameter
+                        get_tuple_elem(sbase, field.index(), substs.upvar_tys.len()),
                     ref ty => panic!("unimplemented: accessing field of {:?}", ty),
                 })),
             _ => panic!("unimplemented: loading {:?}", lv),
@@ -250,13 +246,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> String {
-        if let Some(src) = self.mir.local_index(lv).and_then(|idx| self.refs.get(&idx)) {
-            // writing through a &mut
-            return format!("do {src} ← lens.set {lens} {src} {val};\n",
-                           src=self.local_name(src),
-                           lens=self.local_name(lv),
-                           val=val)
-        }
         if let Some(name) = self.lvalue_name(lv) {
             if name == val { // no-op
                 return "".to_string()
@@ -267,8 +256,17 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         match *lv {
             Lvalue::Projection(box Projection { ref base, ref elem }) =>
                 self.get_lvalue(base).map(0, |sbase| match *elem {
-                    ProjectionElem::Deref =>
-                        self.set_lvalue(base, val),
+                    ProjectionElem::Deref => {
+                        if let Some(ref src) = self.deref_mut(base) {
+                            // writing through a &mut
+                            format!("do {src} ← lens.set {lens} {src} {val};\n",
+                                    src=self.local_name(src),
+                                    lens=self.local_name(base),
+                                    val=val)
+                        } else {
+                            self.set_lvalue(base, val)
+                        }
+                    }
                     ProjectionElem::Field(ref field, _) => {
                         match unwrap_refs(self.lvalue_ty(base)).sty {
                             ty::TypeVariants::TyStruct(ref adt_def, _) => {
@@ -287,12 +285,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 }),
             _ => panic!("unimplemented: setting lvalue {:?}", lv),
         }
-    }
-
-    fn bind_lvalues<'b>(&self, lvs: Vec<&'b Lvalue<'tcx>>, val: &str, cont: &str) -> String {
-        let dests = lvs.into_iter().map(|lv| self.lvalue_name(lv).expect("oops: non-atomic bind_lvalues target")).collect_vec();
-        format!("dostep tmp__ ← {};\n{}", val,
-                detuplize("tmp__", &dests[..], cont))
     }
 
     fn transpile_constval(&self, val: &ConstVal) -> String {
@@ -387,8 +379,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
             Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
-            Rvalue::Ref(_, _, ref lv) =>
-                self.get_rvalue(&Rvalue::Use(Operand::Consume(lv.clone()))),
+            Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
+                self.get_lvalue(lv),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
                 if ops.len() == 0 {
                     MaybeValue::total("⋆")
@@ -438,7 +430,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)), |upvars| {
                     MaybeValue::total(format!(
                         "(λ {}, {}) {}",
-                        trans.param_names.iter().join(" "),
+                        trans.param_names.iter().map(|n| n.clone() + "ₐ").join(" "),
                         body,
                         mk_tuple(upvars.into_iter())))
                 })
@@ -450,45 +442,74 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn mk_lens(&self, lv: &Lvalue<'tcx>) -> String {
-        let var = self.local_name(lvalue_base(lv));
-        let var_ty = self.transpile_ty(unwrap_refs(self.lvalue_ty(lvalue_base(lv))));
-        format!("lens.mk (λ {}, {}) (λ ({} : {}) val, {}return {})",
-                var, self.get_lvalue(lv).to_partial(),
-                var, var_ty, self.set_lvalue(lv, "val"), var)
+    /// Makes path of lenses and return eventual target
+    fn mk_lenses(&self, lv: &'a Lvalue<'tcx>, lenses: &mut Vec<String>) -> &'a Lvalue<'tcx> {
+        if self.mir.local_index(lv).is_some() {
+            return lv
+        }
+
+        match *lv {
+            Lvalue::Projection(box Projection { ref base, ref elem }) => {
+                match *elem {
+                    ProjectionElem::Deref =>
+                        if self.deref_mut(base).is_some() {
+                            return base
+                        },
+                    ProjectionElem::Field(ref field, _) => {
+                        let ty = unwrap_refs(self.lvalue_ty(base));
+                        match ty.sty {
+                            ty::TypeVariants::TyStruct(ref adt_def, _) => {
+                                let field = adt_def.struct_variant().fields[field.index()].name;
+                                lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return ⦃ {ty}, {field} := i, o ⦄)",
+                                                    ty=self.name_def_id(adt_def.did), field=field))
+                            },
+                            ref ty => panic!("unimplemented: lens on field of {:?}", ty),
+                        }
+                    }
+                    ProjectionElem::Index(ref index) =>
+                        lenses.push(format!("lens.index _ {}", self.get_operand(index).to_total())),
+                    _ => panic!("unimplemented: lens on lvalue {:?}", lv),
+                }
+                self.mk_lenses(base, lenses)
+            }
+            _ => panic!("unimplemented: lens on lvalue {:?}", lv),
+        }
+    }
+
+    /// Set dest to the combined lens on `&mut source` in val
+    fn set_mut_ref(&mut self, dest: &Lvalue<'tcx>, mut lenses: Vec<String>, source: &Lvalue<'tcx>) -> String {
+        let dest_idx = self.mir.local_index(dest).unwrap_or_else(|| {
+            panic!("unimplemented: storing &mut in {:?}", dest)
+        });
+        let source = match self.refs.get(&self.mir.local_index(source).unwrap()) {
+            Some(ult_source) => {
+                // reborrow ~> combine lenses
+                lenses.insert(0, self.get_lvalue(source).to_total());
+                ult_source.clone()
+            }
+            _ => source.clone()
+        };
+        self.refs.insert(dest_idx, source);
+        let val = if lenses.is_empty() { "lens.id".to_string() }
+        else { format!("({})", lenses.into_iter().join(" ∘ₗ ")) };
+        self.set_lvalue(dest, &val)
     }
 
     fn transpile_statement(&mut self, stmt: &'a Statement<'tcx>) -> String {
         match stmt.kind {
             StatementKind::Assign(ref lv, ref rv) => {
-                if let Rvalue::Ref(_, BorrowKind::Mut, ref lsource) = *rv {
-                    let src_idx = self.mir.local_index(lvalue_base(lsource)).unwrap();
-                    let dst_idx = self.mir.local_index(lv).unwrap_or_else(|| {
-                        panic!("unimplemented: storing &mut in {:?}", lv)
-                    });
-                    if let &Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) = lsource {
-                        if let Some(src) = self.mir.local_index(base).and_then(|idx| self.refs.get(&idx)).cloned() {
-                            // &mut reborrow ~> just copy lens
-                            self.refs.insert(dst_idx, src);
-                            return format!("let' {} ← {};\n", self.local_name(lv), self.local_name(base))
-                        }
+                match *rv {
+                    Rvalue::Ref(_, BorrowKind::Mut, ref source) => {
+                        let mut lenses = vec![];
+                        let source = self.mk_lenses(source, &mut lenses);
+                        self.set_mut_ref(lv, lenses, source)
                     }
-                    if self.refs.contains_key(&src_idx) {
-                        panic!("unimplemented: recursive borrow {:?} -> {:?}", lsource, lv)
+                    Rvalue::Use(Operand::Consume(ref source@Lvalue::Arg(_)))
+                        if krate::try_unwrap_mut_ref(self.lvalue_ty(source)).is_some() => {
+                        // create identity lens to &mut arg on first use
+                        self.set_mut_ref(lv, vec![], source)
                     }
-                    let set = self.set_lvalue(lv, &self.mk_lens(lsource));
-                    self.refs.insert(dst_idx, lvalue_base(lsource));
-                    return set
-                }
-                if *lv != Lvalue::ReturnPointer && self.lvalue_ty(lv).is_nil() {
-                    // optimization/rustc_mir workaround: don't save '()'
-                    return "".to_string()
-                }
-
-                match self.get_rvalue(rv) {
-                    MaybeValue { val, total: true } => self.set_lvalue(lv, &val),
-                    MaybeValue { val, total: false } =>
-                        format!("do tmp__ ← {};\n{}", &val, self.set_lvalue(lv, "tmp__")),
+                    _ => self.get_rvalue(rv).map(0, |rv| self.set_lvalue(lv, &rv)),
                 }
             }
             StatementKind::SetDiscriminant { .. } =>
@@ -655,7 +676,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         rec!(bb_if),
                         rec!(bb_else))),
                 Return => self.return_expr.clone(),
-                Call { ref func, ref args, destination: Some((ref ret_lv, target)), ..  } => {
+                Call { ref func, ref args, destination: Some((_, target)), ..  } => {
                     MaybeValue::map_multi(0, args.iter().map(|op| {
                         if let Operand::Consume(ref lv) = *op {
                             if krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some() {
@@ -665,14 +686,32 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         }
                         self.get_operand(op)
                     }).collect_vec().into_iter(), |sargs| {
-                        if krate::try_unwrap_mut_ref(self.lvalue_ty(ret_lv)).is_some() {
-                            // &mut return type
-                            self.refs.insert(self.mir.local_index(ret_lv).unwrap(), lvalue_base(lvalue_of_operand(&args[0])));
-                        }
-                        let rec = rec!(target);
                         let call_target = self.get_call_target(func);
                         let call = (call_target, sargs).join(" ");
-                        self.bind_lvalues(self.call_return_dests(&terminator.kind), &call, &rec)
+
+                        let (direct_dests, indirect_dests): (Vec<_>, Vec<_>) = self.call_return_dests(&terminator.kind).into_iter().enumerate().map(|(i, lv)| {
+                            let tmp = format!("«{}$»", self.local_name(lv));
+                            if krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some() {
+                                if i == 0 {
+                                    let source = lvalue_of_operand(&args[0]);
+                                    // reborrow source into lv, using lens tmp
+                                    (tmp.clone(), Some(self.set_mut_ref(lv, vec![tmp], source.deref())))
+                                } else {
+                                    // write back through &mut
+                                    (tmp.clone(), Some(self.set_lvalue(&lv.clone().deref(), &tmp)))
+                                }
+                            } else {
+                                if let Some(name) = self.lvalue_name(lv) {
+                                    (name, None)
+                                } else {
+                                    (tmp.clone(), Some(self.set_lvalue(lv, &tmp)))
+                                }
+                            }
+                        }).unzip();
+                        let indirect_dests = indirect_dests.into_iter().filter_map(|x| x).rev().join("");
+                        let rec = rec!(target);
+                        format!("dostep «$tmp» ← {};\n{}", call,
+                                detuplize("«$tmp»", &direct_dests[..], &(indirect_dests + &rec)))
                     })
                 }
                 // diverging call
@@ -729,7 +768,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
 
         let params = self.param_names.iter().zip(self.mir.arg_decls.iter()).map(|(name, arg)| {
-            format!("({} : {})", name, self.transpile_ty(krate::unwrap_mut_ref(&arg.ty)))
+            format!("({}ₐ : {})", name, self.transpile_ty(krate::unwrap_mut_ref(&arg.ty)))
         }).collect_vec();
 
         let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {

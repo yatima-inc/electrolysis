@@ -2,7 +2,9 @@ import core.generated
 
 noncomputable theory
 
+open bool
 open [class] classical
+open [notation] function
 open [class] int
 open [notation] list
 open [class] nat
@@ -14,7 +16,7 @@ namespace test
 definition Point := (u8 × u8)
 
 definition p : (u8 × u8) :=
-let' ret ← ((41 : nat), (68 : nat));
+let' ret ← ((((41 : nat)), ((68 : nat))));
 ret
 
 end test

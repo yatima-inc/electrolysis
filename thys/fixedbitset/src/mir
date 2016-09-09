@@ -1,0 +1,2501 @@
+fn <FixedBitSet as std::cmp::PartialEq>::eq(arg0: &FixedBitSet, arg1: &FixedBitSet) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:17: 19:26
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:17: 19:26
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+            }
+        }
+    }
+    let mut tmp0: bool;
+    let mut tmp1: bool;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: &std::vec::Vec<u32>;
+    let mut tmp4: bool;
+    let mut tmp5: usize;
+    let mut tmp6: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:17: 19:26
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:17: 19:26
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:17: 19:26
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:17: 19:26
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:17: 19:26
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp3 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = <std::vec::Vec<u32> as std::cmp::PartialEq>::eq(tmp2, tmp3) -> bb9; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        return = const true;             // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb5;                     // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb3: {
+        return = const false;            // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb5;                     // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb4: {
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp5 = (*var5);                  // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp6 = (*var3);                  // scope 3 at src/lib.rs:23:5: 23:18
+        tmp4 = Eq(tmp5, tmp6);           // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp4) -> [true: bb2, false: bb3]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb5: {
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:17: 19:26
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:17: 19:26
+        return;                          // scope 1 at src/lib.rs:19:17: 19:26
+    }
+
+    bb6: {
+        tmp0 = const true;               // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb8;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb7: {
+        tmp0 = const false;              // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb8;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb8: {
+        if(tmp0) -> [true: bb4, false: bb3]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb9: {
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp1) -> [true: bb6, false: bb7]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+}
+
+fn div_rem(arg0: usize, arg1: usize) -> (usize, usize) {
+    scope 1 {
+        let var0: usize;                 // "x" in scope 1 at src/lib.rs:12:12: 12:13
+        let var1: usize;                 // "d" in scope 1 at src/lib.rs:12:22: 12:23
+    }
+    let mut tmp0: usize;
+    let mut tmp1: usize;
+    let mut tmp2: usize;
+    let mut tmp3: bool;
+    let mut tmp4: usize;
+    let mut tmp5: usize;
+    let mut tmp6: usize;
+    let mut tmp7: bool;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:12:12: 12:13
+        var0 = arg0;                     // scope 0 at src/lib.rs:12:12: 12:13
+        StorageLive(var1);               // scope 0 at src/lib.rs:12:22: 12:23
+        var1 = arg1;                     // scope 0 at src/lib.rs:12:22: 12:23
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:14:6: 14:11
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:14:6: 14:7
+        tmp1 = var0;                     // scope 1 at src/lib.rs:14:6: 14:7
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:14:10: 14:11
+        tmp2 = var1;                     // scope 1 at src/lib.rs:14:10: 14:11
+        tmp3 = Eq(tmp2, const 0usize);   // scope 1 at src/lib.rs:14:6: 14:11
+        assert(!tmp3, "attempt to divide by zero") -> bb1; // scope 1 at src/lib.rs:14:6: 14:11
+    }
+
+    bb1: {
+        tmp0 = Div(tmp1, tmp2);          // scope 1 at src/lib.rs:14:6: 14:11
+        StorageLive(tmp4);               // scope 1 at src/lib.rs:14:13: 14:18
+        StorageLive(tmp5);               // scope 1 at src/lib.rs:14:13: 14:14
+        tmp5 = var0;                     // scope 1 at src/lib.rs:14:13: 14:14
+        StorageLive(tmp6);               // scope 1 at src/lib.rs:14:17: 14:18
+        tmp6 = var1;                     // scope 1 at src/lib.rs:14:17: 14:18
+        tmp7 = Eq(tmp6, const 0usize);   // scope 1 at src/lib.rs:14:13: 14:18
+        assert(!tmp7, "attempt to calculate the remainder with a divisor of zero") -> bb2; // scope 1 at src/lib.rs:14:13: 14:18
+    }
+
+    bb2: {
+        tmp4 = Rem(tmp5, tmp6);          // scope 1 at src/lib.rs:14:13: 14:18
+        return = (tmp0, tmp4);           // scope 1 at src/lib.rs:14:5: 14:19
+        StorageDead(tmp4);               // scope 1 at src/lib.rs:14:13: 14:18
+        StorageDead(tmp6);               // scope 1 at src/lib.rs:14:17: 14:18
+        StorageDead(tmp5);               // scope 1 at src/lib.rs:14:13: 14:14
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:14:6: 14:11
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:14:10: 14:11
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:14:6: 14:7
+        StorageDead(var1);               // scope 0 at src/lib.rs:12:22: 12:23
+        StorageDead(var0);               // scope 0 at src/lib.rs:12:12: 12:13
+        return;                          // scope 1 at src/lib.rs:12:1: 15:2
+    }
+}
+
+fn <FixedBitSet as std::fmt::Debug>::fmt(arg0: &FixedBitSet, arg1: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:10: 19:15
+        let var1: &mut std::fmt::Formatter<'_>; // "__arg_0" in scope 1 at src/lib.rs:19:10: 19:15
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_0_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_0_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let mut var4: std::fmt::DebugStruct<'_, '_>; // "builder" in scope 3 at src/lib.rs:1:1: 1:1
+            }
+        }
+    }
+    let mut tmp0: &mut std::fmt::Formatter<'_>;
+    let mut tmp1: &str;
+    let mut tmp2: &'static str;
+    let mut tmp3: &mut std::fmt::DebugStruct<'_, '_>;
+    let mut tmp4: &mut std::fmt::DebugStruct<'_, '_>;
+    let mut tmp5: &str;
+    let mut tmp6: &'static str;
+    let mut tmp7: &std::fmt::Debug;
+    let mut tmp8: &&std::vec::Vec<u32>;
+    let mut tmp9: &&std::vec::Vec<u32>;
+    let mut tmp10: &std::vec::Vec<u32>;
+    let mut tmp11: &mut std::fmt::DebugStruct<'_, '_>;
+    let mut tmp12: &mut std::fmt::DebugStruct<'_, '_>;
+    let mut tmp13: &str;
+    let mut tmp14: &'static str;
+    let mut tmp15: &std::fmt::Debug;
+    let mut tmp16: &&usize;
+    let mut tmp17: &&usize;
+    let mut tmp18: &usize;
+    let mut tmp19: &mut std::fmt::DebugStruct<'_, '_>;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:10: 19:15
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:10: 19:15
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:10: 19:15
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:10: 19:15
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var0).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:10: 19:15
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:1:1: 1:1
+        StorageLive(tmp0);               // scope 2 at src/lib.rs:19:10: 19:15
+        tmp0 = &mut (*var1);             // scope 2 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp1);               // scope 2 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp2);               // scope 2 at src/lib.rs:19:10: 19:15
+        tmp2 = const "FixedBitSet";      // scope 2 at src/lib.rs:19:10: 19:15
+        tmp1 = &(*tmp2);                 // scope 2 at src/lib.rs:19:10: 19:15
+        var4 = std::fmt::Formatter<'_>::debug_struct(tmp0, tmp1) -> bb2; // scope 2 at src/lib.rs:19:10: 19:15
+    }
+
+    bb2: {
+        StorageDead(tmp1);               // scope 2 at src/lib.rs:19:10: 19:15
+        StorageDead(tmp2);               // scope 2 at src/lib.rs:19:10: 19:15
+        StorageDead(tmp0);               // scope 2 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:19:10: 19:15
+        tmp4 = &mut var4;                // scope 3 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp6 = const "data";             // scope 3 at src/lib.rs:21:5: 21:21
+        tmp5 = &(*tmp6);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:21:5: 21:21
+        tmp10 = &(*var2);                // scope 3 at src/lib.rs:21:5: 21:21
+        tmp9 = &tmp10;                   // scope 3 at src/lib.rs:21:5: 21:21
+        tmp8 = &(*tmp9);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp7 = tmp8 as &std::fmt::Debug (Unsize); // scope 3 at src/lib.rs:21:5: 21:21
+        tmp3 = std::fmt::DebugStruct<'_, '_>::field(tmp4, tmp5, tmp7) -> bb3; // scope 3 at src/lib.rs:19:10: 19:15
+    }
+
+    bb3: {
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:19:10: 19:15
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp11);              // scope 3 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp12);              // scope 3 at src/lib.rs:19:10: 19:15
+        tmp12 = &mut var4;               // scope 3 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp14 = const "length";          // scope 3 at src/lib.rs:23:5: 23:18
+        tmp13 = &(*tmp14);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp17);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp18);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp18 = &(*var3);                // scope 3 at src/lib.rs:23:5: 23:18
+        tmp17 = &tmp18;                  // scope 3 at src/lib.rs:23:5: 23:18
+        tmp16 = &(*tmp17);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp15 = tmp16 as &std::fmt::Debug (Unsize); // scope 3 at src/lib.rs:23:5: 23:18
+        tmp11 = std::fmt::DebugStruct<'_, '_>::field(tmp12, tmp13, tmp15) -> bb4; // scope 3 at src/lib.rs:19:10: 19:15
+    }
+
+    bb4: {
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:19:10: 19:15
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp17);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp18);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp12);              // scope 3 at src/lib.rs:19:10: 19:15
+        StorageLive(tmp19);              // scope 3 at src/lib.rs:19:10: 19:15
+        tmp19 = &mut var4;               // scope 3 at src/lib.rs:19:10: 19:15
+        return = std::fmt::DebugStruct<'_, '_>::finish(tmp19) -> bb5; // scope 3 at src/lib.rs:19:10: 19:15
+    }
+
+    bb5: {
+        StorageDead(var4);               // scope 2 at src/lib.rs:1:1: 1:1
+        StorageDead(tmp19);              // scope 2 at src/lib.rs:19:10: 19:15
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:10: 19:15
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:10: 19:15
+        return;                          // scope 1 at src/lib.rs:19:10: 19:15
+    }
+}
+
+fn <FixedBitSet as std::cmp::PartialOrd>::gt(arg0: &FixedBitSet, arg1: &FixedBitSet) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:32: 19:42
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:32: 19:42
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+            }
+        }
+    }
+    let mut tmp0: bool;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: bool;
+    let mut tmp4: bool;
+    let mut tmp5: bool;
+    let mut tmp6: &std::vec::Vec<u32>;
+    let mut tmp7: &std::vec::Vec<u32>;
+    let mut tmp8: bool;
+    let mut tmp9: bool;
+    let mut tmp10: usize;
+    let mut tmp11: usize;
+    let mut tmp12: bool;
+    let mut tmp13: bool;
+    let mut tmp14: bool;
+    let mut tmp15: usize;
+    let mut tmp16: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::gt(tmp1, tmp2) -> bb6; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        return = const true;             // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb3: {
+        return = const false;            // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb4: {
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp6 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp7 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp5 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::gt(tmp6, tmp7) -> bb11; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb5: {
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        return;                          // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb6: {
+        if(tmp0) -> [true: bb2, false: bb4]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb7: {
+        tmp3 = const true;               // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb8: {
+        tmp3 = const false;              // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb9: {
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp10 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp11 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp9 = Gt(tmp10, tmp11);         // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp9) -> [true: bb12, false: bb14]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb10: {
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp3) -> [true: bb2, false: bb3]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb11: {
+        tmp4 = Not(tmp5);                // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp4) -> [true: bb9, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb12: {
+        tmp8 = const true;               // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb13: {
+        tmp8 = const false;              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb14: {
+        StorageLive(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp15 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp16 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp14 = Gt(tmp15, tmp16);        // scope 3 at src/lib.rs:23:5: 23:18
+        tmp13 = Not(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb16;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb15: {
+        StorageDead(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp8) -> [true: bb7, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb16: {
+        tmp12 = const false;             // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp12) -> [true: bb12, false: bb13]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+}
+
+fn <FixedBitSet as std::cmp::Eq>::assert_receiver_is_total_eq(arg0: &FixedBitSet) -> () {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:28: 19:30
+        scope 2 {
+            let var1: &std::vec::Vec<u32>; // "__self_0_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var2: &usize;            // "__self_0_1" in scope 2 at src/lib.rs:23:5: 23:18
+        }
+    }
+    let mut tmp0: ();
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:28: 19:30
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:28: 19:30
+        StorageLive(var1);               // scope 1 at src/lib.rs:21:5: 21:21
+        var1 = &((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var2);               // scope 1 at src/lib.rs:23:5: 23:18
+        var2 = &((*var0).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:28: 19:30
+    }
+
+    bb1: {
+        StorageLive(tmp1);               // scope 2 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*var1);                 // scope 2 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::Eq>::assert_receiver_is_total_eq(tmp1) -> bb2; // scope 2 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        StorageDead(tmp1);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 2 at src/lib.rs:23:5: 23:18
+        tmp2 = &(*var2);                 // scope 2 at src/lib.rs:23:5: 23:18
+        return = <usize as std::cmp::Eq>::assert_receiver_is_total_eq(tmp2) -> bb3; // scope 2 at src/lib.rs:23:5: 23:18
+    }
+
+    bb3: {
+        StorageDead(tmp2);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var1);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:28: 19:30
+        return;                          // scope 1 at src/lib.rs:19:28: 19:30
+    }
+}
+
+static FALSE: bool = {
+    bb0: {
+        return = const false;            // scope 0 at src/lib.rs:6:22: 6:27
+        goto -> bb1;                     // scope 0 at src/lib.rs:6:1: 6:28
+    }
+
+    bb1: {
+        return;                          // scope 0 at src/lib.rs:6:1: 6:28
+    }
+}
+
+fn FixedBitSet::grow(arg0: &mut FixedBitSet, arg1: usize) -> () {
+    scope 1 {
+        let var0: &mut FixedBitSet;      // "self" in scope 1 at src/lib.rs:41:17: 41:26
+        let var1: usize;                 // "bits" in scope 1 at src/lib.rs:41:28: 41:32
+        scope 2 {
+            let mut var2: usize;         // "cur_blocks" in scope 2 at src/lib.rs:42:14: 42:28
+            let var3: usize;             // "rem" in scope 2 at src/lib.rs:42:30: 42:33
+            scope 3 {
+                let mut var4: usize;     // "blocks" in scope 3 at src/lib.rs:45:14: 45:24
+                let var5: usize;         // "rem" in scope 3 at src/lib.rs:45:26: 45:29
+                scope 4 {
+                    let var6: ();        // "_result" in scope 4 at src/lib.rs:50:13: 52:14
+                }
+                scope 5 {
+                    let mut var7: std::ops::Range<usize>; // "iter" in scope 5 at src/lib.rs:50:13: 52:14
+                }
+            }
+        }
+    }
+    let mut tmp0: (usize, usize);
+    let mut tmp1: usize;
+    let mut tmp2: usize;
+    let mut tmp3: bool;
+    let mut tmp4: usize;
+    let mut tmp5: (usize, bool);
+    let mut tmp6: (usize, usize);
+    let mut tmp7: usize;
+    let mut tmp8: usize;
+    let mut tmp9: bool;
+    let mut tmp10: usize;
+    let mut tmp11: (usize, bool);
+    let mut tmp12: bool;
+    let mut tmp13: usize;
+    let mut tmp14: usize;
+    let mut tmp15: usize;
+    let mut tmp16: ();
+    let mut tmp17: &mut std::vec::Vec<u32>;
+    let mut tmp18: usize;
+    let mut tmp19: usize;
+    let mut tmp20: usize;
+    let mut tmp21: (usize, bool);
+    let mut tmp22: std::ops::Range<usize>;
+    let mut tmp23: std::ops::Range<usize>;
+    let mut tmp24: usize;
+    let mut tmp25: usize;
+    let mut tmp26: usize;
+    let mut tmp27: usize;
+    let mut tmp28: (usize, bool);
+    let mut tmp29: ();
+    let mut tmp30: std::option::Option<usize>;
+    let mut tmp31: &mut std::ops::Range<usize>;
+    let mut tmp32: &mut std::ops::Range<usize>;
+    let mut tmp33: ();
+    let mut tmp34: &mut std::vec::Vec<u32>;
+    let mut tmp35: !;
+    let mut tmp36: ();
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:41:17: 41:26
+        var0 = arg0;                     // scope 0 at src/lib.rs:41:17: 41:26
+        StorageLive(var1);               // scope 0 at src/lib.rs:41:28: 41:32
+        var1 = arg1;                     // scope 0 at src/lib.rs:41:28: 41:32
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:42:37: 42:63
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:42:45: 42:56
+        tmp1 = ((*var0).1: usize);       // scope 1 at src/lib.rs:42:45: 42:56
+        tmp0 = div_rem(tmp1, BITS) -> bb1; // scope 1 at src/lib.rs:42:37: 42:63
+    }
+
+    bb1: {
+        StorageLive(var2);               // scope 1 at src/lib.rs:42:14: 42:28
+        var2 = (tmp0.0: usize);          // scope 1 at src/lib.rs:42:14: 42:28
+        StorageLive(var3);               // scope 1 at src/lib.rs:42:30: 42:33
+        var3 = (tmp0.1: usize);          // scope 1 at src/lib.rs:42:30: 42:33
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:42:37: 42:63
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:42:45: 42:56
+        StorageLive(tmp2);               // scope 2 at src/lib.rs:43:23: 43:41
+        StorageLive(tmp3);               // scope 2 at src/lib.rs:43:23: 43:32
+        StorageLive(tmp4);               // scope 2 at src/lib.rs:43:24: 43:27
+        tmp4 = var3;                     // scope 2 at src/lib.rs:43:24: 43:27
+        tmp3 = Gt(tmp4, const 0usize);   // scope 2 at src/lib.rs:43:23: 43:32
+        tmp2 = tmp3 as usize (Misc);     // scope 2 at src/lib.rs:43:23: 43:41
+        tmp5 = CheckedAdd(var2, tmp2);   // scope 2 at src/lib.rs:43:9: 43:41
+        assert(!(tmp5.1: bool), "attempt to add with overflow") -> bb2; // scope 2 at src/lib.rs:43:9: 43:41
+    }
+
+    bb2: {
+        var2 = (tmp5.0: usize);          // scope 2 at src/lib.rs:43:9: 43:41
+        StorageDead(tmp2);               // scope 2 at src/lib.rs:43:23: 43:41
+        StorageDead(tmp3);               // scope 2 at src/lib.rs:43:23: 43:32
+        StorageDead(tmp4);               // scope 2 at src/lib.rs:43:24: 43:27
+        StorageLive(tmp6);               // scope 2 at src/lib.rs:45:33: 45:52
+        StorageLive(tmp7);               // scope 2 at src/lib.rs:45:41: 45:45
+        tmp7 = var1;                     // scope 2 at src/lib.rs:45:41: 45:45
+        tmp6 = div_rem(tmp7, BITS) -> bb3; // scope 2 at src/lib.rs:45:33: 45:52
+    }
+
+    bb3: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:45:14: 45:24
+        var4 = (tmp6.0: usize);          // scope 2 at src/lib.rs:45:14: 45:24
+        StorageLive(var5);               // scope 2 at src/lib.rs:45:26: 45:29
+        var5 = (tmp6.1: usize);          // scope 2 at src/lib.rs:45:26: 45:29
+        StorageDead(tmp6);               // scope 2 at src/lib.rs:45:33: 45:52
+        StorageDead(tmp7);               // scope 2 at src/lib.rs:45:41: 45:45
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:46:19: 46:37
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:46:19: 46:28
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:46:20: 46:23
+        tmp10 = var5;                    // scope 3 at src/lib.rs:46:20: 46:23
+        tmp9 = Gt(tmp10, const 0usize);  // scope 3 at src/lib.rs:46:19: 46:28
+        tmp8 = tmp9 as usize (Misc);     // scope 3 at src/lib.rs:46:19: 46:37
+        tmp11 = CheckedAdd(var4, tmp8);  // scope 3 at src/lib.rs:46:9: 46:37
+        assert(!(tmp11.1: bool), "attempt to add with overflow") -> bb4; // scope 3 at src/lib.rs:46:9: 46:37
+    }
+
+    bb4: {
+        var4 = (tmp11.0: usize);         // scope 3 at src/lib.rs:46:9: 46:37
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:46:19: 46:37
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:46:19: 46:28
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:46:20: 46:23
+        StorageLive(tmp12);              // scope 3 at src/lib.rs:47:12: 47:30
+        StorageLive(tmp13);              // scope 3 at src/lib.rs:47:12: 47:16
+        tmp13 = var1;                    // scope 3 at src/lib.rs:47:12: 47:16
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:47:19: 47:30
+        tmp14 = ((*var0).1: usize);      // scope 3 at src/lib.rs:47:19: 47:30
+        tmp12 = Gt(tmp13, tmp14);        // scope 3 at src/lib.rs:47:12: 47:30
+        StorageDead(tmp14);              // scope 3 at src/lib.rs:47:19: 47:30
+        StorageDead(tmp13);              // scope 3 at src/lib.rs:47:12: 47:16
+        if(tmp12) -> [true: bb5, false: bb6]; // scope 3 at src/lib.rs:47:9: 53:10
+    }
+
+    bb5: {
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:48:27: 48:31
+        tmp15 = var1;                    // scope 3 at src/lib.rs:48:27: 48:31
+        ((*var0).1: usize) = tmp15;      // scope 3 at src/lib.rs:48:13: 48:31
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:48:27: 48:31
+        StorageLive(tmp17);              // scope 3 at src/lib.rs:49:13: 49:22
+        tmp17 = &mut ((*var0).0: std::vec::Vec<u32>); // scope 3 at src/lib.rs:49:13: 49:22
+        StorageLive(tmp18);              // scope 3 at src/lib.rs:49:31: 49:50
+        StorageLive(tmp19);              // scope 3 at src/lib.rs:49:31: 49:37
+        tmp19 = var4;                    // scope 3 at src/lib.rs:49:31: 49:37
+        StorageLive(tmp20);              // scope 3 at src/lib.rs:49:40: 49:50
+        tmp20 = var2;                    // scope 3 at src/lib.rs:49:40: 49:50
+        tmp21 = CheckedSub(tmp19, tmp20); // scope 3 at src/lib.rs:49:31: 49:50
+        assert(!(tmp21.1: bool), "attempt to subtract with overflow") -> bb7; // scope 3 at src/lib.rs:49:31: 49:50
+    }
+
+    bb6: {
+        return = ();                     // scope 3 at src/lib.rs:47:9: 53:10
+        goto -> bb16;                    // scope 3 at src/lib.rs:47:9: 53:10
+    }
+
+    bb7: {
+        tmp18 = (tmp21.0: usize);        // scope 3 at src/lib.rs:49:31: 49:50
+        tmp16 = <std::vec::Vec<T>><u32>::reserve(tmp17, tmp18) -> bb8; // scope 3 at src/lib.rs:49:13: 49:51
+    }
+
+    bb8: {
+        StorageDead(tmp18);              // scope 3 at src/lib.rs:49:31: 49:50
+        StorageDead(tmp20);              // scope 3 at src/lib.rs:49:40: 49:50
+        StorageDead(tmp19);              // scope 3 at src/lib.rs:49:31: 49:37
+        StorageDead(tmp17);              // scope 3 at src/lib.rs:49:13: 49:22
+        StorageLive(var6);               // scope 3 at src/lib.rs:50:13: 52:14
+        StorageLive(tmp22);              // scope 3 at src/lib.rs:50:13: 52:14
+        StorageLive(tmp23);              // scope 3 at src/lib.rs:50:22: 50:44
+        StorageLive(tmp24);              // scope 3 at src/lib.rs:50:22: 50:23
+        tmp24 = const 0usize;            // scope 3 at src/lib.rs:50:22: 50:23
+        StorageLive(tmp25);              // scope 3 at src/lib.rs:50:25: 50:44
+        StorageLive(tmp26);              // scope 3 at src/lib.rs:50:25: 50:31
+        tmp26 = var4;                    // scope 3 at src/lib.rs:50:25: 50:31
+        StorageLive(tmp27);              // scope 3 at src/lib.rs:50:34: 50:44
+        tmp27 = var2;                    // scope 3 at src/lib.rs:50:34: 50:44
+        tmp28 = CheckedSub(tmp26, tmp27); // scope 3 at src/lib.rs:50:25: 50:44
+        assert(!(tmp28.1: bool), "attempt to subtract with overflow") -> bb9; // scope 3 at src/lib.rs:50:25: 50:44
+    }
+
+    bb9: {
+        tmp25 = (tmp28.0: usize);        // scope 3 at src/lib.rs:50:25: 50:44
+        tmp23 = std::ops::Range::<usize> { start: tmp24, end: tmp25 }; // scope 3 at src/lib.rs:50:22: 50:44
+        tmp22 = <std::ops::Range<usize> as std::iter::IntoIterator>::into_iter(tmp23) -> bb10; // scope 3 at src/lib.rs:50:13: 52:14
+    }
+
+    bb10: {
+        StorageLive(var7);               // scope 3 at src/lib.rs:50:13: 52:14
+        var7 = tmp22;                    // scope 3 at src/lib.rs:50:13: 52:14
+        goto -> bb11;                    // scope 3 at src/lib.rs:50:13: 52:14
+    }
+
+    bb11: {
+        StorageLive(tmp30);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageLive(tmp31);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageLive(tmp32);              // scope 5 at src/lib.rs:50:13: 52:14
+        tmp32 = &mut var7;               // scope 5 at src/lib.rs:50:13: 52:14
+        tmp31 = &mut (*tmp32);           // scope 5 at src/lib.rs:50:13: 52:14
+        tmp30 = <std::ops::Range<usize> as std::iter::Iterator>::next(tmp31) -> bb12; // scope 5 at src/lib.rs:50:13: 52:14
+    }
+
+    bb12: {
+        switch(tmp30) -> [None: bb14, Some: bb13]; // scope 5 at src/lib.rs:50:13: 52:14
+    }
+
+    bb13: {
+        StorageLive(tmp34);              // scope 5 at src/lib.rs:51:17: 51:26
+        tmp34 = &mut ((*var0).0: std::vec::Vec<u32>); // scope 5 at src/lib.rs:51:17: 51:26
+        tmp33 = <std::vec::Vec<T>><u32>::push(tmp34, const 0u32) -> bb15; // scope 5 at src/lib.rs:51:17: 51:34
+    }
+
+    bb14: {
+        StorageLive(tmp35);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp30);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp31);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp32);              // scope 5 at src/lib.rs:50:13: 52:14
+        var6 = ();                       // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(var7);               // scope 3 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp22);              // scope 3 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp23);              // scope 3 at src/lib.rs:50:22: 50:44
+        StorageDead(tmp25);              // scope 3 at src/lib.rs:50:25: 50:44
+        StorageDead(tmp27);              // scope 3 at src/lib.rs:50:34: 50:44
+        StorageDead(tmp26);              // scope 3 at src/lib.rs:50:25: 50:31
+        StorageDead(tmp24);              // scope 3 at src/lib.rs:50:22: 50:23
+        StorageLive(tmp36);              // scope 4 at src/lib.rs:50:13: 52:14
+        tmp36 = var6;                    // scope 4 at src/lib.rs:50:13: 52:14
+        return = tmp36;                  // scope 4 at src/lib.rs:50:13: 52:14
+        StorageDead(var6);               // scope 3 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp36);              // scope 3 at src/lib.rs:50:13: 52:14
+        goto -> bb16;                    // scope 3 at src/lib.rs:47:9: 53:10
+    }
+
+    bb15: {
+        StorageDead(tmp34);              // scope 5 at src/lib.rs:51:17: 51:26
+        tmp29 = ();                      // scope 5 at src/lib.rs:50:45: 52:14
+        StorageDead(tmp35);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp30);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp31);              // scope 5 at src/lib.rs:50:13: 52:14
+        StorageDead(tmp32);              // scope 5 at src/lib.rs:50:13: 52:14
+        goto -> bb11;                    // scope 5 at src/lib.rs:50:13: 52:14
+    }
+
+    bb16: {
+        StorageDead(var5);               // scope 2 at src/lib.rs:45:26: 45:29
+        StorageDead(var4);               // scope 2 at src/lib.rs:45:14: 45:24
+        StorageDead(var3);               // scope 1 at src/lib.rs:42:30: 42:33
+        StorageDead(var2);               // scope 1 at src/lib.rs:42:14: 42:28
+        StorageDead(tmp12);              // scope 1 at src/lib.rs:47:12: 47:30
+        StorageDead(var1);               // scope 0 at src/lib.rs:41:28: 41:32
+        StorageDead(var0);               // scope 0 at src/lib.rs:41:17: 41:26
+        return;                          // scope 1 at src/lib.rs:41:5: 54:6
+    }
+}
+
+fn FixedBitSet::with_capacity(arg0: usize) -> FixedBitSet {
+    scope 1 {
+        let var0: usize;                 // "bits" in scope 1 at src/lib.rs:30:26: 30:30
+        scope 2 {
+            let mut var1: usize;         // "blocks" in scope 2 at src/lib.rs:32:14: 32:24
+            let var2: usize;             // "rem" in scope 2 at src/lib.rs:32:26: 32:29
+        }
+    }
+    let mut tmp0: (usize, usize);
+    let mut tmp1: usize;
+    let mut tmp2: usize;
+    let mut tmp3: bool;
+    let mut tmp4: usize;
+    let mut tmp5: (usize, bool);
+    let mut tmp6: std::vec::Vec<u32>;
+    let mut tmp7: usize;
+    let mut tmp8: ();
+    let mut tmp9: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:30:26: 30:30
+        var0 = arg0;                     // scope 0 at src/lib.rs:30:26: 30:30
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:32:33: 32:52
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:32:41: 32:45
+        tmp1 = var0;                     // scope 1 at src/lib.rs:32:41: 32:45
+        tmp0 = div_rem(tmp1, BITS) -> bb1; // scope 1 at src/lib.rs:32:33: 32:52
+    }
+
+    bb1: {
+        StorageLive(var1);               // scope 1 at src/lib.rs:32:14: 32:24
+        var1 = (tmp0.0: usize);          // scope 1 at src/lib.rs:32:14: 32:24
+        StorageLive(var2);               // scope 1 at src/lib.rs:32:26: 32:29
+        var2 = (tmp0.1: usize);          // scope 1 at src/lib.rs:32:26: 32:29
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:32:33: 32:52
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:32:41: 32:45
+        StorageLive(tmp2);               // scope 2 at src/lib.rs:33:19: 33:37
+        StorageLive(tmp3);               // scope 2 at src/lib.rs:33:19: 33:28
+        StorageLive(tmp4);               // scope 2 at src/lib.rs:33:20: 33:23
+        tmp4 = var2;                     // scope 2 at src/lib.rs:33:20: 33:23
+        tmp3 = Gt(tmp4, const 0usize);   // scope 2 at src/lib.rs:33:19: 33:28
+        tmp2 = tmp3 as usize (Misc);     // scope 2 at src/lib.rs:33:19: 33:37
+        tmp5 = CheckedAdd(var1, tmp2);   // scope 2 at src/lib.rs:33:9: 33:37
+        assert(!(tmp5.1: bool), "attempt to add with overflow") -> bb2; // scope 2 at src/lib.rs:33:9: 33:37
+    }
+
+    bb2: {
+        var1 = (tmp5.0: usize);          // scope 2 at src/lib.rs:33:9: 33:37
+        StorageDead(tmp2);               // scope 2 at src/lib.rs:33:19: 33:37
+        StorageDead(tmp3);               // scope 2 at src/lib.rs:33:19: 33:28
+        StorageDead(tmp4);               // scope 2 at src/lib.rs:33:20: 33:23
+        StorageLive(tmp6);               // scope 2 at <std macros>:2:1: 2:45
+        StorageLive(tmp7);               // scope 2 at src/lib.rs:35:27: 35:33
+        tmp7 = var1;                     // scope 2 at src/lib.rs:35:27: 35:33
+        tmp6 = std::vec::from_elem::<u32>(const 0u32, tmp7) -> bb3; // scope 2 at <std macros>:2:1: 2:45
+    }
+
+    bb3: {
+        StorageLive(tmp9);               // scope 2 at src/lib.rs:36:21: 36:25
+        tmp9 = var0;                     // scope 2 at src/lib.rs:36:21: 36:25
+        return = FixedBitSet { data: tmp6, length: tmp9 }; // scope 2 at src/lib.rs:34:9: 37:10
+        StorageDead(var2);               // scope 1 at src/lib.rs:32:26: 32:29
+        StorageDead(var1);               // scope 1 at src/lib.rs:32:14: 32:24
+        StorageDead(tmp9);               // scope 1 at src/lib.rs:36:21: 36:25
+        drop(tmp6) -> bb4;               // scope 1 at <std macros>:2:1: 2:45
+    }
+
+    bb4: {
+        StorageDead(tmp6);               // scope 1 at <std macros>:2:1: 2:45
+        StorageDead(tmp7);               // scope 1 at src/lib.rs:35:27: 35:33
+        StorageDead(var0);               // scope 0 at src/lib.rs:30:26: 30:30
+        return;                          // scope 1 at src/lib.rs:30:5: 38:6
+    }
+}
+
+fn <FixedBitSet as std::clone::Clone>::clone(arg0: &FixedBitSet) -> FixedBitSet {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:128:14: 128:19
+    }
+    let mut tmp0: std::vec::Vec<u32>;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: ();
+    let mut tmp3: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:128:14: 128:19
+        var0 = arg0;                     // scope 0 at src/lib.rs:128:14: 128:19
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:131:19: 131:36
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:131:19: 131:28
+        tmp1 = &((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:131:19: 131:28
+        tmp0 = <std::vec::Vec<u32> as std::clone::Clone>::clone(tmp1) -> bb1; // scope 1 at src/lib.rs:131:19: 131:36
+    }
+
+    bb1: {
+        StorageLive(tmp3);               // scope 1 at src/lib.rs:132:21: 132:32
+        tmp3 = ((*var0).1: usize);       // scope 1 at src/lib.rs:132:21: 132:32
+        return = FixedBitSet { data: tmp0, length: tmp3 }; // scope 1 at src/lib.rs:130:9: 133:10
+        StorageDead(tmp3);               // scope 1 at src/lib.rs:132:21: 132:32
+        drop(tmp0) -> bb2;               // scope 1 at src/lib.rs:131:19: 131:36
+    }
+
+    bb2: {
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:131:19: 131:36
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:131:19: 131:28
+        StorageDead(var0);               // scope 0 at src/lib.rs:128:14: 128:19
+        return;                          // scope 1 at src/lib.rs:128:5: 134:6
+    }
+}
+
+fn FixedBitSet::set(arg0: &mut FixedBitSet, arg1: usize, arg2: bool) -> () {
+    scope 1 {
+        let var0: &mut FixedBitSet;      // "self" in scope 1 at src/lib.rs:96:16: 96:25
+        let var1: usize;                 // "bit" in scope 1 at src/lib.rs:96:27: 96:30
+        let var2: bool;                  // "enabled" in scope 1 at src/lib.rs:96:39: 96:46
+        scope 2 {
+            let var3: usize;             // "block" in scope 2 at src/lib.rs:99:14: 99:19
+            let var4: usize;             // "i" in scope 2 at src/lib.rs:99:21: 99:22
+            scope 3 {
+                let var5: &mut u32;      // "elt" in scope 3 at src/lib.rs:101:17: 101:20
+            }
+        }
+    }
+    let mut tmp0: ();
+    let mut tmp1: bool;
+    let mut tmp2: bool;
+    let mut tmp3: usize;
+    let mut tmp4: usize;
+    let mut tmp5: !;
+    let mut tmp6: &(&'static str, u32);
+    let mut tmp7: &(&'static str, u32);
+    let mut tmp8: (usize, usize);
+    let mut tmp9: usize;
+    let mut tmp10: &mut [u32];
+    let mut tmp11: &mut [u32];
+    let mut tmp12: &mut std::vec::Vec<u32>;
+    let mut tmp13: usize;
+    let mut tmp14: bool;
+    let mut tmp15: u32;
+    let mut tmp16: usize;
+    let mut tmp17: (u32, bool);
+    let mut tmp18: u32;
+    let mut tmp19: u32;
+    let mut tmp20: usize;
+    let mut tmp21: (u32, bool);
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:96:16: 96:25
+        var0 = arg0;                     // scope 0 at src/lib.rs:96:16: 96:25
+        StorageLive(var1);               // scope 0 at src/lib.rs:96:27: 96:30
+        var1 = arg1;                     // scope 0 at src/lib.rs:96:27: 96:30
+        StorageLive(var2);               // scope 0 at src/lib.rs:96:39: 96:46
+        var2 = arg2;                     // scope 0 at src/lib.rs:96:39: 96:46
+        StorageLive(tmp1);               // scope 1 at <std macros>:2:4: 2:12
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:98:17: 98:34
+        StorageLive(tmp3);               // scope 1 at src/lib.rs:98:17: 98:20
+        tmp3 = var1;                     // scope 1 at src/lib.rs:98:17: 98:20
+        StorageLive(tmp4);               // scope 1 at src/lib.rs:98:23: 98:34
+        tmp4 = ((*var0).1: usize);       // scope 1 at src/lib.rs:98:23: 98:34
+        tmp2 = Lt(tmp3, tmp4);           // scope 1 at src/lib.rs:98:17: 98:34
+        tmp1 = Not(tmp2);                // scope 1 at <std macros>:2:4: 2:12
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:98:17: 98:34
+        StorageDead(tmp4);               // scope 1 at src/lib.rs:98:23: 98:34
+        StorageDead(tmp3);               // scope 1 at src/lib.rs:98:17: 98:20
+        if(tmp1) -> [true: bb1, false: bb2]; // scope 1 at <std macros>:2:1: 3:73
+    }
+
+    bb1: {
+        StorageLive(tmp5);               // scope 1 at <std macros>:3:1: 6:17
+        StorageLive(tmp6);               // scope 1 at <std macros>:4:9: 6:15
+        StorageLive(tmp7);               // scope 1 at <std macros>:6:1: 6:13
+        tmp7 = &FixedBitSet::set::_FILE_LINE; // scope 1 at <std macros>:6:1: 6:13
+        tmp6 = &(*tmp7);                 // scope 1 at <std macros>:6:1: 6:13
+        std::rt::begin_panic::<&'static str>(const "assertion failed: bit < self.length", tmp6); // scope 1 at <std macros>:3:1: 6:17
+    }
+
+    bb2: {
+        tmp0 = ();                       // scope 1 at <std macros>:2:1: 3:73
+        StorageDead(tmp1);               // scope 1 at <std macros>:2:4: 2:12
+        StorageLive(tmp8);               // scope 1 at src/lib.rs:99:26: 99:44
+        StorageLive(tmp9);               // scope 1 at src/lib.rs:99:34: 99:37
+        tmp9 = var1;                     // scope 1 at src/lib.rs:99:34: 99:37
+        tmp8 = div_rem(tmp9, BITS) -> bb3; // scope 1 at src/lib.rs:99:26: 99:44
+    }
+
+    bb3: {
+        StorageLive(var3);               // scope 1 at src/lib.rs:99:14: 99:19
+        var3 = (tmp8.0: usize);          // scope 1 at src/lib.rs:99:14: 99:19
+        StorageLive(var4);               // scope 1 at src/lib.rs:99:21: 99:22
+        var4 = (tmp8.1: usize);          // scope 1 at src/lib.rs:99:21: 99:22
+        StorageDead(tmp8);               // scope 1 at src/lib.rs:99:26: 99:44
+        StorageDead(tmp9);               // scope 1 at src/lib.rs:99:34: 99:37
+        StorageLive(var5);               // scope 2 at src/lib.rs:101:17: 101:20
+        StorageLive(tmp10);              // scope 2 at src/lib.rs:101:23: 101:32
+        StorageLive(tmp11);              // scope 2 at src/lib.rs:101:23: 101:32
+        StorageLive(tmp12);              // scope 2 at src/lib.rs:101:23: 101:32
+        tmp12 = &mut ((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:101:23: 101:32
+        tmp11 = <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut(tmp12) -> bb4; // scope 2 at src/lib.rs:101:23: 101:32
+    }
+
+    bb4: {
+        tmp10 = &mut (*tmp11);           // scope 2 at src/lib.rs:101:23: 101:32
+        StorageLive(tmp13);              // scope 2 at src/lib.rs:101:51: 101:56
+        tmp13 = var3;                    // scope 2 at src/lib.rs:101:51: 101:56
+        var5 = std::slice::<impl [T]><u32>::get_unchecked_mut(tmp10, tmp13) -> bb5; // scope 2 at src/lib.rs:101:23: 101:57
+    }
+
+    bb5: {
+        StorageDead(tmp13);              // scope 2 at src/lib.rs:101:51: 101:56
+        StorageDead(tmp10);              // scope 2 at src/lib.rs:101:23: 101:32
+        StorageDead(tmp11);              // scope 2 at src/lib.rs:101:23: 101:32
+        StorageDead(tmp12);              // scope 2 at src/lib.rs:101:23: 101:32
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:102:16: 102:23
+        tmp14 = var2;                    // scope 3 at src/lib.rs:102:16: 102:23
+        if(tmp14) -> [true: bb6, false: bb7]; // scope 3 at src/lib.rs:102:13: 106:14
+    }
+
+    bb6: {
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:103:25: 103:31
+        StorageLive(tmp16);              // scope 3 at src/lib.rs:103:30: 103:31
+        tmp16 = var4;                    // scope 3 at src/lib.rs:103:30: 103:31
+        tmp17 = CheckedShl(const 1u32, tmp16); // scope 3 at src/lib.rs:103:25: 103:31
+        assert(!(tmp17.1: bool), "attempt to shift left with overflow") -> bb8; // scope 3 at src/lib.rs:103:25: 103:31
+    }
+
+    bb7: {
+        StorageLive(tmp18);              // scope 3 at src/lib.rs:105:25: 105:34
+        StorageLive(tmp19);              // scope 3 at src/lib.rs:105:26: 105:34
+        StorageLive(tmp20);              // scope 3 at src/lib.rs:105:32: 105:33
+        tmp20 = var4;                    // scope 3 at src/lib.rs:105:32: 105:33
+        tmp21 = CheckedShl(const 1u32, tmp20); // scope 3 at src/lib.rs:105:26: 105:34
+        assert(!(tmp21.1: bool), "attempt to shift left with overflow") -> bb9; // scope 3 at src/lib.rs:105:26: 105:34
+    }
+
+    bb8: {
+        tmp15 = (tmp17.0: u32);          // scope 3 at src/lib.rs:103:25: 103:31
+        (*var5) = BitOr((*var5), tmp15); // scope 3 at src/lib.rs:103:17: 103:31
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:103:25: 103:31
+        StorageDead(tmp16);              // scope 3 at src/lib.rs:103:30: 103:31
+        return = ();                     // scope 3 at src/lib.rs:102:24: 104:14
+        goto -> bb10;                    // scope 3 at src/lib.rs:102:13: 106:14
+    }
+
+    bb9: {
+        tmp19 = (tmp21.0: u32);          // scope 3 at src/lib.rs:105:26: 105:34
+        tmp18 = Not(tmp19);              // scope 3 at src/lib.rs:105:25: 105:34
+        (*var5) = BitAnd((*var5), tmp18); // scope 3 at src/lib.rs:105:17: 105:34
+        StorageDead(tmp18);              // scope 3 at src/lib.rs:105:25: 105:34
+        StorageDead(tmp19);              // scope 3 at src/lib.rs:105:26: 105:34
+        StorageDead(tmp20);              // scope 3 at src/lib.rs:105:32: 105:33
+        return = ();                     // scope 3 at src/lib.rs:104:20: 106:14
+        goto -> bb10;                    // scope 3 at src/lib.rs:102:13: 106:14
+    }
+
+    bb10: {
+        StorageDead(var5);               // scope 2 at src/lib.rs:101:17: 101:20
+        StorageDead(var4);               // scope 1 at src/lib.rs:99:21: 99:22
+        StorageDead(var3);               // scope 1 at src/lib.rs:99:14: 99:19
+        StorageDead(tmp14);              // scope 1 at src/lib.rs:102:16: 102:23
+        StorageDead(var2);               // scope 0 at src/lib.rs:96:39: 96:46
+        StorageDead(var1);               // scope 0 at src/lib.rs:96:27: 96:30
+        StorageDead(var0);               // scope 0 at src/lib.rs:96:16: 96:25
+        return;                          // scope 1 at src/lib.rs:96:5: 108:6
+    }
+}
+
+fn <FixedBitSet as std::cmp::PartialOrd>::le(arg0: &FixedBitSet, arg1: &FixedBitSet) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:32: 19:42
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:32: 19:42
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+            }
+        }
+    }
+    let mut tmp0: bool;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: bool;
+    let mut tmp4: bool;
+    let mut tmp5: bool;
+    let mut tmp6: &std::vec::Vec<u32>;
+    let mut tmp7: &std::vec::Vec<u32>;
+    let mut tmp8: bool;
+    let mut tmp9: bool;
+    let mut tmp10: usize;
+    let mut tmp11: usize;
+    let mut tmp12: bool;
+    let mut tmp13: bool;
+    let mut tmp14: bool;
+    let mut tmp15: usize;
+    let mut tmp16: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::lt(tmp1, tmp2) -> bb6; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        return = const true;             // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb3: {
+        return = const false;            // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb4: {
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp6 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp7 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp5 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::lt(tmp6, tmp7) -> bb11; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb5: {
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        return;                          // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb6: {
+        if(tmp0) -> [true: bb2, false: bb4]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb7: {
+        tmp3 = const true;               // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb8: {
+        tmp3 = const false;              // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb9: {
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp10 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp11 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp9 = Lt(tmp10, tmp11);         // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp9) -> [true: bb12, false: bb14]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb10: {
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp3) -> [true: bb2, false: bb3]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb11: {
+        tmp4 = Not(tmp5);                // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp4) -> [true: bb9, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb12: {
+        tmp8 = const true;               // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb13: {
+        tmp8 = const false;              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb14: {
+        StorageLive(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp15 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp16 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp14 = Lt(tmp15, tmp16);        // scope 3 at src/lib.rs:23:5: 23:18
+        tmp13 = Not(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp13) -> [true: bb16, false: bb17]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb15: {
+        StorageDead(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp8) -> [true: bb7, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb16: {
+        tmp12 = const true;              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb18;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb17: {
+        tmp12 = const false;             // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb18;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb18: {
+        StorageDead(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp12) -> [true: bb12, false: bb13]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+}
+
+fn FixedBitSet::insert(arg0: &mut FixedBitSet, arg1: usize) -> () {
+    scope 1 {
+        let var0: &mut FixedBitSet;      // "self" in scope 1 at src/lib.rs:85:19: 85:28
+        let var1: usize;                 // "bit" in scope 1 at src/lib.rs:85:30: 85:33
+        scope 2 {
+            let var2: usize;             // "block" in scope 2 at src/lib.rs:88:14: 88:19
+            let var3: usize;             // "i" in scope 2 at src/lib.rs:88:21: 88:22
+        }
+    }
+    let mut tmp0: ();
+    let mut tmp1: bool;
+    let mut tmp2: bool;
+    let mut tmp3: usize;
+    let mut tmp4: usize;
+    let mut tmp5: !;
+    let mut tmp6: &(&'static str, u32);
+    let mut tmp7: &(&'static str, u32);
+    let mut tmp8: (usize, usize);
+    let mut tmp9: usize;
+    let mut tmp10: u32;
+    let mut tmp11: usize;
+    let mut tmp12: (u32, bool);
+    let mut tmp13: &mut u32;
+    let mut tmp14: &mut [u32];
+    let mut tmp15: &mut [u32];
+    let mut tmp16: &mut std::vec::Vec<u32>;
+    let mut tmp17: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:85:19: 85:28
+        var0 = arg0;                     // scope 0 at src/lib.rs:85:19: 85:28
+        StorageLive(var1);               // scope 0 at src/lib.rs:85:30: 85:33
+        var1 = arg1;                     // scope 0 at src/lib.rs:85:30: 85:33
+        StorageLive(tmp1);               // scope 1 at <std macros>:2:4: 2:12
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:87:17: 87:34
+        StorageLive(tmp3);               // scope 1 at src/lib.rs:87:17: 87:20
+        tmp3 = var1;                     // scope 1 at src/lib.rs:87:17: 87:20
+        StorageLive(tmp4);               // scope 1 at src/lib.rs:87:23: 87:34
+        tmp4 = ((*var0).1: usize);       // scope 1 at src/lib.rs:87:23: 87:34
+        tmp2 = Lt(tmp3, tmp4);           // scope 1 at src/lib.rs:87:17: 87:34
+        tmp1 = Not(tmp2);                // scope 1 at <std macros>:2:4: 2:12
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:87:17: 87:34
+        StorageDead(tmp4);               // scope 1 at src/lib.rs:87:23: 87:34
+        StorageDead(tmp3);               // scope 1 at src/lib.rs:87:17: 87:20
+        if(tmp1) -> [true: bb1, false: bb2]; // scope 1 at <std macros>:2:1: 3:73
+    }
+
+    bb1: {
+        StorageLive(tmp5);               // scope 1 at <std macros>:3:1: 6:17
+        StorageLive(tmp6);               // scope 1 at <std macros>:4:9: 6:15
+        StorageLive(tmp7);               // scope 1 at <std macros>:6:1: 6:13
+        tmp7 = &FixedBitSet::insert::_FILE_LINE; // scope 1 at <std macros>:6:1: 6:13
+        tmp6 = &(*tmp7);                 // scope 1 at <std macros>:6:1: 6:13
+        std::rt::begin_panic::<&'static str>(const "assertion failed: bit < self.length", tmp6); // scope 1 at <std macros>:3:1: 6:17
+    }
+
+    bb2: {
+        tmp0 = ();                       // scope 1 at <std macros>:2:1: 3:73
+        StorageDead(tmp1);               // scope 1 at <std macros>:2:4: 2:12
+        StorageLive(tmp8);               // scope 1 at src/lib.rs:88:26: 88:44
+        StorageLive(tmp9);               // scope 1 at src/lib.rs:88:34: 88:37
+        tmp9 = var1;                     // scope 1 at src/lib.rs:88:34: 88:37
+        tmp8 = div_rem(tmp9, BITS) -> bb3; // scope 1 at src/lib.rs:88:26: 88:44
+    }
+
+    bb3: {
+        StorageLive(var2);               // scope 1 at src/lib.rs:88:14: 88:19
+        var2 = (tmp8.0: usize);          // scope 1 at src/lib.rs:88:14: 88:19
+        StorageLive(var3);               // scope 1 at src/lib.rs:88:21: 88:22
+        var3 = (tmp8.1: usize);          // scope 1 at src/lib.rs:88:21: 88:22
+        StorageDead(tmp8);               // scope 1 at src/lib.rs:88:26: 88:44
+        StorageDead(tmp9);               // scope 1 at src/lib.rs:88:34: 88:37
+        StorageLive(tmp10);              // scope 2 at src/lib.rs:90:52: 90:58
+        StorageLive(tmp11);              // scope 2 at src/lib.rs:90:57: 90:58
+        tmp11 = var3;                    // scope 2 at src/lib.rs:90:57: 90:58
+        tmp12 = CheckedShl(const 1u32, tmp11); // scope 2 at src/lib.rs:90:52: 90:58
+        assert(!(tmp12.1: bool), "attempt to shift left with overflow") -> bb4; // scope 2 at src/lib.rs:90:52: 90:58
+    }
+
+    bb4: {
+        tmp10 = (tmp12.0: u32);          // scope 2 at src/lib.rs:90:52: 90:58
+        StorageLive(tmp13);              // scope 2 at src/lib.rs:90:14: 90:48
+        StorageLive(tmp14);              // scope 2 at src/lib.rs:90:14: 90:23
+        StorageLive(tmp15);              // scope 2 at src/lib.rs:90:14: 90:23
+        StorageLive(tmp16);              // scope 2 at src/lib.rs:90:14: 90:23
+        tmp16 = &mut ((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:90:14: 90:23
+        tmp15 = <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut(tmp16) -> bb5; // scope 2 at src/lib.rs:90:14: 90:23
+    }
+
+    bb5: {
+        tmp14 = &mut (*tmp15);           // scope 2 at src/lib.rs:90:14: 90:23
+        StorageLive(tmp17);              // scope 2 at src/lib.rs:90:42: 90:47
+        tmp17 = var2;                    // scope 2 at src/lib.rs:90:42: 90:47
+        tmp13 = std::slice::<impl [T]><u32>::get_unchecked_mut(tmp14, tmp17) -> bb6; // scope 2 at src/lib.rs:90:14: 90:48
+    }
+
+    bb6: {
+        (*tmp13) = BitOr((*tmp13), tmp10); // scope 2 at src/lib.rs:90:13: 90:58
+        StorageDead(tmp13);              // scope 2 at src/lib.rs:90:14: 90:48
+        StorageDead(tmp17);              // scope 2 at src/lib.rs:90:42: 90:47
+        StorageDead(tmp14);              // scope 2 at src/lib.rs:90:14: 90:23
+        StorageDead(tmp15);              // scope 2 at src/lib.rs:90:14: 90:23
+        StorageDead(tmp16);              // scope 2 at src/lib.rs:90:14: 90:23
+        StorageDead(tmp10);              // scope 2 at src/lib.rs:90:52: 90:58
+        StorageDead(tmp11);              // scope 2 at src/lib.rs:90:57: 90:58
+        return = ();                     // scope 2 at src/lib.rs:89:9: 91:10
+        StorageDead(var3);               // scope 1 at src/lib.rs:88:21: 88:22
+        StorageDead(var2);               // scope 1 at src/lib.rs:88:14: 88:19
+        StorageDead(var1);               // scope 0 at src/lib.rs:85:30: 85:33
+        StorageDead(var0);               // scope 0 at src/lib.rs:85:19: 85:28
+        return;                          // scope 1 at src/lib.rs:85:5: 92:6
+    }
+}
+
+static TRUE: bool = {
+    bb0: {
+        return = const true;             // scope 0 at src/lib.rs:5:21: 5:25
+        goto -> bb1;                     // scope 0 at src/lib.rs:5:1: 5:26
+    }
+
+    bb1: {
+        return;                          // scope 0 at src/lib.rs:5:1: 5:26
+    }
+}
+
+fn <FixedBitSet as std::cmp::Ord>::cmp(arg0: &FixedBitSet, arg1: &FixedBitSet) -> std::cmp::Ordering {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:44: 19:47
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:44: 19:47
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+                scope 4 {
+                    let var6: std::cmp::Ordering; // "__cmp" in scope 4 at src/lib.rs:21:5: 21:21
+                }
+                scope 5 {
+                    let var7: std::cmp::Ordering; // "__cmp" in scope 5 at src/lib.rs:23:5: 23:18
+                }
+            }
+        }
+    }
+    let mut tmp0: std::cmp::Ordering;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: &std::vec::Vec<u32>;
+    let mut tmp4: &std::vec::Vec<u32>;
+    let mut tmp5: std::cmp::Ordering;
+    let mut tmp6: &usize;
+    let mut tmp7: &usize;
+    let mut tmp8: &usize;
+    let mut tmp9: &usize;
+    let mut tmp10: std::cmp::Ordering;
+    let mut tmp11: std::cmp::Ordering;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:44: 19:47
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:44: 19:47
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:44: 19:47
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:44: 19:47
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:44: 19:47
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*tmp2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp4 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp3 = &(*tmp4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::Ord>::cmp(tmp1, tmp3) -> bb2; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        switch(tmp0) -> [Less: bb4, Equal: bb3, Greater: bb4]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb3: {
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp7 = &(*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp6 = &(*tmp7);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp9 = &(*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp8 = &(*tmp9);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp5 = <usize as std::cmp::Ord>::cmp(tmp6, tmp8) -> bb6; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb4: {
+        StorageLive(var6);               // scope 3 at src/lib.rs:21:5: 21:21
+        var6 = tmp0;                     // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp11);              // scope 4 at src/lib.rs:21:5: 21:21
+        tmp11 = var6;                    // scope 4 at src/lib.rs:21:5: 21:21
+        return = tmp11;                  // scope 4 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb5: {
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var6);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:44: 19:47
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:44: 19:47
+        return;                          // scope 1 at src/lib.rs:19:44: 19:47
+    }
+
+    bb6: {
+        switch(tmp5) -> [Less: bb8, Equal: bb7, Greater: bb8]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb7: {
+        return = std::cmp::Ordering::Equal; // scope 3 at src/lib.rs:19:44: 19:47
+        goto -> bb9;                     // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb8: {
+        StorageLive(var7);               // scope 3 at src/lib.rs:23:5: 23:18
+        var7 = tmp5;                     // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp10);              // scope 5 at src/lib.rs:23:5: 23:18
+        tmp10 = var7;                    // scope 5 at src/lib.rs:23:5: 23:18
+        return = tmp10;                  // scope 5 at src/lib.rs:23:5: 23:18
+        goto -> bb9;                     // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb9: {
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(var7);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+}
+
+const BITS: usize = {
+    bb0: {
+        return = const 32usize;          // scope 0 at src/lib.rs:8:21: 8:23
+        goto -> bb1;                     // scope 0 at src/lib.rs:8:1: 8:24
+    }
+
+    bb1: {
+        return;                          // scope 0 at src/lib.rs:8:1: 8:24
+    }
+}
+
+fn <FixedBitSet as std::cmp::PartialOrd>::lt(arg0: &FixedBitSet, arg1: &FixedBitSet) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:32: 19:42
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:32: 19:42
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+            }
+        }
+    }
+    let mut tmp0: bool;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: bool;
+    let mut tmp4: bool;
+    let mut tmp5: bool;
+    let mut tmp6: &std::vec::Vec<u32>;
+    let mut tmp7: &std::vec::Vec<u32>;
+    let mut tmp8: bool;
+    let mut tmp9: bool;
+    let mut tmp10: usize;
+    let mut tmp11: usize;
+    let mut tmp12: bool;
+    let mut tmp13: bool;
+    let mut tmp14: bool;
+    let mut tmp15: usize;
+    let mut tmp16: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::lt(tmp1, tmp2) -> bb6; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        return = const true;             // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb3: {
+        return = const false;            // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb4: {
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp6 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp7 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp5 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::lt(tmp6, tmp7) -> bb11; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb5: {
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        return;                          // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb6: {
+        if(tmp0) -> [true: bb2, false: bb4]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb7: {
+        tmp3 = const true;               // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb8: {
+        tmp3 = const false;              // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb9: {
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp10 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp11 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp9 = Lt(tmp10, tmp11);         // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp9) -> [true: bb12, false: bb14]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb10: {
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp3) -> [true: bb2, false: bb3]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb11: {
+        tmp4 = Not(tmp5);                // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp4) -> [true: bb9, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb12: {
+        tmp8 = const true;               // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb13: {
+        tmp8 = const false;              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb14: {
+        StorageLive(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp15 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp16 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp14 = Lt(tmp15, tmp16);        // scope 3 at src/lib.rs:23:5: 23:18
+        tmp13 = Not(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb16;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb15: {
+        StorageDead(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp8) -> [true: bb7, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb16: {
+        tmp12 = const false;             // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp12) -> [true: bb12, false: bb13]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+}
+
+fn FixedBitSet::as_slice(arg0: &FixedBitSet) -> &[u32] {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:112:21: 112:26
+    }
+    let mut tmp0: &[u32];
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:112:21: 112:26
+        var0 = arg0;                     // scope 0 at src/lib.rs:112:21: 112:26
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:114:9: 114:19
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:114:9: 114:19
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:114:9: 114:19
+        tmp2 = &((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:114:9: 114:19
+        tmp1 = &(*tmp2);                 // scope 1 at src/lib.rs:114:9: 114:19
+        tmp0 = <std::vec::Vec<u32> as std::ops::Deref>::deref(tmp1) -> bb1; // scope 1 at src/lib.rs:114:9: 114:19
+    }
+
+    bb1: {
+        return = &(*tmp0);               // scope 1 at src/lib.rs:114:9: 114:19
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:114:9: 114:19
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:114:9: 114:19
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:114:9: 114:19
+        StorageDead(var0);               // scope 0 at src/lib.rs:112:21: 112:26
+        return;                          // scope 1 at src/lib.rs:112:5: 115:6
+    }
+}
+
+fn FixedBitSet::clear(arg0: &mut FixedBitSet) -> () {
+    scope 1 {
+        let var0: &mut FixedBitSet;      // "self" in scope 1 at src/lib.rs:76:18: 76:27
+        scope 2 {
+            let var1: ();                // "_result" in scope 2 at src/lib.rs:78:9: 80:10
+        }
+        scope 3 {
+            let mut var2: std::slice::IterMut<'_, u32>; // "iter" in scope 3 at src/lib.rs:78:9: 80:10
+            scope 4 {
+                let var3: &mut u32;      // "elt" in scope 4 at src/lib.rs:78:13: 78:16
+            }
+        }
+    }
+    let mut tmp0: std::slice::IterMut<'_, u32>;
+    let mut tmp1: &mut [u32];
+    let mut tmp2: &mut [u32];
+    let mut tmp3: &mut std::vec::Vec<u32>;
+    let mut tmp4: std::ops::RangeFull;
+    let mut tmp5: ();
+    let mut tmp6: std::option::Option<&mut u32>;
+    let mut tmp7: &mut std::slice::IterMut<'_, u32>;
+    let mut tmp8: &mut std::slice::IterMut<'_, u32>;
+    let mut tmp9: !;
+    let mut tmp10: ();
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:76:18: 76:27
+        var0 = arg0;                     // scope 0 at src/lib.rs:76:18: 76:27
+        StorageLive(var1);               // scope 1 at src/lib.rs:78:9: 80:10
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:78:9: 80:10
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:78:20: 78:38
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:78:25: 78:38
+        StorageLive(tmp3);               // scope 1 at src/lib.rs:78:25: 78:34
+        tmp3 = &mut ((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:78:25: 78:34
+        StorageLive(tmp4);               // scope 1 at src/lib.rs:78:35: 78:37
+        tmp4 = std::ops::RangeFull::RangeFull; // scope 1 at src/lib.rs:78:35: 78:37
+        tmp2 = <std::vec::Vec<u32> as std::ops::IndexMut<std::ops::RangeFull>>::index_mut(tmp3, tmp4) -> bb1; // scope 1 at src/lib.rs:78:25: 78:38
+    }
+
+    bb1: {
+        tmp1 = &mut (*tmp2);             // scope 1 at src/lib.rs:78:20: 78:38
+        tmp0 = <&mut [u32] as std::iter::IntoIterator>::into_iter(tmp1) -> bb2; // scope 1 at src/lib.rs:78:9: 80:10
+    }
+
+    bb2: {
+        StorageLive(var2);               // scope 1 at src/lib.rs:78:9: 80:10
+        var2 = tmp0;                     // scope 1 at src/lib.rs:78:9: 80:10
+        goto -> bb3;                     // scope 1 at src/lib.rs:78:9: 80:10
+    }
+
+    bb3: {
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:78:9: 80:10
+        tmp8 = &mut var2;                // scope 3 at src/lib.rs:78:9: 80:10
+        tmp7 = &mut (*tmp8);             // scope 3 at src/lib.rs:78:9: 80:10
+        tmp6 = <std::slice::IterMut<'_, u32> as std::iter::Iterator>::next(tmp7) -> bb4; // scope 3 at src/lib.rs:78:9: 80:10
+    }
+
+    bb4: {
+        switch(tmp6) -> [None: bb5, Some: bb6]; // scope 3 at src/lib.rs:78:9: 80:10
+    }
+
+    bb5: {
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(var3);               // scope 3 at src/lib.rs:78:13: 78:16
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:78:9: 80:10
+        var1 = ();                       // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(var2);               // scope 1 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:78:20: 78:38
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:78:25: 78:38
+        StorageDead(tmp4);               // scope 1 at src/lib.rs:78:35: 78:37
+        StorageDead(tmp3);               // scope 1 at src/lib.rs:78:25: 78:34
+        StorageLive(tmp10);              // scope 2 at src/lib.rs:78:9: 80:10
+        tmp10 = var1;                    // scope 2 at src/lib.rs:78:9: 80:10
+        return = tmp10;                  // scope 2 at src/lib.rs:78:9: 80:10
+        StorageDead(var1);               // scope 1 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp10);              // scope 1 at src/lib.rs:78:9: 80:10
+        StorageDead(var0);               // scope 0 at src/lib.rs:76:18: 76:27
+        return;                          // scope 1 at src/lib.rs:76:5: 81:6
+    }
+
+    bb6: {
+        StorageLive(var3);               // scope 3 at src/lib.rs:78:13: 78:16
+        var3 = ((tmp6 as Some).0: &mut u32); // scope 3 at src/lib.rs:78:13: 78:16
+        (*var3) = const 0u32;            // scope 4 at src/lib.rs:79:13: 79:21
+        StorageDead(var3);               // scope 3 at src/lib.rs:78:13: 78:16
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:78:9: 80:10
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:78:9: 80:10
+        goto -> bb3;                     // scope 3 at src/lib.rs:78:9: 80:10
+    }
+}
+
+fn <FixedBitSet as std::cmp::PartialEq>::ne(arg0: &FixedBitSet, arg1: &FixedBitSet) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:17: 19:26
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:17: 19:26
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+            }
+        }
+    }
+    let mut tmp0: bool;
+    let mut tmp1: bool;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: &std::vec::Vec<u32>;
+    let mut tmp4: bool;
+    let mut tmp5: usize;
+    let mut tmp6: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:17: 19:26
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:17: 19:26
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:17: 19:26
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:17: 19:26
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:17: 19:26
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp3 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = <std::vec::Vec<u32> as std::cmp::PartialEq>::ne(tmp2, tmp3) -> bb9; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        return = const true;             // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb5;                     // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb3: {
+        return = const false;            // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb5;                     // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb4: {
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp5 = (*var5);                  // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp6 = (*var3);                  // scope 3 at src/lib.rs:23:5: 23:18
+        tmp4 = Ne(tmp5, tmp6);           // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp4) -> [true: bb2, false: bb3]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb5: {
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:17: 19:26
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:17: 19:26
+        return;                          // scope 1 at src/lib.rs:19:17: 19:26
+    }
+
+    bb6: {
+        tmp0 = const true;               // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb8;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb7: {
+        tmp0 = const false;              // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb8;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb8: {
+        if(tmp0) -> [true: bb2, false: bb4]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb9: {
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp1) -> [true: bb6, false: bb7]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+}
+
+fn <FixedBitSet as std::ops::Index<usize>>::index(arg0: &FixedBitSet, arg1: usize) -> &bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:144:14: 144:19
+        let var1: usize;                 // "bit" in scope 1 at src/lib.rs:144:21: 144:24
+    }
+    let mut tmp0: bool;
+    let mut tmp1: &FixedBitSet;
+    let mut tmp2: usize;
+    let mut tmp3: &bool;
+    let mut tmp4: &bool;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:144:14: 144:19
+        var0 = arg0;                     // scope 0 at src/lib.rs:144:14: 144:19
+        StorageLive(var1);               // scope 0 at src/lib.rs:144:21: 144:24
+        var1 = arg1;                     // scope 0 at src/lib.rs:144:21: 144:24
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:146:12: 146:30
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:146:12: 146:16
+        tmp1 = &(*var0);                 // scope 1 at src/lib.rs:146:12: 146:16
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:146:26: 146:29
+        tmp2 = var1;                     // scope 1 at src/lib.rs:146:26: 146:29
+        tmp0 = FixedBitSet::contains(tmp1, tmp2) -> bb1; // scope 1 at src/lib.rs:146:12: 146:30
+    }
+
+    bb1: {
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:146:26: 146:29
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:146:12: 146:16
+        if(tmp0) -> [true: bb2, false: bb3]; // scope 1 at src/lib.rs:146:9: 150:10
+    }
+
+    bb2: {
+        StorageLive(tmp3);               // scope 1 at src/lib.rs:147:13: 147:18
+        tmp3 = &TRUE;                    // scope 1 at src/lib.rs:147:13: 147:18
+        return = &(*tmp3);               // scope 1 at src/lib.rs:147:13: 147:18
+        StorageDead(tmp3);               // scope 1 at src/lib.rs:147:13: 147:18
+        goto -> bb4;                     // scope 1 at src/lib.rs:146:9: 150:10
+    }
+
+    bb3: {
+        StorageLive(tmp4);               // scope 1 at src/lib.rs:149:13: 149:19
+        tmp4 = &FALSE;                   // scope 1 at src/lib.rs:149:13: 149:19
+        return = &(*tmp4);               // scope 1 at src/lib.rs:149:13: 149:19
+        StorageDead(tmp4);               // scope 1 at src/lib.rs:149:13: 149:19
+        goto -> bb4;                     // scope 1 at src/lib.rs:146:9: 150:10
+    }
+
+    bb4: {
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:146:12: 146:30
+        StorageDead(var1);               // scope 0 at src/lib.rs:144:21: 144:24
+        StorageDead(var0);               // scope 0 at src/lib.rs:144:14: 144:19
+        return;                          // scope 1 at src/lib.rs:144:5: 151:6
+    }
+}
+
+static FixedBitSet::set::_FILE_LINE: (&'static str, u32) = {
+    bb0: {
+        return = (const "src/lib.rs", const 98u32); // scope 0 at <std macros>:5:47: 5:76
+        goto -> bb1;                     // scope 0 at <std macros>:5:1: 5:78
+    }
+
+    bb1: {
+        return;                          // scope 0 at <std macros>:5:1: 5:78
+    }
+}
+
+fn FixedBitSet::len(arg0: &FixedBitSet) -> usize {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:58:16: 58:21
+    }
+    let mut tmp0: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:58:16: 58:21
+        var0 = arg0;                     // scope 0 at src/lib.rs:58:16: 58:21
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:58:34: 58:45
+        tmp0 = ((*var0).1: usize);       // scope 1 at src/lib.rs:58:34: 58:45
+        return = tmp0;                   // scope 1 at src/lib.rs:58:34: 58:45
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:58:34: 58:45
+        StorageDead(var0);               // scope 0 at src/lib.rs:58:16: 58:21
+        goto -> bb1;                     // scope 1 at src/lib.rs:58:5: 58:47
+    }
+
+    bb1: {
+        return;                          // scope 1 at src/lib.rs:58:5: 58:47
+    }
+}
+
+fn <FixedBitSet as std::hash::Hash>::hash(arg0: &FixedBitSet, arg1: &mut __H) -> () {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:49: 19:53
+        let var1: &mut __H;              // "__arg_0" in scope 1 at src/lib.rs:19:49: 19:53
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_0_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_0_1" in scope 2 at src/lib.rs:23:5: 23:18
+        }
+    }
+    let mut tmp0: ();
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: &mut __H;
+    let mut tmp4: &usize;
+    let mut tmp5: &usize;
+    let mut tmp6: &mut __H;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:49: 19:53
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:49: 19:53
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:49: 19:53
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:49: 19:53
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var0).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:49: 19:53
+    }
+
+    bb1: {
+        StorageLive(tmp1);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 2 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var2);                 // scope 2 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*tmp2);                 // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp3);               // scope 2 at src/lib.rs:19:49: 19:53
+        tmp3 = &mut (*var1);             // scope 2 at src/lib.rs:19:49: 19:53
+        tmp0 = <std::vec::Vec<u32> as std::hash::Hash>::hash::<__H>(tmp1, tmp3) -> bb2; // scope 2 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        StorageDead(tmp3);               // scope 2 at src/lib.rs:19:49: 19:53
+        StorageDead(tmp1);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp5);               // scope 2 at src/lib.rs:23:5: 23:18
+        tmp5 = &(*var3);                 // scope 2 at src/lib.rs:23:5: 23:18
+        tmp4 = &(*tmp5);                 // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp6);               // scope 2 at src/lib.rs:19:49: 19:53
+        tmp6 = &mut (*var1);             // scope 2 at src/lib.rs:19:49: 19:53
+        return = <usize as std::hash::Hash>::hash::<__H>(tmp4, tmp6) -> bb3; // scope 2 at src/lib.rs:23:5: 23:18
+    }
+
+    bb3: {
+        StorageDead(tmp6);               // scope 2 at src/lib.rs:19:49: 19:53
+        StorageDead(tmp4);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:49: 19:53
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:49: 19:53
+        return;                          // scope 1 at src/lib.rs:19:49: 19:53
+    }
+}
+
+static FixedBitSet::insert::_FILE_LINE: (&'static str, u32) = {
+    bb0: {
+        return = (const "src/lib.rs", const 87u32); // scope 0 at <std macros>:5:47: 5:76
+        goto -> bb1;                     // scope 0 at <std macros>:5:1: 5:78
+    }
+
+    bb1: {
+        return;                          // scope 0 at <std macros>:5:1: 5:78
+    }
+}
+
+fn <FixedBitSet as std::cmp::PartialOrd>::ge(arg0: &FixedBitSet, arg1: &FixedBitSet) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:32: 19:42
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:32: 19:42
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+            }
+        }
+    }
+    let mut tmp0: bool;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: bool;
+    let mut tmp4: bool;
+    let mut tmp5: bool;
+    let mut tmp6: &std::vec::Vec<u32>;
+    let mut tmp7: &std::vec::Vec<u32>;
+    let mut tmp8: bool;
+    let mut tmp9: bool;
+    let mut tmp10: usize;
+    let mut tmp11: usize;
+    let mut tmp12: bool;
+    let mut tmp13: bool;
+    let mut tmp14: bool;
+    let mut tmp15: usize;
+    let mut tmp16: usize;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::gt(tmp1, tmp2) -> bb6; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        return = const true;             // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb3: {
+        return = const false;            // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb5;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb4: {
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp6 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp7 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp5 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::gt(tmp6, tmp7) -> bb11; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb5: {
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        return;                          // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb6: {
+        if(tmp0) -> [true: bb2, false: bb4]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb7: {
+        tmp3 = const true;               // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb8: {
+        tmp3 = const false;              // scope 3 at src/lib.rs:21:5: 21:21
+        goto -> bb10;                    // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb9: {
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp10 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp11 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp9 = Gt(tmp10, tmp11);         // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp9) -> [true: bb12, false: bb14]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb10: {
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp3) -> [true: bb2, false: bb3]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb11: {
+        tmp4 = Not(tmp5);                // scope 3 at src/lib.rs:21:5: 21:21
+        if(tmp4) -> [true: bb9, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb12: {
+        tmp8 = const true;               // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb13: {
+        tmp8 = const false;              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb15;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb14: {
+        StorageLive(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp15 = (*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        tmp16 = (*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp14 = Gt(tmp15, tmp16);        // scope 3 at src/lib.rs:23:5: 23:18
+        tmp13 = Not(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp13) -> [true: bb16, false: bb17]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb15: {
+        StorageDead(tmp12);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp8) -> [true: bb7, false: bb8]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb16: {
+        tmp12 = const true;              // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb18;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb17: {
+        tmp12 = const false;             // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb18;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb18: {
+        StorageDead(tmp13);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp14);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp16);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp15);              // scope 3 at src/lib.rs:23:5: 23:18
+        if(tmp12) -> [true: bb12, false: bb13]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+}
+
+fn FixedBitSet::contains(arg0: &FixedBitSet, arg1: usize) -> bool {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:65:21: 65:26
+        let var1: usize;                 // "bit" in scope 1 at src/lib.rs:65:28: 65:31
+        scope 2 {
+            let var2: usize;             // "block" in scope 2 at src/lib.rs:67:14: 67:19
+            let var3: usize;             // "i" in scope 2 at src/lib.rs:67:21: 67:22
+            scope 3 {
+                let var4: &u32;          // "b" in scope 3 at src/lib.rs:70:18: 70:19
+            }
+        }
+    }
+    let mut tmp0: (usize, usize);
+    let mut tmp1: usize;
+    let mut tmp2: std::option::Option<&u32>;
+    let mut tmp3: &[u32];
+    let mut tmp4: &[u32];
+    let mut tmp5: &std::vec::Vec<u32>;
+    let mut tmp6: usize;
+    let mut tmp7: u32;
+    let mut tmp8: &u32;
+    let mut tmp9: u32;
+    let mut tmp10: usize;
+    let mut tmp11: (u32, bool);
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:65:21: 65:26
+        var0 = arg0;                     // scope 0 at src/lib.rs:65:21: 65:26
+        StorageLive(var1);               // scope 0 at src/lib.rs:65:28: 65:31
+        var1 = arg1;                     // scope 0 at src/lib.rs:65:28: 65:31
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:67:26: 67:44
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:67:34: 67:37
+        tmp1 = var1;                     // scope 1 at src/lib.rs:67:34: 67:37
+        tmp0 = div_rem(tmp1, BITS) -> bb1; // scope 1 at src/lib.rs:67:26: 67:44
+    }
+
+    bb1: {
+        StorageLive(var2);               // scope 1 at src/lib.rs:67:14: 67:19
+        var2 = (tmp0.0: usize);          // scope 1 at src/lib.rs:67:14: 67:19
+        StorageLive(var3);               // scope 1 at src/lib.rs:67:21: 67:22
+        var3 = (tmp0.1: usize);          // scope 1 at src/lib.rs:67:21: 67:22
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:67:26: 67:44
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:67:34: 67:37
+        StorageLive(tmp2);               // scope 2 at src/lib.rs:68:15: 68:35
+        StorageLive(tmp3);               // scope 2 at src/lib.rs:68:15: 68:24
+        StorageLive(tmp4);               // scope 2 at src/lib.rs:68:15: 68:24
+        StorageLive(tmp5);               // scope 2 at src/lib.rs:68:15: 68:24
+        tmp5 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:68:15: 68:24
+        tmp4 = <std::vec::Vec<u32> as std::ops::Deref>::deref(tmp5) -> bb2; // scope 2 at src/lib.rs:68:15: 68:24
+    }
+
+    bb2: {
+        tmp3 = &(*tmp4);                 // scope 2 at src/lib.rs:68:15: 68:24
+        StorageLive(tmp6);               // scope 2 at src/lib.rs:68:29: 68:34
+        tmp6 = var2;                     // scope 2 at src/lib.rs:68:29: 68:34
+        tmp2 = std::slice::<impl [T]><u32>::get(tmp3, tmp6) -> bb3; // scope 2 at src/lib.rs:68:15: 68:35
+    }
+
+    bb3: {
+        switch(tmp2) -> [None: bb4, Some: bb5]; // scope 2 at src/lib.rs:69:13: 69:17
+    }
+
+    bb4: {
+        return = const false;            // scope 2 at src/lib.rs:69:21: 69:26
+        goto -> bb6;                     // scope 2 at src/lib.rs:68:9: 71:10
+    }
+
+    bb5: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:70:18: 70:19
+        var4 = ((tmp2 as Some).0: &u32); // scope 2 at src/lib.rs:70:18: 70:19
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:70:24: 70:38
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:70:25: 70:26
+        tmp8 = var4;                     // scope 3 at src/lib.rs:70:25: 70:26
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:70:29: 70:37
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:70:35: 70:36
+        tmp10 = var3;                    // scope 3 at src/lib.rs:70:35: 70:36
+        tmp11 = CheckedShl(const 1u32, tmp10); // scope 3 at src/lib.rs:70:29: 70:37
+        assert(!(tmp11.1: bool), "attempt to shift left with overflow") -> bb7; // scope 3 at src/lib.rs:70:29: 70:37
+    }
+
+    bb6: {
+        StorageDead(var4);               // scope 2 at src/lib.rs:70:18: 70:19
+        StorageDead(var3);               // scope 1 at src/lib.rs:67:21: 67:22
+        StorageDead(var2);               // scope 1 at src/lib.rs:67:14: 67:19
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:68:15: 68:35
+        StorageDead(tmp6);               // scope 1 at src/lib.rs:68:29: 68:34
+        StorageDead(tmp3);               // scope 1 at src/lib.rs:68:15: 68:24
+        StorageDead(tmp4);               // scope 1 at src/lib.rs:68:15: 68:24
+        StorageDead(tmp5);               // scope 1 at src/lib.rs:68:15: 68:24
+        StorageDead(var1);               // scope 0 at src/lib.rs:65:28: 65:31
+        StorageDead(var0);               // scope 0 at src/lib.rs:65:21: 65:26
+        return;                          // scope 1 at src/lib.rs:65:5: 72:6
+    }
+
+    bb7: {
+        tmp9 = (tmp11.0: u32);           // scope 3 at src/lib.rs:70:29: 70:37
+        tmp7 = <&u32 as std::ops::BitAnd<u32>>::bitand(tmp8, tmp9) -> bb8; // scope 3 at src/lib.rs:70:24: 70:38
+    }
+
+    bb8: {
+        return = Ne(tmp7, const 0u32);   // scope 3 at src/lib.rs:70:24: 70:43
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:70:24: 70:38
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:70:29: 70:37
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:70:35: 70:36
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:70:25: 70:26
+        goto -> bb6;                     // scope 2 at src/lib.rs:68:9: 71:10
+    }
+}
+
+fn <FixedBitSet as std::cmp::PartialOrd>::partial_cmp(arg0: &FixedBitSet, arg1: &FixedBitSet) -> std::option::Option<std::cmp::Ordering> {
+    scope 1 {
+        let var0: &FixedBitSet;          // "self" in scope 1 at src/lib.rs:19:32: 19:42
+        let var1: &FixedBitSet;          // "__arg_0" in scope 1 at src/lib.rs:19:32: 19:42
+        scope 2 {
+            let var2: &std::vec::Vec<u32>; // "__self_1_0" in scope 2 at src/lib.rs:21:5: 21:21
+            let var3: &usize;            // "__self_1_1" in scope 2 at src/lib.rs:23:5: 23:18
+            scope 3 {
+                let var4: &std::vec::Vec<u32>; // "__self_0_0" in scope 3 at src/lib.rs:21:5: 21:21
+                let var5: &usize;        // "__self_0_1" in scope 3 at src/lib.rs:23:5: 23:18
+                scope 4 {
+                    let var6: std::option::Option<std::cmp::Ordering>; // "__cmp" in scope 4 at src/lib.rs:21:5: 21:21
+                }
+                scope 5 {
+                    let var7: std::option::Option<std::cmp::Ordering>; // "__cmp" in scope 5 at src/lib.rs:23:5: 23:18
+                }
+            }
+        }
+    }
+    let mut tmp0: std::option::Option<std::cmp::Ordering>;
+    let mut tmp1: &std::vec::Vec<u32>;
+    let mut tmp2: &std::vec::Vec<u32>;
+    let mut tmp3: &std::vec::Vec<u32>;
+    let mut tmp4: &std::vec::Vec<u32>;
+    let mut tmp5: std::option::Option<std::cmp::Ordering>;
+    let mut tmp6: &usize;
+    let mut tmp7: &usize;
+    let mut tmp8: &usize;
+    let mut tmp9: &usize;
+    let mut tmp10: std::cmp::Ordering;
+    let mut tmp11: std::option::Option<std::cmp::Ordering>;
+    let mut tmp12: std::option::Option<std::cmp::Ordering>;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        var0 = arg0;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        var1 = arg1;                     // scope 0 at src/lib.rs:19:32: 19:42
+        StorageLive(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        var2 = &((*var1).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:21:5: 21:21
+        StorageLive(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        var3 = &((*var1).1: usize);      // scope 1 at src/lib.rs:23:5: 23:18
+        goto -> bb1;                     // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb1: {
+        StorageLive(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        var4 = &((*var0).0: std::vec::Vec<u32>); // scope 2 at src/lib.rs:21:5: 21:21
+        StorageLive(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        var5 = &((*var0).1: usize);      // scope 2 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp2 = &(*var4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp1 = &(*tmp2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        tmp4 = &(*var2);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp3 = &(*tmp4);                 // scope 3 at src/lib.rs:21:5: 21:21
+        tmp0 = <std::vec::Vec<u32> as std::cmp::PartialOrd>::partial_cmp(tmp1, tmp3) -> bb2; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb2: {
+        switch(tmp0) -> [None: bb5, Some: bb4]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb3: {
+        StorageLive(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp7);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp7 = &(*var5);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp6 = &(*tmp7);                 // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        tmp9 = &(*var3);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp8 = &(*tmp9);                 // scope 3 at src/lib.rs:23:5: 23:18
+        tmp5 = <usize as std::cmp::PartialOrd>::partial_cmp(tmp6, tmp8) -> bb7; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb4: {
+        switch(((tmp0 as Some).0: std::cmp::Ordering)) -> [Less: bb5, Equal: bb3, Greater: bb5]; // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb5: {
+        StorageLive(var6);               // scope 3 at src/lib.rs:21:5: 21:21
+        var6 = tmp0;                     // scope 3 at src/lib.rs:21:5: 21:21
+        StorageLive(tmp12);              // scope 4 at src/lib.rs:21:5: 21:21
+        tmp12 = var6;                    // scope 4 at src/lib.rs:21:5: 21:21
+        return = tmp12;                  // scope 4 at src/lib.rs:21:5: 21:21
+        goto -> bb6;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+
+    bb6: {
+        StorageDead(tmp12);              // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var6);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp0);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp3);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp4);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp1);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(tmp2);               // scope 3 at src/lib.rs:21:5: 21:21
+        StorageDead(var5);               // scope 2 at src/lib.rs:23:5: 23:18
+        StorageDead(var4);               // scope 2 at src/lib.rs:21:5: 21:21
+        StorageDead(var3);               // scope 1 at src/lib.rs:23:5: 23:18
+        StorageDead(var2);               // scope 1 at src/lib.rs:21:5: 21:21
+        StorageDead(var1);               // scope 0 at src/lib.rs:19:32: 19:42
+        StorageDead(var0);               // scope 0 at src/lib.rs:19:32: 19:42
+        return;                          // scope 1 at src/lib.rs:19:32: 19:42
+    }
+
+    bb7: {
+        switch(tmp5) -> [None: bb10, Some: bb9]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb8: {
+        StorageLive(tmp10);              // scope 3 at src/lib.rs:19:32: 19:42
+        tmp10 = std::cmp::Ordering::Equal; // scope 3 at src/lib.rs:19:32: 19:42
+        return = std::option::Option<std::cmp::Ordering>::Some(tmp10,); // scope 3 at src/lib.rs:19:32: 19:42
+        StorageDead(tmp10);              // scope 3 at src/lib.rs:19:32: 19:42
+        goto -> bb11;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb9: {
+        switch(((tmp5 as Some).0: std::cmp::Ordering)) -> [Less: bb10, Equal: bb8, Greater: bb10]; // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb10: {
+        StorageLive(var7);               // scope 3 at src/lib.rs:23:5: 23:18
+        var7 = tmp5;                     // scope 3 at src/lib.rs:23:5: 23:18
+        StorageLive(tmp11);              // scope 5 at src/lib.rs:23:5: 23:18
+        tmp11 = var7;                    // scope 5 at src/lib.rs:23:5: 23:18
+        return = tmp11;                  // scope 5 at src/lib.rs:23:5: 23:18
+        goto -> bb11;                    // scope 3 at src/lib.rs:23:5: 23:18
+    }
+
+    bb11: {
+        StorageDead(tmp11);              // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(var7);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp5);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp8);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp9);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp6);               // scope 3 at src/lib.rs:23:5: 23:18
+        StorageDead(tmp7);               // scope 3 at src/lib.rs:23:5: 23:18
+        goto -> bb6;                     // scope 3 at src/lib.rs:21:5: 21:21
+    }
+}
+
+fn FixedBitSet::as_mut_slice(arg0: &mut FixedBitSet) -> &mut [u32] {
+    scope 1 {
+        let var0: &mut FixedBitSet;      // "self" in scope 1 at src/lib.rs:120:25: 120:34
+    }
+    let mut tmp0: &mut [u32];
+    let mut tmp1: &mut std::vec::Vec<u32>;
+    let mut tmp2: &mut std::vec::Vec<u32>;
+
+    bb0: {
+        StorageLive(var0);               // scope 0 at src/lib.rs:120:25: 120:34
+        var0 = arg0;                     // scope 0 at src/lib.rs:120:25: 120:34
+        StorageLive(tmp0);               // scope 1 at src/lib.rs:122:9: 122:23
+        StorageLive(tmp1);               // scope 1 at src/lib.rs:122:9: 122:23
+        StorageLive(tmp2);               // scope 1 at src/lib.rs:122:9: 122:23
+        tmp2 = &mut ((*var0).0: std::vec::Vec<u32>); // scope 1 at src/lib.rs:122:9: 122:23
+        tmp1 = &mut (*tmp2);             // scope 1 at src/lib.rs:122:9: 122:23
+        tmp0 = <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut(tmp1) -> bb1; // scope 1 at src/lib.rs:122:9: 122:23
+    }
+
+    bb1: {
+        return = &mut (*tmp0);           // scope 1 at src/lib.rs:122:9: 122:23
+        StorageDead(tmp0);               // scope 1 at src/lib.rs:122:9: 122:23
+        StorageDead(tmp1);               // scope 1 at src/lib.rs:122:9: 122:23
+        StorageDead(tmp2);               // scope 1 at src/lib.rs:122:9: 122:23
+        StorageDead(var0);               // scope 0 at src/lib.rs:120:25: 120:34
+        return;                          // scope 1 at src/lib.rs:120:5: 123:6
+    }
+}

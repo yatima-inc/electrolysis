@@ -197,7 +197,7 @@ end
 
 attribute list.has_decidable_eq [unfold 3 4]
 
-private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with
+private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with_in
   (loop_4_res s)
   (15 + cmp_max_cost)
   (loop_4 (f, base, s)) :=
@@ -235,7 +235,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     end,
     rewrite this,
     esimp,
-    apply sem.terminates_with.mk rfl,
+    apply sem.terminates_with_in.mk rfl,
     { esimp, right,
       { show needle ∉ self, from
         take Hneedle,
@@ -272,7 +272,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     { have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
       rewrite [RangeFrom_index_eq _ (RangeFrom.mk _) this, ▸*],
       intro H, rewrite -H,
-      apply sem.terminates_with.mk rfl,
+      apply sem.terminates_with_in.mk rfl,
       { esimp, split,
         exact ⦃loop_4_invar,
           s_in_self := begin
@@ -313,7 +313,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     },
     { intro H, subst H,
       cases (has_decidable_eq : decidable (x = needle)) with Hfound Hnot_found,
-      { apply sem.terminates_with.mk rfl,
+      { apply sem.terminates_with_in.mk rfl,
         { left, apply Hfound ▸ nth_x },
         { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                   rewrite [{_ + k}add.comm]),
@@ -321,7 +321,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
           apply add_le_add dec_trivial Hle_max_cost }
       },
       { have Hx_ge_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
-        apply sem.terminates_with.mk rfl,
+        apply sem.terminates_with_in.mk rfl,
         { split,
           exact ⦃loop_4_invar,
             s_in_self := prefixeq.trans !firstn_prefixeq (loop_4_invar.s_in_self Hinvar),
@@ -358,7 +358,7 @@ private lemma R_wf [instance] : well_founded R := inv_image.wf'
 
 -- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
 include Hsorted
-private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : sem.terminates_with
+private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : sem.terminates_with_in
   binary_search_res
   ((log₂ (2 * length s) + 1) * (16 + cmp_max_cost))
   (loop.fix loop_4 R (f, base, s)) :=
@@ -387,7 +387,7 @@ begin
       clear ih,
       rewrite Hsem'_eq,      
       esimp,
-      apply sem.terminates_with.mk rfl,
+      apply sem.terminates_with_in.mk rfl,
       exact Hres',
       exact calc k + k' + 1
           ≤ (15 + cmp_max_cost) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
@@ -405,7 +405,7 @@ begin
       end
     },
     { esimp,
-      apply sem.terminates_with.mk rfl,
+      apply sem.terminates_with_in.mk rfl,
       apply Hstep,
       exact calc k + 0 + 1
           = k + 1 : by rewrite add_zero
@@ -419,7 +419,7 @@ end
 end loop_4
 
 include Hsorted
-theorem binary_search_by.sem : sem.terminates_with
+theorem binary_search_by.sem : sem.terminates_with_in
   binary_search_res
   ((log₂ (2 * length self) + 1) * (16 + cmp_max_cost))
   (binary_search_by self f) :=
@@ -442,7 +442,7 @@ local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
 theorem binary_search.sem :
   ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
-  ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with
+  ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with_in
     (binary_search_res self needle)
     (f (length self, Ord'.cmp_max_cost needle self))
     (binary_search self needle) :=
@@ -477,7 +477,7 @@ begin
       funext (λx, congr_arg (sem.incr 1) bind_return),
       ↑binary_search_by,
       Hsem_eq],
-    apply sem.terminates_with.mk rfl,
+    apply sem.terminates_with_in.mk rfl,
     apply Hres,
     apply add_le_add_right Hmax_cost }
 end

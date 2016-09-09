@@ -15,8 +15,11 @@ definition sem.incr [unfold 3] {a : Type₁} (n : ℕ) : sem a → sem a
 | (some (x, k)) := some (x, k+n)
 | none          := none
 
-inductive sem.terminates_with {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
-mk : Π {ret x k}, ret = some (x, k) → H x → k ≤ max_cost → sem.terminates_with H max_cost ret
+definition sem.terminates_with {a : Type₁} (H : a → Prop) (s : sem a) : Prop :=
+option.any (λ p, H p.1) s
+
+inductive sem.terminates_with_in {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
+mk : Π {ret x k}, ret = some (x, k) → H x → k ≤ max_cost → sem.terminates_with_in H max_cost ret
 
 definition sem.map [unfold 4] {a b : Type₁} (f : a → b) (m : sem a) : sem b :=
 option.map (λs, match s with
@@ -24,19 +27,20 @@ option.map (λs, match s with
 end) m
 
 definition sem.return {a : Type₁} (x : a) : sem a := some (x, 0)
+definition sem.return_incr {a : Type₁} (x : a) (n : ℕ) : sem a := some (x, n)
 definition sem.bind {a b : Type₁} (m : sem a) (f : a → sem b) : sem b :=
 option.bind m (λs, match s with
 | (x, k) :=
-  option.bind (f x) (λs', match s' with
-  | (x', k') := some (x', k+k')
-  end)
+  option.map (λs', match s' with
+  | (x', k') := (x', k+k')
+  end) (f x)
 end)
 definition sem.zero {a : Type₁} : sem a := none
 
 abbreviation return {a : Type₁} : a → sem a := sem.return
 abbreviation mzero  {a : Type₁} : sem a := sem.zero
 infixl ` >>= `:2 := sem.bind
-notation `do` binder ` ← ` x `; ` r:(scoped f, sem.bind x f) := r
+notation `do ` binder ` ← ` x `; ` r:(scoped f, sem.bind x f) := r
 notation `dostep ` binder ` ← ` x `; ` r:(scoped f, sem.incr 1 (sem.bind x f)) := r
 
 
@@ -68,7 +72,7 @@ begin
     { esimp },
     { cases m'' with a' k', esimp, cases g a' with m''',
       { esimp },
-      { esimp, apply prod.cases_on, intros, rewrite [▸*, add.assoc] }
+      { cases m''', rewrite [▸*, add.assoc] }
     }
   }
 end
