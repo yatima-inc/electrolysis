@@ -502,6 +502,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                             self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty)),
                 Item_::ItemFn(ref decl, ..) =>
                     self.transpile_fn(name, decl),
+                Item_::ItemUnion(..) => panic!("unimplemented: {:?}", node),
             },
             Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, Some(_)), .. })
             | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), ..}) =>

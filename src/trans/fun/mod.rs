@@ -395,7 +395,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     MaybeValue::total(format!("[{}]", ops.join(", ")))
                 })
             }
-            Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _), ref ops) => {
+            Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _, _), ref ops) => {
                 self.add_dep(adt_def.did);
 
                 let variant = &adt_def.variants[variant_idx];
@@ -559,7 +559,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         match trait_def.ancestors(impl_def_id).fn_defs(tcx, name).next() {
             Some(node_item) => {
-                let substs = tcx.normalizing_infer_ctxt(traits::Reveal::All).enter(|infcx| {
+                let substs = tcx.infer_ctxt(None, None, traits::Reveal::All).enter(|infcx| {
                     let substs = substs.rebase_onto(tcx, trait_def_id, impl_substs);
                     let substs = traits::translate_substs(&infcx, impl_def_id,
                                                         substs, node_item.node);
