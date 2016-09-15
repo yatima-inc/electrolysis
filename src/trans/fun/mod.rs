@@ -672,7 +672,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 If { ref cond, targets: (bb_if, bb_else) } =>
                     // TODO: this duplicates all code after the if
                     self.get_operand(cond).map(0, |cond| format!(
-                        "if {} = tt then\n{}else\n{}", cond,
+                        "ifb {} then\n{}else\n{}", cond,
                         rec!(bb_if),
                         rec!(bb_else))),
                 Return => self.return_expr.clone(),

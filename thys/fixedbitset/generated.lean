@@ -106,7 +106,7 @@ return ((FixedBitSet.length «$tmp0»));
 let' t4 ← «$tmp0»;
 let' t2 ← ((t3) <ᵈ (t4));
 let' t1 ← (bool.bnot (t2));
-if (t1) = tt then
+ifb (t1) then
 let' t7 ← (FixedBitSet.insert.FILE_LINE);
 let' t6 ← (t7);
 mzero

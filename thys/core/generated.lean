@@ -88,7 +88,7 @@ let' t3 ← (self);
 dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t3);
 let' t2 ← «$tmp»;
 let' t0 ← ((t1) <ᵈ (t2));
-if (t0) = tt then
+ifb (t0) then
 let' t6 ← (index);
 let' t7 ← (list.length (self));
 let' t8 ← ((t6) <ᵈ (t7));
@@ -235,7 +235,7 @@ let' tail ← ((t3).2);
 let' t11 ← (tail);
 dostep «$tmp» ← @slice.SliceExt.is_empty _ _ («[T] as core.slice.SliceExt» T) (t11);
 let' t10 ← «$tmp»;
-if (t10) = tt then
+ifb (t10) then
 do tmp__ ← let' t13 ← (base);
 let' ret ← (result.Result.Err (t13));
 return (ret)

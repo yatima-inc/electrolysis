@@ -11,6 +11,12 @@ open option
 
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
+notation `ifb ` b ` then ` t ` else ` f := bool.rec_on b f t
+
+-- 'short-circuiting' and
+definition when (P : Prop) [decidable P] (Q : P → Prop) : Prop :=
+if p : P then Q p else false
+
 namespace bool
   open decidable
 
@@ -26,14 +32,21 @@ namespace bool
   | (inr a) (inr b) := rfl
 end bool
 
+infix `=ᵈ`:50 := λ a b, bool.of_decidable (_ : decidable (a = b))
+infix `≠ᵈ`:50 := λ a b, bool.of_decidable (decidable_ne a b)
+infix `≤ᵈ`:50 := λ a b, bool.of_decidable (decidable_le a b)
+infix `<ᵈ`:50 := λ a b, bool.of_decidable (decidable_lt a b)
+infix `≥ᵈ`:50 := λ a b, b ≤ᵈ a
+infix `>ᵈ`:50 := λ a b, b <ᵈ a
+
 namespace nat
   open int
 
-  definition of_int : ℤ → ℕ
+  definition of_int [unfold 1] : ℤ → ℕ
   | (int.of_nat n) := n
   | _              := 0
 
-  lemma of_int_one : of_int 1 = 1 := rfl
+  definition div_ceil (n m : ℕ) : ℕ := n / m + (ifb n % m >ᵈ 0 then 1 else 0)
 end nat
 
 namespace option
@@ -50,6 +63,10 @@ namespace option
     { apply exists.intro y (and.intro rfl H) }
   end
 
+  definition unwrap [unfold 2] : Π{x : option A}, x ≠ none → A
+  | (some x) H := x
+  | none     H := false.rec A (H rfl)
+
   theorem ex_some_of_neq_none {x : option A} (H : x ≠ none) : ∃y, x = some y :=
   begin
     cases x with y,
@@ -57,11 +74,11 @@ namespace option
     { existsi y, apply rfl }
   end
 
-  protected definition map [unfold 4] {A B : Type} (f : A → B) : option A → option B
+  protected definition map [unfold 4] (f : A → B) : option A → option B
   | (some x) := some (f x)
   | none     := none
 
-  protected definition bind [unfold 3] {A B : Type} : option A → (A → option B) → option B
+  protected definition bind [unfold 3] : option A → (A → option B) → option B
   | (some x) f := f x
   | none     _ := none
 
@@ -72,6 +89,7 @@ namespace option
   obtain x' H₁, from ex_some_of_neq_none Hx,
   obtain x'' H₂, from ex_some_of_neq_none (Hf x'),
   by rewrite [H₁, ▸*, H₂]; contradiction
+
 end option
 
 export [unfold] option
@@ -189,6 +207,15 @@ section
   | []      _       _ := none
   | (x::xs) 0       y := some (y::xs)
   | (x::xs) (n + 1) y := option.map (λxs', x::xs') (update xs n y) 
+
+  theorem update_eq_some (b : A) : ∀ {l : list A} {n : nat}, n < length l →
+    Σ l', update l n b = some l'
+  | []     n        h := absurd h !not_lt_zero
+  | (a::l) 0        h := ⟨b::l, rfl⟩
+  | (a::l) (succ n) h :=
+    have n < length l, from lt_of_succ_lt_succ h,
+    obtain l' Hl', from update_eq_some this,
+    ⟨a::l', by rewrite [↑update, Hl']⟩
 end
 
 inductive prefixeq {A : Type} : list A → list A → Prop :=
@@ -465,6 +492,13 @@ theorem if_neg' {c : Prop} {H : decidable c} (Hnc : ¬c) {A : Type} {t e : A} : 
 decidable.rec
   (λ Hc : c,    absurd Hc Hnc)
   (λ Hnc : ¬c,  eq.refl (@ite c (decidable.inr Hnc) A t e))
+  H
+
+theorem dif_pos' {c : Prop} {H : decidable c} (Hc : c) {A : Type} {t : c → A} {e} :
+  (dite c t e) = t Hc :=
+decidable.rec
+  (λ Hc : c,    eq.refl (@dite c (decidable.inl Hc) A t e))
+  (λ Hnc : ¬c,  absurd Hc Hnc)
   H
 
 namespace nat

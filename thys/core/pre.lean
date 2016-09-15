@@ -2,13 +2,6 @@ import data.nat data.list
 import theories.topology.limit
 import loop_combinator
 
-infix `=ᵈ`:50 := λ a b, bool.of_decidable (_ : decidable (a = b))
-infix `≠ᵈ`:50 := λ a b, bool.of_decidable (decidable_ne a b)
-infix `≤ᵈ`:50 := λ a b, bool.of_decidable (decidable_le a b)
-infix `<ᵈ`:50 := λ a b, bool.of_decidable (decidable_lt a b)
-infix `≥ᵈ`:50 := λ a b, b ≤ᵈ a
-infix `>ᵈ`:50 := λ a b, b <ᵈ a
-
 open bool
 open int
 open function
@@ -92,7 +85,7 @@ if x ≥ 0 then return (nat.of_int x)
 else mzero
 
 definition bool_to_usize (x : bool) : sem usize :=
-return (if x = tt then 1 else 0)
+return (ifb x then 1 else 0)
 
 abbreviation isize_to_u32 [parsing_only] := isize_to_usize
 
@@ -171,5 +164,4 @@ definition fn [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce
 ⦄
 
 notation `let'` binder ` ← ` x `; ` r:(scoped f, f x) := r
-notation `if' ` b ` then ` t ` else ` f := bool.rec_on b t f
 attribute sem [irreducible]

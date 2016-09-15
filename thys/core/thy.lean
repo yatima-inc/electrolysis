@@ -29,6 +29,25 @@ attribute sem [reducible]
 
 namespace core
 
+open clone
+open marker
+
+namespace marker
+  structure Copy' [class] (T : Type₁) extends Copy T :=
+  (perfect : ∀(self : T), sem.terminates_with (λ c, c = self) (Clone.clone self))
+end marker
+
+open marker
+
+attribute Copy.to_Clone [unfold 2]
+attribute «u32 as core.clone.Clone» [constructor]
+
+definition u32_as_Copy' [instance] : Copy' u32 :=
+marker.Copy'.mk Clone.clone begin
+  intro self,
+  rewrite [▸*, ↑«u32 as core.clone.Clone».clone]
+end
+
 namespace cmp
   definition ordering {T : Type} [decidable_linear_order T] (x y : T) : cmp.Ordering :=
   if x < y then Ordering.Less
@@ -207,7 +226,7 @@ have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
   rewrite [↑loop_4, ↑checked.shr],
-  krewrite [of_int_one, pow_one],
+  krewrite [pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
   rewrite [▸*, split_at_eq s this, ▸*, is_empty_eq, ▸*],
   let s₁ := firstn (length s / 2) s,
@@ -216,8 +235,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     rewrite [length_firstn_eq, min_eq_left this],
   eapply generalize_with_eq (dropn (length s / 2) s),
   intro s' Hs, cases s' with x xs,
-  { rewrite [▸*, if_pos' rfl],
-    intro H, rewrite -H,
+  { intro H, rewrite -H,
     have Hs : s = nil, begin
       have 0 = length s - length s / 2, from Hs ▸ !length_dropn,
       apply classical.by_contradiction, intro Hs_not_nil,
@@ -255,8 +273,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       calc length xs = length (x :: xs) - 1 : rfl
                  ... ≤ length s / 2         : by
                    rewrite [-Hs, length_dropn]; apply self_sub_half_sub_one_le_half,
-    have bool.ff ≠ bool.tt, by contradiction,
-    rewrite [▸*, if_neg' this, ↑get_unchecked, nth_zero, ↑f],
+    rewrite [▸*, ↑get_unchecked, nth_zero, ↑f],
     --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
     cases Ord'.ord_cmp_eq x needle with k cmp_eq,
     rewrite [cmp_eq, ↑ordering, ▸*],
@@ -389,8 +406,9 @@ begin
       esimp,
       apply sem.terminates_with_in.mk rfl,
       exact Hres',
-      exact calc k + k' + 1
-          ≤ (15 + cmp_max_cost) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
+      exact calc k' + k + 1
+          = k + k' + 1 : by rewrite (add.comm k k')
+      ... ≤ (15 + cmp_max_cost) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
       ... ≤ (15 + cmp_max_cost) + (log₂ (length s) + 1) * (16 + cmp_max_cost) + 1 :
         add_le_add_right (add_le_add_left
           (show k' ≤ (log₂ (length s) + 1) * (16 + cmp_max_cost), from le.trans Hmax_cost' (mul_le_mul_right _
@@ -407,8 +425,8 @@ begin
     { esimp,
       apply sem.terminates_with_in.mk rfl,
       apply Hstep,
-      exact calc k + 0 + 1
-          = k + 1 : by rewrite add_zero
+      exact calc 0 + k + 1
+          = k + 1 : by rewrite zero_add
       ... ≤ 15 + cmp_max_cost + 1 : add_le_add_right Hmax_cost
       ... = 16 + cmp_max_cost : by rewrite nat.add_right_comm
       ... ≤ (log 2 (2 * length s) + 1) * (16 + cmp_max_cost) : by

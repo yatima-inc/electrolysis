@@ -1,0 +1,4 @@
+rustc_args = "rust/src/liballoc/lib.rs"
+
+# hella unsafe
+targets = ["nopenopenope"]

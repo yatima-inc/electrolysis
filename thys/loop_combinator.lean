@@ -93,14 +93,6 @@ section
       { esimp, cases classical.prop_decidable (R₁ s' s) with HR₁,
         { cases classical.prop_decidable (R₂ s' s) with HR₂ HnR₂,
           { esimp,
-            have ∀m : sem State', option.map (λ s', prod.cases_on s' (λ a a_1, (a, k + a_1))) m = 
-              sem.incr k m,
-            begin
-              intro m, cases m,
-              { esimp },
-              { esimp, apply prod.cases_on, intros, rewrite [▸*, add.comm] },
-            end,
-            rewrite [+this],
             rewrite [-+incr_bind],
             intro Hterm₁ Hterm₂,
             apply congr_arg (sem.incr 1),
