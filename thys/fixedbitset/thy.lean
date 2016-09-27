@@ -2,7 +2,7 @@ import collections.thy
 import fixedbitset.generated
 
 open eq.ops
-open [class] [unfold] nat
+open nat
 open prod.ops
 open option
 open [notation] set
@@ -43,8 +43,34 @@ begin
   rewrite [▸*, Hv, list.length_replicate],
 end
 
-lemma contains.term (s : FixedBitSet) [FFF : FixedBitSet' s] (bit : usize) : bit < length s →
-  sem.terminates (contains s bit) :=
+variables (s : FixedBitSet) (bit : usize)
+premises [FixedBitSet' s] (Hbit_lt : bit < length s)
+include Hbit_lt
+
+lemma bit_div_BITS_lt_data_length : bit / BITS < list.length (Vec.buf (data s)) :=
+calc bit / BITS < nat.div_ceil (length s) BITS :
+begin
+  cases decidable_lt 0 (length s % BITS) with Hrem Hnotrem,
+  { exact calc bit / BITS ≤ length s / BITS : nat.div_le_div _ (le_of_lt `bit < length s`)
+                      ... < nat.div_ceil (length s) BITS : begin
+      apply nat.lt_add_of_pos_right,
+      krewrite [if_pos Hrem],
+      apply nat.zero_lt_succ,
+    end
+  },
+  { have length s % BITS = 0, from nat.eq_zero_of_le_zero (le_of_not_gt Hnotrem),
+    have BITS ∣ length s, from nat.dvd_of_mod_eq_zero this,
+    apply nat.div_lt_of_lt_mul,
+    rewrite [↑nat.div_ceil],
+    krewrite [nat.right_distrib, nat.div_mul_cancel this],
+    apply nat.le_add_of_le_right `bit < length s` }
+end
+  ... = list.length (Vec.buf (data s)) : FixedBitSet'.length_eq s
+
+lemma contains.sem : sem.terminates_with (λ res,
+    option.any (λ b : u32, res = (b && 2 ^ (bit % BITS) ≠ᵇ 0))
+      (list.nth (Vec.buf (FixedBitSet.data s)) (bit / BITS))
+  ) (contains s bit) :=
 begin
   intro,
   rewrite [↑contains],
@@ -53,77 +79,85 @@ begin
   rewrite [↑«collections.vec.Vec<T> as core.ops.Deref».deref, ↑«[T]».get,
     ↑«[T] as core.slice.SliceExt».get],
   rewrite [+incr_incr],
-  have bit / BITS < nat.div_ceil (length s) BITS,
-  begin
-    cases decidable_lt 0 (length s % BITS) with Hrem Hnotrem,
-    { exact calc bit / BITS ≤ length s / BITS : nat.div_le_div _ (le_of_lt `bit < length s`)
-                        ... < nat.div_ceil (length s) BITS : begin
-        apply nat.lt_add_of_pos_right,
-        rewrite [decidable_eq_inl Hrem !nat.decidable_lt],
-        apply nat.zero_lt_succ,
-      end
-    },
-    { have length s % BITS = 0, from nat.eq_zero_of_le_zero (le_of_not_gt Hnotrem),
-      have BITS ∣ length s, from nat.dvd_of_mod_eq_zero this,
-      apply nat.div_lt_of_lt_mul,
-      rewrite [↑nat.div_ceil],
-      krewrite [nat.right_distrib, nat.div_mul_cancel this],
-      apply nat.le_add_of_le_right `bit < length s` }
-  end,
-  rewrite [decidable_eq_inl (FixedBitSet'.length_eq s ▸ this) !nat.decidable_lt, ▸*],
+  note H := bit_div_BITS_lt_data_length s bit Hbit_lt,
+  krewrite [@if_congr _ _ _ _ !nat.decidable_lt _ _ _ _ (@bool.of_Prop_eq_tt_iff (bit / BITS < list.length (Vec.buf (FixedBitSet.data s))) !nat.decidable_lt) rfl rfl],
+  krewrite [if_pos' H],
   rewrite [↑«[T] as core.slice.SliceExt».get_unchecked],
-  cases list.nth_eq_some (FixedBitSet'.length_eq s ▸ this) with b b_eq,
+  cases list.nth_eq_some H with b b_eq,
   rewrite [b_eq, ▸*],
-  rewrite [↑«&'a u32 as core.ops.BitAnd<u32>».bitand, ↑«u32 as core.ops.BitAnd».bitand],
-  contradiction
+  rewrite [▸*, ↑«&'a u32 as core.ops.BitAnd<u32>».bitand, ↑«u32 as core.ops.BitAnd».bitand],
+  krewrite [nat.one_mul],
 end
 
-definition to_set (s : FixedBitSet) [FixedBitSet' s] : set usize :=
-{bit | @when (bit < length s) !nat.decidable_lt
-  (λ H, sem.unwrap (contains.term s bit H) = bool.tt)
-}
+section
+  omit Hbit_lt
+  definition to_set : set usize :=
+  {bit | ∃ (h : bit < length s), sem.unwrap (contains.sem s bit h) = bool.tt}
+end
 
-open [class] classical
-
-lemma insert.sem (s : FixedBitSet) [FFF : FixedBitSet' s] (bit : usize) : bit < length s →
+lemma insert.sem :
   sem.terminates_with (λ ret,
     let s' := ret.2 in
-    when (FixedBitSet' s') (λ H, to_set s' = to_set s ∪ '{bit}))
+    ∃ (h : FixedBitSet' s'), to_set s' = to_set s ∪ '{bit})
   (insert s bit) :=
 begin
-  intro,
-  rewrite [↑insert, decidable_eq_inl `bit < length s` !nat.decidable_lt, ▸*],
+  intro, rewrite [↑insert],
+  have bool.bnot (bit <ᵇ FixedBitSet.length s) = bool.tt ↔ ¬(bit < length s),
+  by rewrite [!bool.bnot_of_Prop, bool.of_Prop_eq_tt_iff],
+  rewrite [if_congr this rfl rfl, if_neg (not_not_intro `bit < length s`), ▸*],
   have BITS ≠ (0 : nat), from !nat.succ_ne_zero,
   rewrite [↑div_rem, ↑checked.div, ↑checked.mod, +if_pos' this, ↑checked.shl],
   rewrite [↑«collections.vec.Vec<T> as core.ops.DerefMut».deref_mut, ↑«[T]».get_unchecked_mut],
   rewrite [+incr_incr],
-  have bit / BITS < nat.div_ceil (length s) BITS,
-  begin
-    cases decidable_lt 0 (length s % BITS) with Hrem Hnotrem,
-    { exact calc bit / BITS ≤ length s / BITS : nat.div_le_div _ (le_of_lt `bit < length s`)
-                        ... < nat.div_ceil (length s) BITS : begin
-        apply nat.lt_add_of_pos_right,
-        rewrite [decidable_eq_inl Hrem !nat.decidable_lt],
-        apply nat.zero_lt_succ,
-      end
-    },
-    { have length s % BITS = 0, from nat.eq_zero_of_le_zero (le_of_not_gt Hnotrem),
-      have BITS ∣ length s, from nat.dvd_of_mod_eq_zero this,
-      apply nat.div_lt_of_lt_mul,
-      rewrite [↑nat.div_ceil],
-      krewrite [nat.right_distrib, nat.div_mul_cancel this],
-      apply nat.le_add_of_le_right `bit < length s` }
-  end,
-  cases list.nth_eq_some (FixedBitSet'.length_eq s ▸ this) with b b_eq,
+  note bit_valid := bit_div_BITS_lt_data_length s bit Hbit_lt,
+  cases list.nth_eq_some bit_valid with b b_eq,
   rewrite [b_eq, ▸*],
-  cases list.update_eq_some _ (FixedBitSet'.length_eq s ▸ this) with l' l'_eq,
+  cases list.update_eq_some _ bit_valid with l' l'_eq,
+  let s' := FixedBitSet.mk (Vec.mk l') (FixedBitSet.length s),
   rewrite [l'_eq, ▸*],
-  have FixedBitSet' (FixedBitSet.mk (Vec.mk l') (FixedBitSet.length s)), from sorry,
-  rewrite [↑when, dif_pos this, ↑to_set],
+  have FixedBitSet' s', from sorry,
+  existsi this,
+  rewrite [↑to_set],
   apply set.ext, intro bit',
-  rewrite [↑when, ▸*, set.mem_union_eq],
-  cases decidable_lt bit' (length s),
-  { rewrite [+set.mem_set_of_iff, decidable_eq_inl a_1 !nat.decidable_lt, ▸*] }
+  rewrite [▸*, set.mem_union_eq],
+  cases decidable_lt bit' (length s) with bit'_lt,
+  { rewrite [+set.mem_set_of_iff, set.mem_singleton_iff, +exists_true_Prop_iff `bit' < length s`],
+
+    note H := sem.sem_unwrap (contains.sem s' bit' bit'_lt),
+    esimp at H,
+    note Hbit'_valid := bit_div_BITS_lt_data_length s bit' bit'_lt,
+    cases list.nth_eq_some ((list.length_update l'_eq)⁻¹ ▸ Hbit'_valid) with b' b'_eq,
+    rewrite [b'_eq at H{2}, ▸* at H, H],
+    clear H,
+
+    note H := sem.sem_unwrap (contains.sem s bit' bit'_lt),
+    cases list.nth_eq_some Hbit'_valid with b'' b''_eq,
+    rewrite [b''_eq at H{2}, ▸* at H, H],
+    clear H,
+
+    note H := list.nth_update (bit' / BITS) l'_eq,
+    rewrite [b''_eq at H, b'_eq at H],
+    clear b'_eq,
+
+    cases (_ : decidable (bit' = bit)),
+    { 
+      rewrite [if_pos (show bit / BITS = bit' / BITS, by rewrite [`bit' = bit`]) at H],
+      injection H with H,
+      have b'' = b, from
+        have some b'' = some b, by rewrite [-b_eq, -b''_eq, `bit' = bit`],
+        option.no_confusion this id,
+      rewrite [this, H, `bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
+        iff_true],
+      krewrite one_mul,
+      rewrite [bitand_bitor],
+      intro contr,
+      apply nat.no_confusion (nat.eq_zero_of_pow_eq_zero contr)
+    },
+    {
+      apply sorry
+    }
+  },
+  apply sorry,
 end
 
 end fixedbitset.FixedBitSet

@@ -15,11 +15,11 @@ definition sem.incr [unfold 3] {a : Type₁} (n : ℕ) : sem a → sem a
 | (some (x, k)) := some (x, k+n)
 | none          := none
 
-definition sem.terminates [unfold 2] {a : Type₁} (s : sem a) : Prop :=
-s ≠ none
-
 definition sem.terminates_with [unfold 3] {a : Type₁} (H : a → Prop) (s : sem a) : Prop :=
 option.any (λ p, H p.1) s
+
+definition sem.terminates [unfold 2] {a : Type₁} (s : sem a) : Prop :=
+sem.terminates_with (λ a, true) s
 
 inductive sem.terminates_with_in {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
 mk : Π {ret x k}, ret = some (x, k) → H x → k ≤ max_cost → sem.terminates_with_in H max_cost ret
@@ -43,8 +43,18 @@ infixl ` >>= `:2 := sem.bind
 notation `do ` binder ` ← ` x `; ` r:(scoped f, sem.bind x f) := r
 notation `dostep ` binder ` ← ` x `; ` r:(scoped f, sem.incr 1 (sem.bind x f)) := r
 
-definition sem.unwrap {a : Type₁} {s : sem a} (H : sem.terminates s) : a :=
-(option.unwrap H).1
+definition sem.unwrap [unfold 3] {a : Type₁} {H : a → Prop} :
+  Π{s : sem a}, sem.terminates_with H s → a
+| (some (x, k)) _ := x
+| none          H := false.rec _ H
+
+lemma sem.sem_unwrap {a : Type₁} {H : a → Prop} {s : sem a} (term : sem.terminates_with H s) :
+  H (sem.unwrap term) :=
+begin
+  cases s with p,
+  { contradiction },
+  { cases p, esimp at *, assumption }
+end
 
 definition sem.lift_opt [unfold 2] {a : Type₁} : option a → sem a :=
 option.rec sem.zero return

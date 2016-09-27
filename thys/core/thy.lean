@@ -6,12 +6,13 @@ import data.list.sorted
 
 import asymptotic
 
-open [unfold] bool
+open bool (tt ff)
 open core
 open eq.ops
 open list
 open list.prefixeq
-open nat
+open [class] [notation] nat
+open nat (to_bits of_bits)
 open interval
 open option
 open partial
@@ -28,6 +29,145 @@ definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B →
 attribute sem [reducible]
 
 namespace core
+
+/-lemma of_bits_to_bits (x : ℕ) : of_bits (to_bits x) = x :=
+begin
+  induction x using nat.strong_induction_on,
+  unfold to_bits
+end-/
+
+attribute bool.has_decidable_eq [unfold 1 2]
+
+namespace nat
+  lemma of_bits_ne_zero_of_msb_set : Π{xs : list bool}, last' xs = some tt → of_bits xs ≠ 0
+  | []          h := by contradiction
+  | [tt]        h := dec_trivial
+  | [ff]        h := by injection h; contradiction
+  | (x::x'::xs) h :=
+    have of_bits (x'::xs) ≠ 0, from of_bits_ne_zero_of_msb_set (last'_cons_eq_last' dec_trivial ▸ h),
+    have 2 * of_bits (x'::xs) ≠ 0, from nat.mul_ne_zero dec_trivial this,
+    take contr,
+    this (nat.eq_zero_of_add_eq_zero_left contr)
+
+  lemma of_bits_to_bits (n : ℕ) : of_bits (to_bits n) = n :=
+  begin
+    rewrite [↑of_bits, ↑to_bits],
+    induction well_founded.apply nat.lt.wf n with n _ ih,
+    rewrite well_founded.fix_eq,
+    cases (_ : decidable (n = 0)),
+    { rewrite [▸*, `n = 0`] },
+    {
+      esimp,
+      rewrite [ih (n / 2) (nat.div_lt_of_ne_zero `n ≠ 0`)],
+      cases (_ : decidable (n % 2 = 1)) with odd even,
+      { rewrite [▸*, nat.eq_div_mul_add_mod n 2 at {2}, odd, add.comm, mul.comm] },
+      {
+        have n % 2 = 0, begin
+          cases nat.lt_trichotomy (n % 2) 1 with lt eq_or_gt,
+          { apply nat.eq_zero_of_le_zero (nat.le_of_lt_succ lt) },
+          { cases eq_or_gt,
+            { contradiction },
+            { intro,
+              have n % 2 ≤ 1, from nat.le_of_lt_succ (nat.mod_lt n (show 2 > 0, from dec_trivial)),
+              exfalso, apply nat.lt_le_antisymm `n % 2 > 1` this }
+          }
+        end,
+        rewrite [▸*, nat.eq_div_mul_add_mod n 2 at {2}, add.comm, mul.comm, this] }
+    },
+  end
+  
+  definition norm (xs : list bool) := last' xs ≠ some ff
+
+  lemma norm_of_norm_cons {x : bool} : Π{xs : list bool}, norm (x::xs) → norm xs
+  | []      h := by contradiction
+  | (x::xs) h := by exact h
+
+  lemma to_bits_of_bits : Π(xs : list bool), norm xs → to_bits (of_bits xs) = xs
+  | []       h := rfl
+  | (tt::xs) h := begin
+    rewrite [↑of_bits],
+    have ∀x, to_bits (1 + 2 * x) = tt :: to_bits x,
+    begin
+      intro x,
+      rewrite [↑to_bits, well_founded.fix_eq,
+        dif_neg (show 1 + 2 * x ≠ 0, from nat.ne_zero_of_pos (nat.add_pos_left dec_trivial _)),
+        if_pos (show (1 + 2 * x) % 2 = 1, by rewrite [nat.add_mul_mod_self_left]),
+        nat.add_mul_div_self_left _ _ (show 2 > 0, from dec_trivial),
+        (show (1:ℕ) / 2 = 0, from rfl),
+        zero_add
+      ],
+    end,
+    rewrite this,
+    have last' xs ≠ some ff, begin
+      cases xs,
+      { contradiction },
+      { exact h }
+    end,
+    rewrite [to_bits_of_bits xs this],
+  end
+  | (ff::xs) h := begin
+    let x := of_bits xs,
+    have last' (ff::xs) = some tt, begin
+      eapply generalize_with_eq (last' (ff::xs)), intro lsb lsb_eq,
+      cases lsb with lsb,
+      { contradiction },
+      { cases lsb,
+        { rewrite [↑norm at h, lsb_eq at h], exfalso, exact h rfl },
+        exact rfl
+      }
+    end,
+    rewrite [↑to_bits, well_founded.fix_eq, ↓to_bits,
+      dif_neg (of_bits_ne_zero_of_msb_set this),
+      ↑of_bits,
+      if_neg (show (0 + 2 * x) % 2 ≠ 1, by rewrite [nat.add_mul_mod_self_left]; apply dec_trivial),
+      nat.add_mul_div_self_left _ _ (show 2 > 0, from dec_trivial),
+      (show (0:ℕ) / 2 = 0, from rfl),
+      zero_add,
+      to_bits_of_bits xs (norm_of_norm_cons h)
+    ]
+  end
+end nat
+
+open nat
+
+lemma bitor.rec_norm : Π{xs ys : list bool}, nat.norm xs → nat.norm ys → nat.norm (bitor.rec xs ys)
+| [] ys h₁ h₂ := begin
+  rewrite [↑bitor.rec, ▸*],
+  induction ys; apply h₂; apply h₂
+end
+| xs [] h₁ h₂ := begin
+  rewrite [↑bitor.rec, ▸*],
+  induction xs; apply h₁; apply h₁
+end
+| (x::xs) (y::ys) h₁ h₂ := begin
+  rewrite [↑bitor.rec, ▸*],
+  note ih := bitor.rec_norm (nat.norm_of_norm_cons h₁) (nat.norm_of_norm_cons h₂),
+  revert ih,
+  rewrite [↑nat.norm],
+  --cases bitor.rec xs ys,
+  apply sorry
+end
+
+lemma bitand_bitor (x y : ℕ) : (x || y) && y = y :=
+begin
+  esimp [bitand, bitor],
+  induction to_bits x with xb xbs ih,
+  {
+    rewrite [↑bitor.rec],
+    apply generalize_with_eq (to_bits y), intro ybs ybs_eq,
+    cases ybs with yb ybs',
+    { rewrite [▸*, ↑of_bits, -nat.of_bits_to_bits y, ybs_eq] },
+    { rewrite [▸*, -ybs_eq, nat.of_bits_to_bits, map₂_self, map_id' bool.band_self,
+        nat.of_bits_to_bits] }
+  },
+  {
+    apply generalize_with_eq (to_bits y), intro ybs ybs_eq,
+    cases ybs with yb ybs',
+    { rewrite [▸*, map₂_nil2, -nat.of_bits_to_bits y, ybs_eq] },
+    apply sorry,
+    --{ rewrite [nat.to_bits_of_bits (bitor.rec_norm _ _), ↑bitor.rec] }
+  }
+end
 
 open clone
 open marker

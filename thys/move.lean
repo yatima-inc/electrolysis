@@ -11,25 +11,27 @@ open option
 
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
--- 'short-circuiting' and
-definition when (P : Prop) [decidable P] (Q : P → Prop) : Prop :=
-if p : P then Q p else false
-
 namespace bool
   open decidable
 
-  definition of_decidable [unfold 2] {P : Prop} : decidable P → bool
+  definition of_Prop [unfold 2] (P : Prop) : Π [decidable P], bool
   | (inl _) := tt
   | (inr _) := ff
 
-  definition of_decidable_eq_of_decidable_of_iff {P Q : Prop} (H : P ↔ Q) :
-    Π(p : decidable P) (q : decidable Q), of_decidable p = of_decidable q
+  lemma of_Prop_eq_of_Prop_of_iff {P Q : Prop} (H : P ↔ Q) :
+    Π[decidable P] [decidable Q], of_Prop P = of_Prop Q
   | (inl a) (inl b) := rfl
   | (inl a) (inr b) := false.elim (b (iff.mp H a))
   | (inr a) (inl b) := false.elim (a (iff.mpr H b))
   | (inr a) (inr b) := rfl
-end bool
 
+  lemma of_Prop_eq_tt_iff (P : Prop) : Π [dec : decidable P], of_Prop P = tt ↔ P
+  | (inl p)  := iff.intro (take h, p) (take h, rfl)
+  | (inr np) := iff.intro (by contradiction) (by contradiction)
+
+  lemma bnot_of_Prop (P : Prop) {dec : decidable P} : bnot (of_Prop P) = of_Prop (¬ P) :=
+  begin cases dec, esimp, esimp end
+end bool
 
 namespace nat
   open int
@@ -38,7 +40,12 @@ namespace nat
   | (int.of_nat n) := n
   | _              := 0
 
-  definition div_ceil (n m : ℕ) : ℕ := n / m + (ifb n % m >ᵈ 0 then 1 else 0)
+  definition div_ceil (n m : ℕ) : ℕ := n / m + (if n % m > 0 then 1 else 0)
+
+  lemma mul_ne_zero : Π{a b : ℕ}, a ≠ 0 → b ≠ 0 → a * b ≠ 0
+  | a 0 ha hb := false.elim (hb rfl)
+  | a (succ b) ha hb := take contr,
+    ha (eq_zero_of_add_eq_zero_left contr)
 end nat
 
 namespace option
@@ -95,8 +102,7 @@ section
   definition first' [unfold 2] : option A := nth xs 0
   definition last' : list A → option A
   | []      := none
-  | [x]     := some x
-  | (x::xs) := last' xs
+  | (x::xs) := some (last (x::xs) !cons_ne_nil)
 
   theorem last'_cons_eq_last' : Π{x : A} {xs : list A}, xs ≠ nil → last' (x::xs) = last' xs
   | x [] H       := false.elim (H rfl)
@@ -208,6 +214,73 @@ section
     have n < length l, from lt_of_succ_lt_succ h,
     obtain l' Hl', from update_eq_some this,
     ⟨a::l', by rewrite [↑update, Hl']⟩
+
+  theorem length_update {b : A} : ∀ {l l' : list A} {n : nat}, update l n b = some l' →
+    length l' = length l
+  | []     l' n H := by contradiction
+  | (a::l) l' 0 H := begin
+    injection H with l'_eq,
+    rewrite [-l'_eq]
+  end
+  | (a::l) l' (succ n) H := begin
+    unfold update at H,
+    note rec := λ l', @length_update l l' n,
+    revert H rec,
+    cases update l n b with l'',
+    { contradiction },
+    { esimp,
+      intro H rec, injection H with l'_eq,
+      cases l' with a' l',
+      { contradiction },
+      { simp }
+    }
+  end
+
+  theorem nth_update {b : A} : ∀ {l l' : list A} (i : ℕ) {n : nat}, update l n b = some l' →
+    nth l' i = (if n = i then some b else nth l i) :=
+  begin
+    intro l, induction l with a l ih,
+    { contradiction },
+    { intro l' i n H,
+      cases n with n,
+      { injection H with l'_eq,
+        rewrite [-l'_eq],
+        cases i with i; repeat esimp
+      },
+      { unfold update at H,
+        note ih' := λ l' i, @ih l' i n,
+        revert H ih',
+        cases update l n b with l'',
+        { contradiction },
+        { esimp,
+          intro H rec, injection H with l'_eq,
+          cases l' with a' l',
+          { contradiction },
+          { cases i with i,
+            { injection l'_eq with a_eq,
+              rewrite [if_neg (show succ n ≠ 0, by contradiction)],
+              simp },
+            { rewrite [+nth_succ, if_congr (iff.intro eq_of_succ_eq_succ (congr_arg succ)) rfl rfl],
+              apply rec,
+              injection l'_eq,
+              rewrite [`l'' = l'`] }
+          }
+        }
+      }
+    }
+  end
+
+  definition drop_while (P : A → Prop) [decidable_pred P] : list A → list A
+  | []    := []
+  | (x::xs) := if P x then drop_while xs else x::xs
+
+  lemma drop_while_cons (P : A → Prop) [decidable_pred P] (x : A) (xs : list A) :
+    drop_while P (x::xs) = if P x then drop_while P xs else x::xs := 
+  rfl
+
+  lemma map₂_self {B : Type} (f : A → A → B) : Π(xs : list A), map₂ f xs xs = map (λ x, f x x) xs
+  | []      := rfl
+  | (x::xs) := by rewrite [map_cons, ↑map₂, map₂_self]
 end
 
 inductive prefixeq {A : Type} : list A → list A → Prop :=
@@ -705,3 +778,6 @@ namespace set
     bounded_exists.intro Ha (bounded_exists.intro Hb (subset.trans Hp₁ `p₁ ⊆ p₂`))
   ⦄
 end set
+
+lemma exists_true_Prop_iff {p : Prop} (h : p) (q : p → Prop) : Exists q ↔ q h :=
+iff.intro (take h, obtain h' hh', from h, hh') !exists.intro
