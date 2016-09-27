@@ -85,7 +85,7 @@ if x ≥ 0 then return (nat.of_int x)
 else mzero
 
 definition bool_to_usize (x : bool) : sem usize :=
-return (ifb x then 1 else 0)
+return (if x = tt then 1 else 0)
 
 abbreviation isize_to_u32 [parsing_only] := isize_to_usize
 
@@ -124,6 +124,13 @@ have rec : list bool → list bool → list bool
 nat.of_bits (rec (nat.to_bits x) (nat.to_bits y))
 
 infix || := bitor
+
+infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
+infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)
+infix `≤ᵇ`:50 := λ a b, @bool.of_Prop (a ≤ b) (decidable_le a b) -- small elaborator hint
+infix `<ᵇ`:50 := λ a b, @bool.of_Prop (a < b) (decidable_lt a b)
+infix `≥ᵇ`:50 := λ a b, b ≤ᵇ a
+infix `>ᵇ`:50 := λ a b, b <ᵇ a
 
 namespace core
   abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)

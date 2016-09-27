@@ -338,12 +338,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         _ => MaybeValue::total(format!("{} {} {}", so1, match op {
                             BinOp::Add => "+",
                             BinOp::Mul => "*",
-                            BinOp::Eq => "=ᵈ",
-                            BinOp::Lt => "<ᵈ",
-                            BinOp::Le => "≤ᵈ",
-                            BinOp::Ne => "≠ᵈ",
-                            BinOp::Ge => "≥ᵈ",
-                            BinOp::Gt => ">ᵈ",
+                            BinOp::Eq => "=ᵇ",
+                            BinOp::Lt => "<ᵇ",
+                            BinOp::Le => "≤ᵇ",
+                            BinOp::Ne => "≠ᵇ",
+                            BinOp::Ge => "≥ᵇ",
+                            BinOp::Gt => ">ᵇ",
                             BinOp::BitOr => "||",
                             BinOp::BitAnd => "&&",
                             _ => panic!("unimplemented: operator {:?}", op),
@@ -672,7 +672,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 If { ref cond, targets: (bb_if, bb_else) } =>
                     // TODO: this duplicates all code after the if
                     self.get_operand(cond).map(0, |cond| format!(
-                        "ifb {} then\n{}else\n{}", cond,
+                        "if {} = bool.tt then\n{}else\n{}", cond,
                         rec!(bb_if),
                         rec!(bb_else))),
                 Return => self.return_expr.clone(),

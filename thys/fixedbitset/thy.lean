@@ -19,12 +19,7 @@ eval
   do r ← insert s 2;
   contains r.2 2
 
-attribute bool.of_decidable [unfold 2]
 attribute bool.bnot [unfold 1]
-
-lemma decidable_eq_inl {P : Prop} (H : P) : Π(d : decidable P), d = decidable.inl H
-| (decidable.inl H') := rfl
-| (decidable.inr NH) := false.elim (NH H)
 
 attribute sem [reducible]
 
@@ -41,7 +36,9 @@ obtain v k Hfrom_elem Hv, from
   sem.terminates_with_eq (from_elem_Copy_eq (0 : nat) (nat.div_ceil bits BITS)),
 begin
   rewrite [↑nat.div_ceil at Hfrom_elem],
-  rewrite [↑with_capacity, div_rem_BITS, ↑bool_to_usize, Hfrom_elem],
+  rewrite [↑with_capacity, div_rem_BITS, ↑bool_to_usize],
+  krewrite [if_congr (bool.of_Prop_eq_tt_iff (0 < bits % BITS)) rfl rfl],
+  krewrite [Hfrom_elem],
   split,
   rewrite [▸*, Hv, list.length_replicate],
 end

@@ -87,11 +87,11 @@ let' t1 ← (index);
 let' t3 ← (self);
 dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t3);
 let' t2 ← «$tmp»;
-let' t0 ← ((t1) <ᵈ (t2));
-ifb (t0) then
+let' t0 ← ((t1) <ᵇ (t2));
+if (t0) = bool.tt then
 let' t6 ← (index);
 let' t7 ← (list.length (self));
-let' t8 ← ((t6) <ᵈ (t7));
+let' t8 ← ((t6) <ᵇ (t7));
 do «$tmp0» ← «[T] as core.slice.SliceExt».get_unchecked (self) (t6);
 let' t5 ← «$tmp0»;
 let' t4 ← (t5);
@@ -144,20 +144,6 @@ if ops.Range.start index ≤ ops.Range.«end» index ∧ ops.Range.«end» index
 then return (list.firstn (ops.Range.«end» index - ops.Range.start index) (list.dropn (ops.Range.start index) self))
 else mzero
 
-definition «[T] as core.ops.Index<core.ops.RangeTo<usize>>».index {T : Type₁} (selfₐ : (slice T)) (indexₐ : (ops.RangeTo usize)) : sem ((slice T)) :=
-let' self ← (selfₐ);
-let' index ← (indexₐ);
-let' t1 ← (self);
-let' t3 ← ((0 : nat));
-let' t5 ← ((ops.RangeTo.«end» (index)));
-let' t4 ← (t5);
-let' t2 ← (ops.Range.mk (t3) (t4));
-dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t1) (t2);
-let' t0 ← «$tmp»;
-let' ret ← (t0);
-return (ret)
-
-
 definition «[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index {T : Type₁} (selfₐ : (slice T)) (indexₐ : (ops.RangeFrom usize)) : sem ((slice T)) :=
 let' self ← (selfₐ);
 let' index ← (indexₐ);
@@ -168,6 +154,20 @@ let' t6 ← (self);
 dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t6);
 let' t5 ← «$tmp»;
 let' t2 ← (ops.Range.mk (t3) (t5));
+dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t1) (t2);
+let' t0 ← «$tmp»;
+let' ret ← (t0);
+return (ret)
+
+
+definition «[T] as core.ops.Index<core.ops.RangeTo<usize>>».index {T : Type₁} (selfₐ : (slice T)) (indexₐ : (ops.RangeTo usize)) : sem ((slice T)) :=
+let' self ← (selfₐ);
+let' index ← (indexₐ);
+let' t1 ← (self);
+let' t3 ← ((0 : nat));
+let' t5 ← ((ops.RangeTo.«end» (index)));
+let' t4 ← (t5);
+let' t2 ← (ops.Range.mk (t3) (t4));
 dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t1) (t2);
 let' t0 ← «$tmp»;
 let' ret ← (t0);
@@ -210,7 +210,7 @@ let' self ← (selfₐ);
 let' t1 ← (self);
 dostep «$tmp» ← @slice.SliceExt.len _ _ «slice.SliceExt Self» (t1);
 let' t0 ← «$tmp»;
-let' ret ← ((t0) =ᵈ ((0 : nat)));
+let' ret ← ((t0) =ᵇ ((0 : nat)));
 return (ret)
 
 
@@ -235,7 +235,7 @@ let' tail ← ((t3).2);
 let' t11 ← (tail);
 dostep «$tmp» ← @slice.SliceExt.is_empty _ _ («[T] as core.slice.SliceExt» T) (t11);
 let' t10 ← «$tmp»;
-ifb (t10) then
+if (t10) = bool.tt then
 do tmp__ ← let' t13 ← (base);
 let' ret ← (result.Result.Err (t13));
 return (ret)
@@ -244,7 +244,7 @@ return (sum.inr tmp__)else
 let' t9 ← (⋆);
 let' t15 ← lens.id;
 let' t19 ← (list.length (tail));
-let' t20 ← (((0 : nat)) <ᵈ (t19));
+let' t20 ← (((0 : nat)) <ᵇ (t19));
 do «$tmp0» ← «[T] as core.slice.SliceExt».get_unchecked (tail) ((0 : nat));
 let' t18 ← «$tmp0»;
 let' t17 ← (t18);
@@ -301,10 +301,10 @@ end
 structure cmp.PartialEq [class] (Self : Type₁) (Rhs : Type₁)  :=
 (eq : Self → Rhs → sem (bool))
 
-structure cmp.Eq [class] (Self : Type₁)  extends cmp.PartialEq Self Self 
-
 structure cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁)  extends cmp.PartialEq Self Rhs :=
 (partial_cmp : Self → Rhs → sem ((option.Option (cmp.Ordering))))
+
+structure cmp.Eq [class] (Self : Type₁)  extends cmp.PartialEq Self Self 
 
 structure cmp.Ord [class] (Self : Type₁)  extends cmp.Eq Self, cmp.PartialOrd Self Self :=
 (cmp : Self → Self → sem ((cmp.Ordering)))

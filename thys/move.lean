@@ -11,8 +11,6 @@ open option
 
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
-notation `ifb ` b ` then ` t ` else ` f := bool.rec_on b f t
-
 -- 'short-circuiting' and
 definition when (P : Prop) [decidable P] (Q : P → Prop) : Prop :=
 if p : P then Q p else false
@@ -32,12 +30,6 @@ namespace bool
   | (inr a) (inr b) := rfl
 end bool
 
-infix `=ᵈ`:50 := λ a b, bool.of_decidable (_ : decidable (a = b))
-infix `≠ᵈ`:50 := λ a b, bool.of_decidable (decidable_ne a b)
-infix `≤ᵈ`:50 := λ a b, bool.of_decidable (decidable_le a b)
-infix `<ᵈ`:50 := λ a b, bool.of_decidable (decidable_lt a b)
-infix `≥ᵈ`:50 := λ a b, b ≤ᵈ a
-infix `>ᵈ`:50 := λ a b, b <ᵈ a
 
 namespace nat
   open int

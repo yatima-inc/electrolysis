@@ -23,12 +23,12 @@ let' x ← (xₐ);
 let' d ← (dₐ);
 let' t1 ← (x);
 let' t2 ← (d);
-let' t3 ← ((t2) =ᵈ ((0 : nat)));
+let' t3 ← ((t2) =ᵇ ((0 : nat)));
 do «$tmp0» ← checked.div (t1) (t2);
 let' t0 ← «$tmp0»;
 let' t5 ← (x);
 let' t6 ← (d);
-let' t7 ← ((t6) =ᵈ ((0 : nat)));
+let' t7 ← ((t6) =ᵇ ((0 : nat)));
 do «$tmp0» ← checked.mod (t5) (t6);
 let' t4 ← «$tmp0»;
 let' ret ← (((t0), (t4)));
@@ -47,7 +47,7 @@ let' t0 ← «$tmp»;
 let' blocks ← ((t0).1);
 let' rem ← ((t0).2);
 let' t4 ← (rem);
-let' t3 ← ((t4) >ᵈ ((0 : nat)));
+let' t3 ← ((t4) >ᵇ ((0 : nat)));
 do «$tmp0» ← (bool_to_usize (t3));
 let' t2 ← «$tmp0»;
 let' t5 ← (((blocks) + (t2), true));
@@ -88,7 +88,7 @@ let' t11 ← «$tmp0»;
 let' t9 ← ((t11).1);
 dostep «$tmp» ← @core.«&'a u32 as core.ops.BitAnd<u32>».bitand (t8) (t9);
 let' t7 ← «$tmp»;
-let' ret ← ((t7) ≠ᵈ ((0 : nat)));
+let' ret ← ((t7) ≠ᵇ ((0 : nat)));
 return (ret)
 end
 
@@ -104,9 +104,9 @@ let' t3 ← (bit);
 do «$tmp0» ← do «$tmp0» ← lens.get (self) selfₐ;
 return ((FixedBitSet.length «$tmp0»));
 let' t4 ← «$tmp0»;
-let' t2 ← ((t3) <ᵈ (t4));
+let' t2 ← ((t3) <ᵇ (t4));
 let' t1 ← (bool.bnot (t2));
-ifb (t1) then
+if (t1) = bool.tt then
 let' t7 ← (FixedBitSet.insert.FILE_LINE);
 let' t6 ← (t7);
 mzero

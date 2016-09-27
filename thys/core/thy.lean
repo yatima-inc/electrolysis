@@ -96,12 +96,12 @@ section
 parameter {T : Type₁}
 variable (s : slice T)
 
-lemma is_empty_eq [decidable_eq T] : SliceExt.is_empty T s = some (s =ᵈ [], 1) :=
+lemma is_empty_eq [decidable_eq T] : SliceExt.is_empty T s = some (s =ᵇ [], 1) :=
 begin
   apply congr_arg some,
   apply prod.eq,
   { esimp,
-    apply bool.of_decidable_eq_of_decidable_of_iff,
+    apply bool.of_Prop_eq_of_Prop_of_iff,
     exact iff.intro
       eq_nil_of_length_eq_zero
       (λHeq, Heq⁻¹ ▸ length_nil)
