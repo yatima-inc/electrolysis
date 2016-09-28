@@ -10,7 +10,6 @@
 \setmonofont{Source Code Pro}
 
 \usepackage{minted}
-\setminted{fontsize=\fontsize{5pt}{6pt},breaklines=true}
 %workaround to remove red boxes
 \AtBeginEnvironment{minted}{\renewcommand{\fcolorbox}[4][]{#4}}
 \usemintedstyle{tango}
@@ -24,6 +23,8 @@
 \newunicodechar{𝓞}{\ensuremath{\mathcal{O}}}
 \newunicodechar{∉}{\freeserif{∉}}
 \newunicodechar{Π}{\freeserif{Π}}
+\newunicodechar{⦃}{\freeserif{⦃}}
+\newunicodechar{⦄}{\freeserif{⦄}}
 
 \usetheme{default}
 \author{Sebastian Ullrich}
@@ -41,9 +42,9 @@ Carnegie Mellon University, advisor Jeremy Avigad}
 
 \maketitle
 
-%\begin{frame}{Outline}
-%\tableofcontents
-%\end{frame}
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
 
 \section{Why Rust}
 
@@ -65,31 +66,34 @@ Carnegie Mellon University, advisor Jeremy Avigad}
   }
 \end{frame}
 
+\setminted{fontsize=\footnotesize}
+
 \begin{frame}[fragile]{Why Rust: Because It's Almost Pure Already}
   \begin{itemize}
     \item turn destructive updates into functional ones
       \begin{columns}
         \column{0.25\textwidth}
         \color{gray}
-        \begin{verbatim}
+        \begin{minted}{rust}
 p.x += 1;
-        \end{verbatim}
+        \end{minted}
         \column{0.5\textwidth}
-        \begin{verbatim}
+        \begin{minted}{lean}
 let p = Point { x = p.x + 1, ..p };
-        \end{verbatim}
+        \end{minted}
       \end{columns}
-    \item references: save value instead of pointer, write back at end of lifetime
+    \hfill
+    \item turn \mintinline{rust}{&mut} parameters into input+output parameters
       \begin{columns}
         \column{0.25\textwidth}
         \color{gray}
-        \begin{verbatim}
+        \begin{minted}{rust}
 let x = f(&mut p);
-        \end{verbatim}
+        \end{minted}
         \column{0.5\textwidth}
-        \begin{verbatim}
+        \begin{minted}{lean}
 let (x, p) = f(p);
-        \end{verbatim}
+        \end{minted}
       \end{columns}
   \end{itemize}
 \end{frame}
@@ -105,7 +109,7 @@ let (x, p) = f(p);
         \begin{itemize}
           \item run \texttt{rustc} up to CFG generation
           \item sort definitions topologically by dependencies
-          \item extract loops from CFG and put them into loop combinator
+          \item extract loops (SCCs) from CFG and put them into loop combinator
           \item resolve static/dynamic trait calls
         \end{itemize}
 
@@ -120,11 +124,16 @@ let (x, p) = f(p);
     \item \uncover<1>{prove correctness of the Lean definition}
   \end{enumerate}
 \end{frame}
+\setbeamercovered{invisible}
 
 \section{Verifying \texttt{std::[T]::binary\_search}}
 
+\definecolor{codebg}{rgb}{0.95,0.95,0.95}
+\setminted{fontsize=\fontsize{5pt}{6pt},breaklines=true,bgcolor=codebg}
+
 \begin{frame}[fragile]{Verifying \texttt{std::[T]::binary\_search}: Input}
   \begin{minted}{rust}
+impl<T> [T] {
     fn binary_search_by<'a, F>(&'a self, mut f: F) -> Result<usize, usize>
         where F: FnMut(&'a T) -> Ordering
     {
@@ -150,6 +159,7 @@ let (x, p) = f(p);
     fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord {
         self.binary_search_by(|p| p.cmp(x))
     }
+}
   \end{minted}
 
   \begin{itemize}
@@ -230,7 +240,77 @@ theorem binary_search.spec :
   \end{minted} 
 \end{frame}
 
-\section{Conclusion and Future Work}
+\section{Further Intricacies}
+\subsection{Associated Types}
+\begin{frame}[fragile]{Associated Types}
+  \begin{minted}{rust}
+pub trait Add<RHS=Self> {
+    type Output;
+    fn add(self, rhs: RHS) -> Self::Output;
+}
+
+impl Add for u32 {
+    type Output = u32;
+    fn add(self, rhs: u32) -> u32 { self + rhs }
+}
+
+...
+
+fn add3<T : Add>(a: T, b: T, c: T::Output) -> <T::Output as Add>::Output
+    where T::Output: Add {
+    a + b + c
+}
+
+fn add3_<T : Add<Output=T>>(a: T, b: T, c: T) -> T { a + b + c }
+  \end{minted}
+  \pause
+  \begin{minted}{lean}
+structure ops.Add [class] (Self : Type₁) (RHS : Type₁) (Output : Type₁) :=
+(add : Self → RHS → sem (Output))
+
+definition «u32 as core.ops.Add».add (selfₐ : u32) (otherₐ : u32) : sem (u32) := ...
+
+definition «u32 as core.ops.Add» [instance] := ⦃
+  ops.Add u32 u32 u32,
+  add := «u32 as core.ops.Add».add
+⦄
+
+...
+
+definition add3 {T : Type₁} (Output : Type₁) [«core.ops.Add T T» : core.ops.Add T T Output] (Output : Type₁) [«core.ops.Add Output Output» : core.ops.Add Output Output Output] (aₐ : T) (bₐ : T) (cₐ : Output) : sem (Output) := ...
+
+definition add3_ {T : Type₁} [«core.ops.Add T T» : core.ops.Add T T T] (aₐ : T) (bₐ : T) (cₐ : T) : sem (T) := ...
+  \end{minted}
+\end{frame}
+
+\subsection{Returning \&mut}
+\begin{frame}[fragile]{Returning \&mut}
+  \begin{minted}{rust}
+impl<T> [T] {
+    unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        &mut *self.as_mut_ptr().offset(index as isize)
+    }
+}
+  \end{minted} 
+  \begin{minted}{lean}
+structure lens (Outer Inner : Type₁) :=
+(get : Outer → sem Inner)
+(set : Outer → Inner → sem Outer)
+
+definition lens.index [constructor] (Inner : Type₁) (index : ℕ) : lens (list Inner) Inner :=
+⦃lens,
+  get := λ self, sem.lift_opt (list.nth self index),
+  set := λ self, sem.lift_opt ∘ list.update self index⦄
+
+...
+
+definition «[T]».get_unchecked_mut {T : Type₁} (self : slice T) (index : usize) :
+  sem (lens (slice T) T × slice T) :=
+return (lens.index _ index, self)
+  \end{minted}
+\end{frame}
+
+%\section{Conclusion and Future Work}
 
 \begin{frame}{Conclusion and Future Work}
   \begin{itemize}
