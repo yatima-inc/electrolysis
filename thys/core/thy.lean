@@ -310,10 +310,13 @@ abbreviation cmp_max_cost := Ord'.cmp_max_cost needle self
 
 Binary search a sorted slice for a given element.
 
-If the value is found then Ok is returned, containing the index of the matching element; if the value is not found then Err is returned, containing the index where a matching element could be inserted while maintaining sorted order.-/
+If the value is found then Ok is returned, containing the index of the matching element;
+if the value is not found then Err is returned, containing the index where a matching element could
+be inserted while maintaining sorted order.-/
 inductive binary_search_res : Result usize usize → Prop :=
 | found     : Πi, nth self i = some needle → binary_search_res (Result.Ok i)
-| not_found : Πi, needle ∉ self → sorted le (insert_at self i needle) → binary_search_res (Result.Err i)
+| not_found : Πi, needle ∉ self → sorted le (insert_at self i needle) →
+  binary_search_res (Result.Err i)
 
 section loop_4
 
@@ -356,7 +359,7 @@ end
 
 attribute list.has_decidable_eq [unfold 3 4]
 
-private lemma loop_4.sem (Hinvar : loop_4_invar s base) : sem.terminates_with_in
+private lemma loop_4.spec (Hinvar : loop_4_invar s base) : sem.terminates_with_in
   (loop_4_res s)
   (15 + cmp_max_cost)
   (loop_4 (f, base, s)) :=
@@ -526,7 +529,7 @@ begin
   intro base s Hinvar Hlen,
   subst Hlen,
   rewrite loop.fix_eq,
-  note Hres := loop_4.sem s base Hinvar, revert Hres,
+  note Hres := loop_4.spec s base Hinvar, revert Hres,
   eapply generalize_with_eq (loop_4 (f, base, s)), intro res _,
   -- exact match res with -- unifier doesn't like this anymore
   -- | some (sum.inl st', k) := begin
@@ -577,7 +580,7 @@ end
 end loop_4
 
 include Hsorted
-theorem binary_search_by.sem : sem.terminates_with_in
+theorem binary_search_by.spec : sem.terminates_with_in
   binary_search_res
   ((log₂ (2 * length self) + 1) * (16 + cmp_max_cost))
   (binary_search_by self f) :=
@@ -598,7 +601,7 @@ end
 
 local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
-theorem binary_search.sem :
+theorem binary_search.spec :
   ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
   ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with_in
     (binary_search_res self needle)
@@ -630,7 +633,7 @@ begin
     end
   },
   { intro self needle Hsorted,
-    cases binary_search_by.sem self needle Hsorted with  _ res k Hsem_eq Hres Hmax_cost,
+    cases binary_search_by.spec self needle Hsorted with  _ res k Hsem_eq Hres Hmax_cost,
     rewrite [↑binary_search, bind_return,
       funext (λx, congr_arg (sem.incr 1) bind_return),
       ↑binary_search_by,

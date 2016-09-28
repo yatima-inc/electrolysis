@@ -67,7 +67,7 @@ begin
 end
   ... = list.length (Vec.buf (data s)) : FixedBitSet'.length_eq s
 
-lemma contains.sem : sem.terminates_with (λ res,
+lemma contains.spec : sem.terminates_with (λ res,
     option.any (λ b : u32, res = (b && 2 ^ (bit % BITS) ≠ᵇ 0))
       (list.nth (Vec.buf (FixedBitSet.data s)) (bit / BITS))
   ) (contains s bit) :=
@@ -92,10 +92,10 @@ end
 section
   omit Hbit_lt
   definition to_set : set usize :=
-  {bit | ∃ (h : bit < length s), sem.unwrap (contains.sem s bit h) = bool.tt}
+  {bit | ∃ (h : bit < length s), sem.unwrap (contains.spec s bit h) = bool.tt}
 end
 
-lemma insert.sem :
+lemma insert.spec :
   sem.terminates_with (λ ret,
     let s' := ret.2 in
     ∃ (h : FixedBitSet' s'), to_set s' = to_set s ∪ '{bit})
@@ -123,14 +123,14 @@ begin
   cases decidable_lt bit' (length s) with bit'_lt,
   { rewrite [+set.mem_set_of_iff, set.mem_singleton_iff, +exists_true_Prop_iff `bit' < length s`],
 
-    note H := sem.sem_unwrap (contains.sem s' bit' bit'_lt),
+    note H := sem.sem_unwrap (contains.spec s' bit' bit'_lt),
     esimp at H,
     note Hbit'_valid := bit_div_BITS_lt_data_length s bit' bit'_lt,
     cases list.nth_eq_some ((list.length_update l'_eq)⁻¹ ▸ Hbit'_valid) with b' b'_eq,
     rewrite [b'_eq at H{2}, ▸* at H, H],
     clear H,
 
-    note H := sem.sem_unwrap (contains.sem s bit' bit'_lt),
+    note H := sem.sem_unwrap (contains.spec s bit' bit'_lt),
     cases list.nth_eq_some Hbit'_valid with b'' b''_eq,
     rewrite [b''_eq at H{2}, ▸* at H, H],
     clear H,
