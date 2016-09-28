@@ -9,16 +9,6 @@
 \usepackage{fontspec}
 \setmonofont{Source Code Pro}
 
-%\definecolor{keywordcolor}{rgb}{0.7, 0.1, 0.1}   % red
-%\definecolor{tacticcolor}{rgb}{0.1, 0.2, 0.6}    % blue
-%\definecolor{commentcolor}{rgb}{0.4, 0.4, 0.4}   % grey
-%\definecolor{symbolcolor}{rgb}{0.0, 0.1, 0.6}    % blue
-%\definecolor{sortcolor}{rgb}{0.1, 0.5, 0.1}      % green
-%\definecolor{attributecolor}{rgb}{0.7, 0.1, 0.1} % red
-%\usepackage{listings}
-%\def\lstlanguagefiles{lstlean.tex}
-%\lstset{language=lean,breakatwhitespace,basicstyle=\footnotesize}
-
 \usepackage{minted}
 \setminted{fontsize=\fontsize{5pt}{6pt},breaklines=true}
 %workaround to remove red boxes
@@ -104,10 +94,10 @@ let (x, p) = f(p);
   \end{itemize}
 \end{frame}
 
-\section{Simple Verification via Purification}
+\section{Simple Verification via Functional Purification}
 
 \setbeamercovered{transparent}
-\begin{frame}[t]{Simple Verification via Purification}
+\begin{frame}[t]{Simple Verification via Functional Purification}
   \begin{enumerate}
     \item \uncover<1>{make Rust program purely functional}
     \item transpile it into expression language of a theorem prover (Lean)
@@ -174,14 +164,6 @@ let (x, p) = f(p);
 \end{frame}
 
 \begin{frame}[fragile]{Verifying \texttt{std::[T]::binary\_search}: Output}
-%  \begin{lstlisting}[basicstyle=\tiny]
-%section
-%parameters {F : Type₁} {T : Type₁}
-%parameters [«ops.FnMut F (T)» : ops.FnMut F (T) (cmp.Ordering)]
-%parameters (selfₐ : (slice T)) (fₐ : F)
-%
-%definition «[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((result.Result usize usize))) := ...
-%  \end{lstlisting}
   \begin{minted}{lean}
 section
   parameters {F : Type₁} {T : Type₁}
