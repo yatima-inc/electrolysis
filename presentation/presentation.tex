@@ -1,25 +1,45 @@
 % Created 2016-06-18 Sa 23:26
 \documentclass{beamer}
-\usepackage[utf8]{inputenc}
+%\usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{fixltx2e}
 \usepackage{graphicx}
-\usepackage{grffile}
-\usepackage{longtable}
-\usepackage{wrapfig}
-\usepackage{rotating}
-\usepackage[normalem]{ulem}
 \usepackage{amsmath}
-\usepackage{textcomp}
 \usepackage{amssymb}
-\usepackage{capt-of}
 \usepackage{hyperref}
-\usepackage{listings}
+\usepackage{fontspec}
+\setmonofont{Source Code Pro}
+
+%\definecolor{keywordcolor}{rgb}{0.7, 0.1, 0.1}   % red
+%\definecolor{tacticcolor}{rgb}{0.1, 0.2, 0.6}    % blue
+%\definecolor{commentcolor}{rgb}{0.4, 0.4, 0.4}   % grey
+%\definecolor{symbolcolor}{rgb}{0.0, 0.1, 0.6}    % blue
+%\definecolor{sortcolor}{rgb}{0.1, 0.5, 0.1}      % green
+%\definecolor{attributecolor}{rgb}{0.7, 0.1, 0.1} % red
+%\usepackage{listings}
+%\def\lstlanguagefiles{lstlean.tex}
+%\lstset{language=lean,breakatwhitespace,basicstyle=\footnotesize}
+
+\usepackage{minted}
+\setminted{fontsize=\fontsize{5pt}{6pt},breaklines=true}
+%workaround to remove red boxes
+\AtBeginEnvironment{minted}{\renewcommand{\fcolorbox}[4][]{#4}}
+\usemintedstyle{tango}
+
+\usepackage{newunicodechar}
+\newfontfamily{\freeserif}{DejaVu Sans}
+\newunicodechar{ℕ}{\freeserif{ℕ}}
+\newunicodechar{ₐ}{\freeserif{ₐ}}
+\newunicodechar{₁}{\freeserif{₁}}
+\newunicodechar{∈}{\freeserif{∈}}
+\newunicodechar{𝓞}{\ensuremath{\mathcal{O}}}
+\newunicodechar{∉}{\freeserif{∉}}
+\newunicodechar{Π}{\freeserif{Π}}
+
 \usetheme{default}
 \author{Sebastian Ullrich}
 \date{OPLSS 2016}
 \title{Electrolysis}
-\subtitle{Verifying Rust Programs via Functional Purification\\[5mm]
+\subtitle{Simple Verification of Rust Programs via Functional Purification\\[5mm]
 \includegraphics[scale=1.4]{../logo}\\[-3mm]}
 \institute[]{Karlsruhe Institute of Technology, advisor Gregor Snelting \\[1mm]
 Carnegie Mellon University, advisor Jeremy Avigad}
@@ -113,8 +133,35 @@ let (x, p) = f(p);
 
 \section{Verifying \texttt{std::[T]::binary\_search}}
 
-\begin{frame}{Verifying \texttt{std::[T]::binary\_search}: Input}
-  \includegraphics[height=0.5\textheight]{binary_search}
+\begin{frame}[fragile]{Verifying \texttt{std::[T]::binary\_search}: Input}
+  \begin{minted}{rust}
+    fn binary_search_by<'a, F>(&'a self, mut f: F) -> Result<usize, usize>
+        where F: FnMut(&'a T) -> Ordering
+    {
+        let mut base = 0usize;
+        let mut s = self;
+
+        loop {
+            let (head, tail) = s.split_at(s.len() >> 1);
+            if tail.is_empty() {
+                return Err(base)
+            }
+            match f(&tail[0]) {
+                Less => {
+                    base += head.len() + 1;
+                    s = &tail[1..];
+                }
+                Greater => s = head,
+                Equal => return Ok(base + head.len()),
+            }
+        }
+    }
+
+    fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord {
+        self.binary_search_by(|p| p.cmp(x))
+    }
+  \end{minted}
+
   \begin{itemize}
     \item high-level implementation working with subslices instead of explicit indicing
     \item transitively uses
@@ -126,12 +173,79 @@ let (x, p) = f(p);
   \end{itemize}
 \end{frame}
 
-\begin{frame}{Verifying \texttt{std::[T]::binary\_search}: Output}
-  \includegraphics[width=\textwidth]{generated}
+\begin{frame}[fragile]{Verifying \texttt{std::[T]::binary\_search}: Output}
+%  \begin{lstlisting}[basicstyle=\tiny]
+%section
+%parameters {F : Type₁} {T : Type₁}
+%parameters [«ops.FnMut F (T)» : ops.FnMut F (T) (cmp.Ordering)]
+%parameters (selfₐ : (slice T)) (fₐ : F)
+%
+%definition «[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((result.Result usize usize))) := ...
+%  \end{lstlisting}
+  \begin{minted}{lean}
+section
+  parameters {F : Type₁} {T : Type₁}
+  parameters [«ops.FnMut F (T)» : ops.FnMut F (T) (cmp.Ordering)]
+  parameters (selfₐ : (slice T)) (fₐ : F)
+
+  definition «[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((result.Result usize usize))) :=
+  ...
+
+  definition «[T] as core.slice.SliceExt».binary_search_by : sem ((result.Result usize usize)) :=
+  let' self ← (selfₐ);
+  let' f ← (fₐ);
+  let' base ← ((0 : nat));
+  let' t1 ← (self);
+  let' s ← (t1);
+  loop («[T] as core.slice.SliceExt».binary_search_by.loop_4) (f, base, s)
+end
+
+...
+
+structure cmp.Ord [class] (Self : Type₁)  extends cmp.Eq Self, cmp.PartialOrd Self Self :=
+(cmp : Self → Self → sem ((cmp.Ordering)))
+
+definition «[T] as core.slice.SliceExt».binary_search {T : Type₁} [«cmp.Ord T» : cmp.Ord T] (selfₐ : (slice T)) (xₐ : T) : sem ((result.Result usize usize)) :=
+let' self ← (selfₐ);
+let' x ← (xₐ);
+let' t0 ← (self);
+let' t2 ← (x);
+let' t1 ← ((λ upvarsₐ pₐ, let' p ← (pₐ);
+let' t0 ← (p);
+let' t1 ← ((upvarsₐ));
+dostep «$tmp» ← @cmp.Ord.cmp _ «cmp.Ord T» (t0) (t1);
+let' ret ← «$tmp»;
+return ret) (t2));
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».binary_search_by _ _ fn (t0) (t1);
+let' ret ← «$tmp»;
+return (ret)
+  \end{minted}
 \end{frame}
 
-\begin{frame}{Verifying \texttt{std::[T]::binary\_search}: Proof}
-  \includegraphics[height=0.8\textheight,trim=0 0 0 20mm, clip]{proof}
+\begin{frame}[fragile]{Verifying \texttt{std::[T]::binary\_search}: Proof}
+  \begin{minted}{lean}
+/- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
+
+Binary search a sorted slice for a given element.
+
+If the value is found then Ok is returned, containing the index of the matching element;
+if the value is not found then Err is returned, containing the index where a matching element could
+be inserted while maintaining sorted order.-/
+inductive binary_search_res : Result usize usize → Prop :=
+| found     : Πi, nth self i = some needle → binary_search_res (Result.Ok i)
+| not_found : Πi, needle ∉ self → sorted le (insert_at self i needle) →
+  binary_search_res (Result.Err i)
+
+...
+
+theorem binary_search.spec :
+  ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
+  ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with_in
+    (binary_search_res self needle)
+    (f (length self, Ord'.cmp_max_cost needle self))
+    (binary_search self needle) :=
+...
+  \end{minted} 
 \end{frame}
 
 \section{Conclusion and Future Work}
