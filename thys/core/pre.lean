@@ -1,5 +1,6 @@
 import data.nat data.list
 import theories.topology.limit
+import bitwise
 import loop_combinator
 
 open bool
@@ -98,34 +99,12 @@ if y ≠ 0 then return (div x y) else mzero
 definition checked.mod (x y : nat) : sem nat :=
 if y ≠ 0 then return (mod x y) else mzero
 
+infix && := nat.bitand
+infix || := nat.bitor
+
 /- TODO: actually check something -/
 definition checked.shl (x : nat) (y : int) : sem nat := return (x * 2^nat.of_int y)
 definition checked.shr (x : nat) (y : int) : sem nat := return (div x (2^nat.of_int y))
-
-definition nat.to_bits : ℕ → list bool :=
-well_founded.fix (λ n rec,
-if H : n = 0 then []
-else (if n % 2 = 1 then tt else ff) :: rec (n / 2) (div_lt_of_ne_zero H))
-
-definition nat.of_bits : list bool → ℕ
-/-| [] := 0
-| (x::xs) := (if x = tt then 1 else 0) + 2 * nat.of_bits xs-/
-:= list.rec 0 (λ x xs rec, (if x = tt then 1 else 0) + 2 * rec)
-
-definition bitand (x y : nat) : nat :=
-nat.of_bits (map₂ band (nat.to_bits x) (nat.to_bits y))
-
-infix && := bitand
-
-definition bitor.rec : list bool → list bool → list bool
-| xs []           := xs
-| [] ys           := ys
-| (x::xs) (y::ys) := (x || y) :: bitor.rec xs ys
-
-definition bitor (x y : nat) : nat :=
-nat.of_bits (bitor.rec (nat.to_bits x) (nat.to_bits y))
-
-infix || := bitor
 
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)

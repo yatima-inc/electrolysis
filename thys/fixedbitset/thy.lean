@@ -115,12 +115,15 @@ begin
   cases list.update_eq_some _ bit_valid with l' l'_eq,
   let s' := FixedBitSet.mk (Vec.mk l') (FixedBitSet.length s),
   rewrite [l'_eq, ▸*],
-  have FixedBitSet' s', from sorry,
+  have FixedBitSet' s', begin
+    split,
+    rewrite [▸*, FixedBitSet'.length_eq s, list.length_update l'_eq],
+  end,
   existsi this,
   rewrite [↑to_set],
   apply set.ext, intro bit',
   rewrite [▸*, set.mem_union_eq],
-  cases decidable_lt bit' (length s) with bit'_lt,
+  cases decidable_lt bit' (length s) with bit'_lt bit'_ge,
   { rewrite [+set.mem_set_of_iff, set.mem_singleton_iff, +exists_true_Prop_iff `bit' < length s`],
 
     note H := sem.sem_unwrap (contains.spec s' bit' bit'_lt),
@@ -139,25 +142,33 @@ begin
     rewrite [b''_eq at H, b'_eq at H],
     clear b'_eq,
 
-    cases (_ : decidable (bit' = bit)),
-    { 
-      rewrite [if_pos (show bit / BITS = bit' / BITS, by rewrite [`bit' = bit`]) at H],
+    cases (_ : decidable (bit / BITS = bit' / BITS)) with same_blk dif_blk,
+    { rewrite [if_pos same_blk at H],
       injection H with H,
       have b'' = b, from
-        have some b'' = some b, by rewrite [-b_eq, -b''_eq, `bit' = bit`],
+        have some b'' = some b, by rewrite [-b_eq, -b''_eq, same_blk],
         option.no_confusion this id,
-      rewrite [this, H, `bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
-        iff_true],
-      krewrite one_mul,
-      rewrite [bitand_bitor],
-      intro contr,
-      apply nat.no_confusion (nat.eq_zero_of_pow_eq_zero contr)
+      rewrite [this, H],
+      cases (_ : decidable (bit' = bit)),
+      { rewrite [`bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
+          iff_true],
+        krewrite one_mul,
+        rewrite [bitand_bitor_self],
+        intro contr,
+        apply nat.no_confusion (nat.eq_zero_of_pow_eq_zero contr)
+      },
+      { rewrite [iff_false_intro `bit' ≠ bit`, or_false],
+        apply sorry }
     },
-    {
-      apply sorry
-    }
+    { rewrite [if_neg dif_blk at H],
+      injection H with H,
+      rewrite H,
+      have bit' ≠ bit, by intro contr; rewrite [contr at dif_blk]; apply dif_blk rfl,
+      rewrite [iff_false_intro this, or_false] }
   },
-  apply sorry,
+  { rewrite [+set.mem_set_of_iff, set.mem_singleton_iff,
+      +iff_false_intro (not_exists_of_not _ bit'_ge), false_iff, false_or],
+    show bit' ≠ bit, from take contr, bit'_ge (contr⁻¹ ▸ Hbit_lt) }
 end
 
 end fixedbitset.FixedBitSet

@@ -11,6 +11,13 @@ open option
 
 lemma generalize_with_eq {A : Type} {P : A → Prop} (x : A) (H : ∀y, x = y → P y) : P x := H x rfl
 
+lemma not_exists_of_not {P : Prop} (Q : P → Prop) (np : ¬P) : ¬Exists Q :=
+begin
+  rewrite forall_iff_not_exists,
+  intro p,
+  exfalso, apply np p
+end
+
 namespace bool
   open decidable
 
