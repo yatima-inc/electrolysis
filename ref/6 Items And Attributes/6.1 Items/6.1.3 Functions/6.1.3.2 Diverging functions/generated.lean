@@ -27,8 +27,8 @@ mzero
 definition f (iₐ : i32) : sem (i32) :=
 let' i ← (iₐ);
 let' t1 ← (i);
-let' t0 ← ((t1) =ᵈ ((42 : int)));
-if (t0) = tt then
+let' t0 ← ((t1) =ᵇ ((42 : int)));
+if (t0) = bool.tt then
 let' ret ← ((42 : int));
 return (ret)
 else
