@@ -3,10 +3,11 @@ target
 TODO
 build.ninja
 .ninja_*
-#*
+\#*
 *~
 *.d
 *.clean
 *.ilean
 *.olean
 ref/index.html
+ref/src/generated.lean
