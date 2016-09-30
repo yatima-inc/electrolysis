@@ -153,7 +153,7 @@ begin
       { rewrite [`bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
           iff_true],
         krewrite one_mul,
-        rewrite [bitand_bitor_self],
+        rewrite [bitwise.and_or_self],
         intro contr,
         apply nat.no_confusion (nat.eq_zero_of_pow_eq_zero contr)
       },

@@ -99,8 +99,7 @@ if y ≠ 0 then return (div x y) else mzero
 definition checked.mod (x y : nat) : sem nat :=
 if y ≠ 0 then return (mod x y) else mzero
 
-infix && := nat.bitand
-infix || := nat.bitor
+export [notation] nat.bitwise
 
 /- TODO: actually check something -/
 definition checked.shl (x : nat) (y : int) : sem nat := return (x * 2^nat.of_int y)
