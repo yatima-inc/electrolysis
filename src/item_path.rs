@@ -1,6 +1,7 @@
 use rustc::hir::map::definitions::DefPathData;
 use rustc::hir::def_id::DefId;
-use rustc::ty::{self, TyCtxt};
+use rustc::ty::TyCtxt;
+use rustc::ty::TypeVariants::*;
 
 use itertools::Itertools;
 
@@ -52,7 +53,7 @@ fn push_impl_path(tcx: TyCtxt, buffer: &mut Vec<String>, impl_def_id: DefId)
     } else {
         let name = format!("{}", self_ty);
         match self_ty.sty {
-            ty::TyStruct(..) | ty::TyEnum(..) => {
+            TyAdt(..) => {
                 // `local_crate::a::B<c::D>` ~> `a.«B<c::D>»`
                 let sep = name.find("<").unwrap_or(name.len());
                 let mut parts = name[..sep].split("::").map(ToString::to_string).collect_vec();

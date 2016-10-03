@@ -19,6 +19,7 @@ extern crate rustc_driver;
 extern crate rustc_errors;
 extern crate rustc_metadata;
 extern crate rustc_mir;
+extern crate rustc_typeck;
 extern crate syntax;
 
 macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }

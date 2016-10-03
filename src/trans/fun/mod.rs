@@ -218,7 +218,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 self.get_lvalue(base).and_then(0, |sbase| MaybeValue::total(match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyTuple(ref tys) =>
                         get_tuple_elem(sbase, field.index(), tys.len()),
-                    ty::TypeVariants::TyStruct(ref adt_def, _) => {
+                    ty::TypeVariants::TyAdt(ref adt_def, _) => {
                         if adt_def.struct_variant().kind == ty::VariantKind::Tuple {
                             format!("match {} with {}.mk {} := x{} end",
                                     sbase,
@@ -269,7 +269,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     }
                     ProjectionElem::Field(ref field, _) => {
                         match unwrap_refs(self.lvalue_ty(base)).sty {
-                            ty::TypeVariants::TyStruct(ref adt_def, _) => {
+                            ty::TypeVariants::TyAdt(ref adt_def, _) => {
                                 let field_name = adt_def.struct_variant().fields[field.index()].name;
                                 self.set_lvalue(base, &format!("⦃ {}, {} := {}, {} ⦄", self.name_def_id(adt_def.did), field_name, val, sbase))
                             },
@@ -368,7 +368,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                 self.transpile_ty(op_ty),
                                 self.transpile_ty(dest_ty),
                                 operand)
-                    } else if let ty::TypeVariants::TyEnum(..) = op_ty.sty {
+                    } else if let ty::TypeVariants::TyAdt(..) = op_ty.sty {
                         format!("(isize_to_{} ({}.discr {}))",
                                 self.transpile_ty(dest_ty),
                                 self.name_def_id(op_ty.ty_to_def_id().unwrap()),
@@ -458,7 +458,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     ProjectionElem::Field(ref field, _) => {
                         let ty = unwrap_refs(self.lvalue_ty(base));
                         match ty.sty {
-                            ty::TypeVariants::TyStruct(ref adt_def, _) => {
+                            ty::TypeVariants::TyAdt(ref adt_def, _) => {
                                 let field = adt_def.struct_variant().fields[field.index()].name;
                                 lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return ⦃ {ty}, {field} := i, o ⦄)",
                                                     ty=self.name_def_id(adt_def.did), field=field))
@@ -514,7 +514,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             StatementKind::SetDiscriminant { .. } =>
                 panic!("unimplemented: statement {:?}", stmt),
-            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) =>
+            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop =>
                 "".to_string(),
         }
     }
