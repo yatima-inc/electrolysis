@@ -103,7 +103,7 @@ export [notation] nat.bitwise
 
 /- TODO: actually check something -/
 definition checked.shl (x : nat) (y : int) : sem nat := return (x * 2^nat.of_int y)
-definition checked.shr (x : nat) (y : int) : sem nat := return (div x (2^nat.of_int y))
+definition checked.shr (x : nat) (y : int) : sem nat := return (x / 2^nat.of_int y)
 
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)

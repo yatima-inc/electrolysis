@@ -38,6 +38,10 @@ namespace bool
 
   lemma bnot_of_Prop (P : Prop) {dec : decidable P} : bnot (of_Prop P) = of_Prop (¬ P) :=
   begin cases dec, esimp, esimp end
+
+  lemma band_bor_distrib : Π(x y z : bool), (x || y) && z = x && z || y && z
+  | x y tt := by rewrite [+band_tt]
+  | x y ff := by rewrite [+band_ff]
 end bool
 
 namespace nat
