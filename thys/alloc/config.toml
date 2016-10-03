@@ -1,4 +1,4 @@
-rustc_args = "rust/src/liballoc/lib.rs"
+rustc_args = "$RUST_SRC_PATH/liballoc/lib.rs"
 
 # hella unsafe
 targets = ["nopenopenope"]

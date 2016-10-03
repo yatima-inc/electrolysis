@@ -77,7 +77,10 @@ fn main() {
         let mut config_file = File::open(&config_path).expect("error opening crate config");
         config_file.read_to_string(&mut config).unwrap();
         let config: toml::Value = config.parse().unwrap();
-        let rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'").as_str().unwrap().to_string();
+        let mut rustc_args = config.lookup("rustc_args").expect("missing config item 'rustc_args'").as_str().unwrap().to_string();
+        if rustc_args.starts_with("$RUST_SRC_PATH") {
+            rustc_args = rustc_args.replace("$RUST_SRC_PATH", get_rust_src_path().expect("Please run 'rustup component add rust-src' in the electrolysis directory").to_str().unwrap())
+        }
         (crate_name, config_path.parent().unwrap().to_owned(), rustc_args, config)
     };
 
@@ -113,6 +116,23 @@ fn main() {
             .. driver::CompileController::basic()
         }
     );
+}
+
+// from https://github.com/phildawes/racer/blob/c680530f9e9dcd8de5ef0d45954a6112a01a6fe5/src/bin/main.rs#L169-L183
+fn get_rust_src_path() -> Option<path::PathBuf> {
+    let mut cmd = std::process::Command::new("rustc");
+    cmd.arg("--print").arg("sysroot");
+
+    if let Ok(output) = cmd.output() {
+        if let Ok(s) = String::from_utf8(output.stdout) {
+            let sysroot = path::Path::new(s.trim());
+            let srcpath = sysroot.join("lib/rustlib/src/rust/src");
+            if srcpath.exists() {
+                return Some(srcpath);
+            }
+        }
+    }
+    None
 }
 
 /// Collects all node IDs of a crate

@@ -1,4 +1,4 @@
-rustc_args = "rust/src/libcore/lib.rs"
+rustc_args = "$RUST_SRC_PATH/libcore/lib.rs"
 
 targets = [
   '«\[T\] as core.slice.SliceExt».(binary_search|get)',
