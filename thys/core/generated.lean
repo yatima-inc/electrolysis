@@ -249,10 +249,10 @@ end
 structure cmp.PartialEq [class] (Self : Type₁) (Rhs : Type₁)  :=
 (eq : Self → Rhs → sem (bool))
 
+structure cmp.Eq [class] (Self : Type₁)  extends cmp.PartialEq Self Self 
+
 structure cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁)  extends cmp.PartialEq Self Rhs :=
 (partial_cmp : Self → Rhs → sem ((option.Option (cmp.Ordering))))
-
-structure cmp.Eq [class] (Self : Type₁)  extends cmp.PartialEq Self Self 
 
 structure cmp.Ord [class] (Self : Type₁)  extends cmp.Eq Self, cmp.PartialOrd Self Self :=
 (cmp : Self → Self → sem ((cmp.Ordering)))

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeSet};
 
 use itertools::Itertools;
 use petgraph::graph::{self, Graph};
@@ -80,7 +80,7 @@ pub struct Deps {
     pub graph: Graph<DefId, ()>,
     def_idcs: HashMap<DefId, graph::NodeIndex>,
     // slightly hackish: new deps in the current transpile call
-    new_deps: HashSet<DefId>,
+    new_deps: BTreeSet<DefId>,
 }
 
 impl Deps {
@@ -99,7 +99,9 @@ impl Deps {
     }
 
     fn drain_new_deps(&mut self) -> Vec<DefId> {
-        self.new_deps.drain().collect_vec()
+        let deps = self.new_deps.iter().cloned().collect_vec();
+        self.new_deps.clear();
+        deps
     }
 }
 
