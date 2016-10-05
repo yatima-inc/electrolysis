@@ -59,6 +59,9 @@ end
 definition sem.lift_opt [unfold 2] {a : Type₁} : option a → sem a :=
 option.rec sem.zero return
 
+definition sem.guard [reducible] {a : Type₁} (p : Prop) [decidable p] (s : sem a) : sem a :=
+if p then s else mzero
+
 attribute sem.bind [unfold 3]
 attribute sem.return [constructor]
 

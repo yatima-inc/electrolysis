@@ -3,6 +3,7 @@ import theories.topology.limit
 import bitwise
 import loop_combinator
 
+
 open bool
 open int
 open function
@@ -81,6 +82,33 @@ abbreviation isize [parsing_only] := int
 
 abbreviation slice [parsing_only] := list
 
+definition u8.bits : ℕ := 8
+definition u16.bits : ℕ := 16
+definition u32.bits : ℕ := 32
+definition u64.bits : ℕ := 64
+
+-- Should perhaps be a constant-axiom pair, but that would break computability.
+-- TODO: `usize::MAX` will be determined by the current host anyway right now.
+definition usize.bits : ℕ := 16
+definition usize.bits_ge_16 : usize.bits ≥ 16 := dec_trivial
+attribute usize.bits [irreducible]
+
+definition i8.bits : ℕ := 8
+definition i16.bits : ℕ := 16
+definition i32.bits : ℕ := 32
+definition i64.bits : ℕ := 64
+definition isize.bits : ℕ := usize.bits
+
+definition unsigned.max (bits : ℕ) : ℕ := 2^bits - 1
+abbreviation u8.max : ℕ := unsigned.max u8.bits
+abbreviation u16.max : ℕ := unsigned.max u16.bits
+abbreviation u32.max : ℕ := unsigned.max u32.bits
+abbreviation u64.max : ℕ := unsigned.max u64.bits
+abbreviation usize.max : ℕ := unsigned.max usize.bits
+
+definition signed.min (bits : ℕ) : ℤ := -2^(bits-1)
+definition signed.max (bits : ℕ) : ℤ := 2^(bits-1) + 1
+
 definition isize_to_usize (x : isize) : sem usize :=
 if x ≥ 0 then return (nat.of_int x)
 else mzero
@@ -88,22 +116,41 @@ else mzero
 definition bool_to_usize (x : bool) : sem usize :=
 return (if x = tt then 1 else 0)
 
-abbreviation isize_to_u32 [parsing_only] := isize_to_usize
+definition isize_to_u32 (x : isize) :=
+do x ← isize_to_usize x;
+if x ≤ u32.max then return x
+else mzero
 
-definition checked.sub (x y : nat) : sem nat :=
-if x ≥ y then return (x-y) else mzero
 
-definition checked.div (x y : nat) : sem nat :=
-if y ≠ 0 then return (div x y) else mzero
+definition check_unsigned [reducible] (bits : ℕ) (x : nat) : sem nat :=
+sem.guard (x ≤ unsigned.max bits) (return x)
 
-definition checked.mod (x y : nat) : sem nat :=
-if y ≠ 0 then return (mod x y) else mzero
+definition checked.add [reducible] (bits : ℕ) (x y : nat) : sem nat :=
+check_unsigned bits (x+y)
+
+definition checked.div [reducible] (bits : ℕ) (x y : nat) : sem nat :=
+sem.guard (y ≠ 0) $ return (div x y)
+
+definition checked.rem [reducible] (bits : ℕ) (x y : nat) : sem nat :=
+sem.guard (y ≠ 0) $ return (mod x y)
 
 export [notation] nat.bitwise
 
-/- TODO: actually check something -/
-definition checked.shl (x : nat) (y : int) : sem nat := return (x * 2^nat.of_int y)
-definition checked.shr (x : nat) (y : int) : sem nat := return (x / 2^nat.of_int y)
+definition checked.shl [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
+sem.guard (y < bits) $ check_unsigned bits (x * 2^y)
+
+definition checked.shr [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
+sem.guard (y < bits) $ return (x / 2^y)
+
+definition checked.shrs [reducible] (bits : ℕ) (x : nat) (y : i32) : sem nat :=
+sem.guard (0 ≤ y) $ checked.shr bits x (nat.of_int y)
+
+
+definition check_signed [reducible] (bits : ℕ) (x : int) : sem int :=
+sem.guard (signed.min bits ≤ x ∧ x ≤ signed.max bits) $ return x
+
+definition checked.sadd [reducible] (bits : ℕ) (x y : int) : sem int :=
+check_signed bits (x+y)
 
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)

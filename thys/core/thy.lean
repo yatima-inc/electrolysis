@@ -11,6 +11,7 @@ open core
 open eq.ops
 open list
 open list.prefixeq
+open [class] [reducible] int
 open nat
 open interval
 open option
@@ -26,6 +27,33 @@ definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B →
   [well_founded R] : well_founded (inv_image R f) := inv_image.wf f _
 
 attribute sem [reducible]
+
+definition is_slice [class] {T : Type₁} (xs : slice T) :=
+length xs ≤ usize.max
+
+definition is_usize [class] (x : usize) :=
+x ≤ usize.max
+
+definition div_is_usize [instance] (x y : usize) [is_usize x] : is_usize (x / y) :=
+le.trans !nat.div_le_self `is_usize x`
+
+definition mod_is_usize [instance] (x y : usize) [is_usize x] : is_usize (x % y) :=
+le.trans !nat.mod_le `is_usize x`
+
+lemma usize.max_ge_u16_max : usize.max ≥ u16.max :=
+begin
+  xrewrite [+sub_one],
+  apply pred_le_pred,
+  apply nondecreasing_pow (show (2:ℕ) ≥ 1, from dec_trivial) usize.bits_ge_16
+end
+
+lemma usize.max_ge_1 : usize.max ≥ 1 := le.trans dec_trivial usize.max_ge_u16_max
+
+lemma checked.shl_1 {bits : ℕ} {y : u32} (h : y < bits) : checked.shl bits 1 y = return (2^y) :=
+have hpow : (2:ℕ)^y < 2^bits, from strictly_increasing_pow (show 2 > 1, from dec_trivial) h,
+by rewrite [if_pos h,
+    nat.one_mul,
+    if_pos (show 2^y ≤ unsigned.max bits, from le_pred_of_lt hpow)]
 
 namespace core
 
@@ -162,6 +190,7 @@ parameter self : slice T
 parameter needle : T
 
 hypothesis Hsorted : sorted le self
+hypothesis His_slice : is_slice self
 
 abbreviation f y := sem.incr 1 (Ord.cmp y needle)
 abbreviation cmp_max_cost := Ord'.cmp_max_cost needle self
@@ -217,8 +246,7 @@ section
     ... = base + (length s₁ + 1) + length (dropn 1 (x::xs)) : by simp
 end
 
-attribute list.has_decidable_eq [unfold 3 4]
-
+include His_slice
 private lemma loop_4.spec (Hinvar : loop_4_invar s base) : sem.terminates_with_in
   (loop_4_res s)
   (15 + cmp_max_cost)
@@ -228,7 +256,9 @@ have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
   (sorted.sorted_dropn_of_sorted Hsorted _),
 generalize_with_eq (loop_4 (f, base, s)) (begin
   intro res,
-  rewrite [↑loop_4, ↑checked.shr],
+  rewrite [↑loop_4,
+    if_pos (show 0 ≤ (1:ℤ), from dec_trivial),
+    if_pos (show usize.bits > nat.of_int 1, from lt_of_lt_of_le dec_trivial usize.bits_ge_16)],
   krewrite [pow_one],
   have length s / 2 ≤ length s, from !nat.div_le_self,
   rewrite [▸*, split_at_eq s this, ▸*, is_empty_eq, ▸*],
@@ -286,6 +316,10 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       rewrite [nth_eq_first'_dropn, add.comm, -dropn_dropn, -nth_eq_first'_dropn, len_s₁],
       apply prefixeq.nth_of_nth_prefixeq this (loop_4_invar.s_in_self Hinvar)
     end,
+    have base + (length s₁ + 1) ≤ usize.max, from le.trans (lt_length_of_nth nth_x) His_slice,
+    rewrite [if_pos (le.trans !le_add_left this), ▸*, if_pos this, ▸*],
+    rewrite [if_pos (show base + length s₁ ≤ usize.max, from
+      le.trans (add_le_add_left !le_add_right _) this)],
     have Hle_max_cost : k ≤ cmp_max_cost, from
       Ord'.le_cmp_max_cost (mem_of_nth nth_x) cmp_eq,
     cases (decidable_lt x needle) with Hx_lt_needle Hx_ge_needle,
@@ -439,7 +473,7 @@ end
 
 end loop_4
 
-include Hsorted
+include Hsorted His_slice
 theorem binary_search_by.spec : sem.terminates_with_in
   binary_search_res
   ((log₂ (2 * length self) + 1) * (16 + cmp_max_cost))
@@ -463,7 +497,7 @@ local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
 theorem binary_search.spec :
   ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
-  ∀(self : slice T) (needle : T), sorted le self → sem.terminates_with_in
+  ∀(self : slice T) (needle : T), is_slice self → sorted le self → sem.terminates_with_in
     (binary_search_res self needle)
     (f (length self, Ord'.cmp_max_cost needle self))
     (binary_search self needle) :=
@@ -492,8 +526,8 @@ begin
       { apply asymptotic.le_of_lt, apply id_unbounded },
     end
   },
-  { intro self needle Hsorted,
-    cases binary_search_by.spec self needle Hsorted with  _ res k Hsem_eq Hres Hmax_cost,
+  { intro self needle His_slice Hsorted,
+    cases binary_search_by.spec self needle Hsorted His_slice with  _ res k Hsem_eq Hres Hmax_cost,
     rewrite [↑binary_search, bind_return,
       funext (λx, congr_arg (sem.incr 1) bind_return),
       ↑binary_search_by,

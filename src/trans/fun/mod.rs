@@ -319,25 +319,40 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> MaybeValue {
         match *rv {
             Rvalue::Use(ref op) => self.get_operand(op),
-            Rvalue::UnaryOp(op, ref operand) =>
+            Rvalue::UnaryOp(op, ref operand) => {
+                let toperand = operand.ty(self.mir, self.tcx);
                 self.get_operand(operand).and_then(0, |soperand| MaybeValue::total(format!("{} {}", match op {
-                    UnOp::Not if operand.ty(self.mir, self.tcx).is_bool() => "bool.bnot",
+                    UnOp::Not if toperand.is_bool() => "bool.bnot",
                     UnOp::Not => "NOT",
-                    UnOp::Neg => "-",
-                }, soperand))),
+                    UnOp::Neg =>
+                        return MaybeValue::partial(format!("checked.neg {}.bits {}",
+                                                           self.transpile_ty(toperand),
+                                                           soperand)),
+                    }
+                , soperand)))
+            }
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
                 self.get_operand(o1).and_then(0, |so1| self.get_operand(o2).and_then(1, |so2| {
-                    let signed_o2 = if o2.ty(self.mir, self.tcx).is_signed() { so2.clone() }
-                    else { format!("(int.of_nat {})", so2) };
+                    let to1 = o1.ty(self.mir, self.tcx);
+                    let to2 = o2.ty(self.mir, self.tcx);
+                    let checked_homogenous_binop = |name: &'static str| {
+                        assert!(to1 == to2);
+                        let name = if to1.is_signed() { format!("s{}", name) } else { name.to_string() };
+                        MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
+                    };
+                    let checked_shift = |name: &'static str| {
+                        let name = if to1.is_signed() { format!("s{}", name) } else { name.to_string() };
+                        let name = if to2.is_signed() { name + "s" } else { name.to_string() };
+                        MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
+                    };
                     match op {
-                        BinOp::Sub if !o1.ty(self.mir, self.tcx).is_signed() => MaybeValue::partial(format!("{} {} {}", "checked.sub", so1, so2)),
-                        BinOp::Div => MaybeValue::partial(format!("{} {} {}", "checked.div", so1, so2)),
-                        BinOp::Rem => MaybeValue::partial(format!("{} {} {}", "checked.mod", so1, so2)),
-                        BinOp::Shl => MaybeValue::partial(format!("{} {} {}", "checked.shl", so1, signed_o2)),
-                        BinOp::Shr => MaybeValue::partial(format!("{} {} {}", "checked.shr", so1, signed_o2)),
+                        BinOp::Add => checked_homogenous_binop("add"),
+                        BinOp::Sub => checked_homogenous_binop("sub"),
+                        BinOp::Div => checked_homogenous_binop("div"),
+                        BinOp::Rem => checked_homogenous_binop("rem"),
+                        BinOp::Shl => checked_shift("shl"),
+                        BinOp::Shr => checked_shift("shr"),
                         _ => MaybeValue::total(format!("{} {} {}", so1, match op {
-                            BinOp::Add => "+",
-                            BinOp::Mul => "*",
                             BinOp::Eq => "=ᵇ",
                             BinOp::Lt => "<ᵇ",
                             BinOp::Le => "≤ᵇ",

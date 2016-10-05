@@ -176,6 +176,11 @@ section
   | 0        (x::xs) y H := by injection H with Hxy; apply Hxy ▸ !mem_cons
   | (succ i) (x::xs) y H := by rewrite [↑nth at H]; apply mem_cons_of_mem x (mem_of_nth H)
 
+  theorem lt_length_of_nth : Π{i : ℕ} {xs : list A} {y : A}, nth xs i = some y → i < length xs
+  | _        []      _ H := by contradiction
+  | 0        (x::xs) y H := !zero_lt_succ
+  | (succ i) (x::xs) y H := succ_lt_succ (lt_length_of_nth (!nth_succ ▸ H))
+
   theorem nth_of_mem : Π{xs : list A} {y : A}, y ∈ xs → ∃i, nth xs i = some y
   | []      y H := by contradiction
   | (x::xs) y H := or.rec_on (eq_or_mem_of_mem_cons H)
@@ -577,7 +582,21 @@ decidable.rec
   (λ Hnc : ¬c,  absurd Hc Hnc)
   H
 
+lemma ite_prop {A : Type} {c : Prop} [decidable c] {t e : A} {p : A → Prop}
+  (ht : c → p t) (he : ¬c → p e) :
+  p (ite c t e) :=
+if h : c then by rewrite [if_pos h]; apply ht h
+else by rewrite [if_neg h]; apply he h
+
 namespace nat
+
+lemma le_pred_of_lt {a b : ℕ} (h : a < b) : a ≤ b - 1 :=
+begin
+  cases b,
+  { apply le_of_lt h },
+  { apply le_of_succ_le_succ h }
+end
+
 section
   open interval
   open set
@@ -701,8 +720,35 @@ section
   end
 
   notation `log₂` := log 2
+
 end
 end nat
+
+lemma nondecreasing_pow {A : Type} [linear_ordered_semiring A] {b : A} (hb : b ≥ 1) :
+  nondecreasing (pow_nat b) :=
+begin
+  intro x,
+  induction x with x ih, all_goals intro x' h,
+  { krewrite [pow_zero], apply !pow_ge_one hb },
+  { cases x',
+    { exfalso, apply lt_le_antisymm !zero_lt_succ h },
+    { rewrite [+pow_succ],
+      apply mul_le_mul_of_nonneg_left (ih (le_of_succ_le_succ h)) (le.trans zero_le_one hb) }
+  }
+end
+
+lemma strictly_increasing_pow {A : Type} [linear_ordered_semiring A] {b : A} (hb : b > 1) :
+  strictly_increasing (pow_nat b) :=
+begin
+  intro x,
+  induction x with x ih, all_goals intro x' h,
+  { krewrite [pow_zero], apply !pow_gt_one hb h },
+  { cases x',
+    { exfalso, apply lt_le_antisymm !zero_lt_succ h },
+    { rewrite [+pow_succ],
+      apply mul_lt_mul_of_pos_left (ih (le_of_succ_le_succ h)) (lt.trans zero_lt_one hb) }
+  }
+end
 
 lemma nat.self_sub_half_sub_one_le_half (n : ℕ) : n - n / 2 - 1 ≤ n / 2 :=
 begin

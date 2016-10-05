@@ -18,7 +18,8 @@ let' x ← (xₐ);
 let' y ← (yₐ);
 let' t0 ← (x);
 let' t1 ← (y);
-let' t2 ← (((t0) + (t1), true));
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.sadd i32.bits (t0) (t1));
+let' t2 ← «$tmp0»;
 let' ret ← ((t2).1);
 return (ret)
 

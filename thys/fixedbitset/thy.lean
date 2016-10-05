@@ -31,13 +31,30 @@ lemma div_rem_BITS (n : usize) : div_rem n BITS = some (n / BITS, n % BITS, 0) :
 attribute core.u32_as_Copy' [constructor]
 attribute core.marker.Copy'._trans_of_to_Copy [unfold 2]
 
-lemma with_capacity_inv (bits : usize) : sem.terminates_with FixedBitSet' (with_capacity bits) :=
+lemma with_capacity_inv (bits : usize) [is_usize bits] :
+  sem.terminates_with FixedBitSet' (with_capacity bits) :=
 obtain v k Hfrom_elem Hv, from
   sem.terminates_with_eq (from_elem_Copy_eq (0 : nat) (nat.div_ceil bits BITS)),
 begin
   rewrite [↑nat.div_ceil at Hfrom_elem],
   rewrite [↑with_capacity, div_rem_BITS, ↑bool_to_usize],
   krewrite [if_congr (bool.of_Prop_eq_tt_iff (0 < bits % BITS)) rfl rfl],
+  have bits / BITS + ite (0 < bits % BITS) 1 0 ≤ usize.max, from
+    have bits / BITS ≤ usize.max - 1, from
+      nat.div_le_of_le_mul (le.trans `is_usize bits` (calc
+        usize.max ≤ usize.max + (usize.max - 1 - 1) : le_add_right
+              ... = (usize.max - 1) + (usize.max - 1) : by
+                rewrite [-nat.add_sub_assoc (show usize.max - 1 ≥ 1, from
+                    nat.le_sub_of_add_le (le.trans dec_trivial usize.max_ge_u16_max)),
+                  add.comm, nat.add_sub_assoc usize.max_ge_1]
+              ... = (usize.max - 1) * 2    : by rewrite [mul.comm, two_mul]
+              ... ≤ (usize.max - 1) * BITS : nat.mul_le_mul !le.refl dec_trivial
+    )),
+    calc bits / BITS + ite (0 < bits % BITS) 1 0
+          ≤ usize.max - 1 + 1 : add_le_add this
+            (ite_prop (λ h, dec_trivial) (λ h, dec_trivial))
+      ... = usize.max : nat.sub_add_cancel usize.max_ge_1,
+  rewrite [if_pos this, ▸*],
   krewrite [Hfrom_elem],
   split,
   rewrite [▸*, Hv, list.length_replicate],
@@ -51,7 +68,7 @@ lemma bit_div_BITS_lt_data_length : bit / BITS < list.length (Vec.buf (data s)) 
 calc bit / BITS < nat.div_ceil (length s) BITS :
 begin
   cases decidable_lt 0 (length s % BITS) with Hrem Hnotrem,
-  { exact calc bit / BITS ≤ length s / BITS : nat.div_le_div _ (le_of_lt `bit < length s`)
+  { exact calc bit / BITS ≤ length s / BITS : nat.div_le_div _ (le_of_lt Hbit_lt)
                       ... < nat.div_ceil (length s) BITS : begin
       apply nat.lt_add_of_pos_right,
       krewrite [if_pos Hrem],
@@ -74,10 +91,12 @@ lemma contains.spec : sem.terminates_with (λ res,
 begin
   intro,
   rewrite [↑contains],
-  have BITS ≠ (0 : nat), from !nat.succ_ne_zero,
-  rewrite [↑div_rem, ↑checked.div, ↑checked.mod, +if_pos' this, ↑checked.shl],
+  
+  rewrite [↑div_rem,
+    +if_pos (show BITS ≠ (0 : nat), from !nat.succ_ne_zero)],
   rewrite [↑«collections.vec.Vec<T> as core.ops.Deref».deref, ↑«[T]».get,
     ↑«[T] as core.slice.SliceExt».get],
+  rewrite [checked.shl_1 (show bit % BITS < u32.bits, from !nat.mod_lt dec_trivial)],
   rewrite [+incr_incr],
   note H := bit_div_BITS_lt_data_length s bit Hbit_lt,
   krewrite [@if_congr _ _ _ _ !nat.decidable_lt _ _ _ _ (@bool.of_Prop_eq_tt_iff (bit / BITS < list.length (Vec.buf (FixedBitSet.data s))) !nat.decidable_lt) rfl rfl],
@@ -86,7 +105,6 @@ begin
   cases list.nth_eq_some H with b b_eq,
   rewrite [b_eq, ▸*],
   rewrite [▸*, ↑«&'a u32 as core.ops.BitAnd<u32>».bitand, ↑«u32 as core.ops.BitAnd».bitand],
-  krewrite [nat.one_mul],
 end
 
 section
@@ -106,9 +124,9 @@ begin
   by rewrite [!bool.bnot_of_Prop, bool.of_Prop_eq_tt_iff],
   rewrite [if_congr this rfl rfl, if_neg (not_not_intro `bit < length s`), ▸*],
   have BITS ≠ (0 : nat), from !nat.succ_ne_zero,
-  rewrite [↑div_rem, ↑checked.div, ↑checked.mod, +if_pos' this, ↑checked.shl],
+  rewrite [↑div_rem, +if_pos' this],
   rewrite [↑«collections.vec.Vec<T> as core.ops.DerefMut».deref_mut, ↑«[T]».get_unchecked_mut],
-  rewrite [+incr_incr],
+  rewrite [checked.shl_1 (show bit % BITS < u32.bits, from !nat.mod_lt dec_trivial)],
   note bit_valid := bit_div_BITS_lt_data_length s bit Hbit_lt,
   cases list.nth_eq_some bit_valid with b b_eq,
   rewrite [b_eq, ▸*],
@@ -152,7 +170,6 @@ begin
       cases (_ : decidable (bit' = bit)),
       { rewrite [`bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
           iff_true],
-        krewrite one_mul,
         rewrite [bitwise.and_or_self],
         intro contr,
         apply nat.no_confusion (nat.eq_zero_of_pow_eq_zero contr)
