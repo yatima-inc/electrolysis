@@ -31,19 +31,19 @@ structure iter.iterator.Iterator [class] (Self : Type₁) (Item : Type₁) :=
 definition «[T] as core.slice.SliceExt».get {T : Type₁} (selfₐ : (slice T)) (indexₐ : usize) : sem ((option.Option T)) :=
 let' self ← (selfₐ);
 let' index ← (indexₐ);
-let' t1 ← (index);
-let' t3 ← (self);
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t3);
-let' t2 ← «$tmp»;
-let' t0 ← ((t1) <ᵇ (t2));
-if (t0) = bool.tt then
 let' t6 ← (index);
-let' t7 ← (list.length (self));
-let' t8 ← ((t6) <ᵇ (t7));
-do «$tmp0» ← «[T] as core.slice.SliceExt».get_unchecked (self) (t6);
-let' t5 ← «$tmp0»;
-let' t4 ← (t5);
-let' ret ← (option.Option.Some (t4));
+let' t8 ← (self);
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t8);
+let' t7 ← «$tmp»;
+let' t5 ← ((t6) <ᵇ (t7));
+if (t5) = bool.tt then
+let' t11 ← (index);
+let' t12 ← (list.length (self));
+let' t13 ← ((t11) <ᵇ (t12));
+do «$tmp0» ← «[T] as core.slice.SliceExt».get_unchecked (self) (t11);
+let' t10 ← «$tmp0»;
+let' t9 ← (t10);
+let' ret ← (option.Option.Some (t9));
 return (ret)
 else
 let' ret ← (option.Option.None);
@@ -61,12 +61,12 @@ definition cmp.Ordering.discr (self : cmp.Ordering) : isize := match self with
 | cmp.Ordering.Greater := 1
 end
 
-structure ops.RangeFrom (Idx : Type₁) := mk {} ::
-(start : Idx)
-
 inductive result.Result (T : Type₁) (E : Type₁) :=
 | Ok {} : T → result.Result T E
 | Err {} : E → result.Result T E
+
+structure ops.RangeFrom (Idx : Type₁) := mk {} ::
+(start : Idx)
 
 structure ops.RangeTo (Idx : Type₁) := mk {} ::
 («end» : Idx)
@@ -95,53 +95,53 @@ else mzero
 definition «[T] as core.ops.Index<core.ops.RangeTo<usize>>».index {T : Type₁} (selfₐ : (slice T)) (indexₐ : (ops.RangeTo usize)) : sem ((slice T)) :=
 let' self ← (selfₐ);
 let' index ← (indexₐ);
-let' t1 ← (self);
-let' t3 ← ((0 : nat));
-let' t5 ← ((ops.RangeTo.«end» (index)));
-let' t4 ← (t5);
-let' t2 ← (ops.Range.mk (t3) (t4));
-dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t1) (t2);
-let' t0 ← «$tmp»;
-let' ret ← (t0);
+let' t6 ← (self);
+let' t8 ← ((0 : nat));
+let' t10 ← ((ops.RangeTo.«end» (index)));
+let' t9 ← (t10);
+let' t7 ← (ops.Range.mk (t8) (t9));
+dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t6) (t7);
+let' t5 ← «$tmp»;
+let' ret ← (t5);
 return (ret)
 
 
 definition «[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index {T : Type₁} (selfₐ : (slice T)) (indexₐ : (ops.RangeFrom usize)) : sem ((slice T)) :=
 let' self ← (selfₐ);
 let' index ← (indexₐ);
-let' t1 ← (self);
-let' t4 ← ((ops.RangeFrom.start (index)));
-let' t3 ← (t4);
 let' t6 ← (self);
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t6);
+let' t9 ← ((ops.RangeFrom.start (index)));
+let' t8 ← (t9);
+let' t11 ← (self);
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t11);
+let' t10 ← «$tmp»;
+let' t7 ← (ops.Range.mk (t8) (t10));
+dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t6) (t7);
 let' t5 ← «$tmp»;
-let' t2 ← (ops.Range.mk (t3) (t5));
-dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.Range<usize>>».index _ (t1) (t2);
-let' t0 ← «$tmp»;
-let' ret ← (t0);
+let' ret ← (t5);
 return (ret)
 
 
 definition «[T] as core.slice.SliceExt».split_at {T : Type₁} (selfₐ : (slice T)) (midₐ : usize) : sem (((slice T) × (slice T))) :=
 let' self ← (selfₐ);
 let' mid ← (midₐ);
-let' t3 ← (self);
-let' t6 ← (mid);
+let' t8 ← (self);
+let' t11 ← (mid);
+let' t10 ← (t11);
+let' t9 ← (ops.RangeTo.mk (t10));
+dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.RangeTo<usize>>».index _ (t8) (t9);
+let' t7 ← «$tmp»;
+let' t6 ← (t7);
 let' t5 ← (t6);
-let' t4 ← (ops.RangeTo.mk (t5));
-dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.RangeTo<usize>>».index _ (t3) (t4);
-let' t2 ← «$tmp»;
-let' t1 ← (t2);
-let' t0 ← (t1);
-let' t10 ← (self);
-let' t13 ← (mid);
+let' t15 ← (self);
+let' t18 ← (mid);
+let' t17 ← (t18);
+let' t16 ← (ops.RangeFrom.mk (t17));
+dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ (t15) (t16);
+let' t14 ← «$tmp»;
+let' t13 ← (t14);
 let' t12 ← (t13);
-let' t11 ← (ops.RangeFrom.mk (t12));
-dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ (t10) (t11);
-let' t9 ← «$tmp»;
-let' t8 ← (t9);
-let' t7 ← (t8);
-let' ret ← (((t0), (t7)));
+let' ret ← (((t5), (t12)));
 return (ret)
 
 
@@ -155,10 +155,10 @@ definition «[T] as core.slice.SliceExt» [instance] (T : Type₁) := ⦃
 
 definition slice.SliceExt.is_empty {Self : Type₁} (Item : Type₁) [«slice.SliceExt Self» : slice.SliceExt Self Item] (selfₐ : Self) : sem (bool) :=
 let' self ← (selfₐ);
-let' t1 ← (self);
-dostep «$tmp» ← @slice.SliceExt.len _ _ «slice.SliceExt Self» (t1);
-let' t0 ← «$tmp»;
-let' ret ← ((t0) =ᵇ ((0 : nat)));
+let' t4 ← (self);
+dostep «$tmp» ← @slice.SliceExt.len _ _ «slice.SliceExt Self» (t4);
+let' t3 ← «$tmp»;
+let' ret ← ((t3) =ᵇ ((0 : nat)));
 return (ret)
 
 
@@ -169,67 +169,67 @@ parameters (selfₐ : (slice T)) (fₐ : F)
 
 definition «[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((result.Result usize usize))) :=
 match state__ with (f, base, s) :=
-let' t4 ← (s);
-let' t7 ← (s);
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t7);
-let' t6 ← «$tmp»;
-do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shrs usize.bits (t6) ((1 : int)));
-let' t8 ← «$tmp0»;
-let' t5 ← ((t8).1);
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».split_at _ (t4) (t5);
-let' t3 ← «$tmp»;
-let' head ← ((t3).1);
-let' tail ← ((t3).2);
-let' t11 ← (tail);
-dostep «$tmp» ← @slice.SliceExt.is_empty _ _ («[T] as core.slice.SliceExt» T) (t11);
-let' t10 ← «$tmp»;
-if (t10) = bool.tt then
-do tmp__ ← let' t13 ← (base);
-let' ret ← (result.Result.Err (t13));
+let' t13 ← (s);
+let' t16 ← (s);
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t16);
+let' t15 ← «$tmp»;
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shrs usize.bits (t15) ((1 : int)));
+let' t17 ← «$tmp0»;
+let' t14 ← ((t17).1);
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».split_at _ (t13) (t14);
+let' t12 ← «$tmp»;
+let' head ← ((t12).1);
+let' tail ← ((t12).2);
+let' t20 ← (tail);
+dostep «$tmp» ← @slice.SliceExt.is_empty _ _ («[T] as core.slice.SliceExt» T) (t20);
+let' t19 ← «$tmp»;
+if (t19) = bool.tt then
+do tmp__ ← let' t22 ← (base);
+let' ret ← (result.Result.Err (t22));
 return (ret)
 ;
 return (sum.inr tmp__)else
-let' t9 ← (⋆);
-let' t15 ← lens.id;
-let' t19 ← (list.length (tail));
-let' t20 ← (((0 : nat)) <ᵇ (t19));
+let' t18 ← (⋆);
+let' t24 ← lens.id;
+let' t28 ← (list.length (tail));
+let' t29 ← (((0 : nat)) <ᵇ (t28));
 do «$tmp0» ← «[T] as core.slice.SliceExt».get_unchecked (tail) ((0 : nat));
-let' t18 ← «$tmp0»;
-let' t17 ← (t18);
-let' t16 ← (((t17)));
-do «$tmp0» ← lens.get (t15) f;
-dostep «$tmp» ← @ops.FnMut.call_mut _ _ _ «ops.FnMut F (T)» «$tmp0» (t16);
-match «$tmp» with (t14, «t15$») :=
-do f ← lens.set t15 f «t15$»;
-match t14 with
-| cmp.Ordering.Less :=
-let' t23 ← (head);
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t23);
-let' t22 ← «$tmp»;
-do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits (t22) ((1 : nat)));
-let' t24 ← «$tmp0»;
-let' t21 ← ((t24).1);
-do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits (base) (t21));
-let' t25 ← «$tmp0»;
-let' base ← ((t25).1);
-let' t28 ← (tail);
-let' t30 ← ((1 : nat));
-let' t29 ← (ops.RangeFrom.mk (t30));
-dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ (t28) (t29);
-let' t27 ← «$tmp»;
+let' t27 ← «$tmp0»;
 let' t26 ← (t27);
-let' s ← (t26);
-let' t0 ← (⋆);
+let' t25 ← (((t26)));
+do «$tmp0» ← lens.get (t24) (f);
+dostep «$tmp» ← @ops.FnMut.call_mut _ _ _ «ops.FnMut F (T)» «$tmp0» (t25);
+match «$tmp» with (t23, «t24$») :=
+do (f) ← lens.set (t24) (f) «t24$»;
+match t23 with
+| cmp.Ordering.Less :=
+let' t32 ← (head);
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t32);
+let' t31 ← «$tmp»;
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits (t31) ((1 : nat)));
+let' t33 ← «$tmp0»;
+let' t30 ← ((t33).1);
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits (base) (t30));
+let' t34 ← «$tmp0»;
+let' base ← ((t34).1);
+let' t37 ← (tail);
+let' t39 ← ((1 : nat));
+let' t38 ← (ops.RangeFrom.mk (t39));
+dostep «$tmp» ← @«[T] as core.ops.Index<core.ops.RangeFrom<usize>>».index _ (t37) (t38);
+let' t36 ← «$tmp»;
+let' t35 ← (t36);
+let' s ← (t35);
+let' t6 ← (⋆);
 return (sum.inl (f, base, s))
  | cmp.Ordering.Equal :=
-do tmp__ ← let' t33 ← (base);
-let' t35 ← (head);
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t35);
-let' t34 ← «$tmp»;
-do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits (t33) (t34));
-let' t36 ← «$tmp0»;
-let' t32 ← ((t36).1);
-let' ret ← (result.Result.Ok (t32));
+do tmp__ ← let' t42 ← (base);
+let' t44 ← (head);
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».len _ (t44);
+let' t43 ← «$tmp»;
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits (t42) (t43));
+let' t45 ← «$tmp0»;
+let' t41 ← ((t45).1);
+let' ret ← (result.Result.Ok (t41));
 return (ret)
 ;
 return (sum.inr tmp__) | cmp.Ordering.Greater :=
@@ -244,8 +244,8 @@ definition «[T] as core.slice.SliceExt».binary_search_by : sem ((result.Result
 let' self ← (selfₐ);
 let' f ← (fₐ);
 let' base ← ((0 : nat));
-let' t1 ← (self);
-let' s ← (t1);
+let' t8 ← (self);
+let' s ← (t8);
 loop («[T] as core.slice.SliceExt».binary_search_by.loop_4) (f, base, s)
 end
 
@@ -263,15 +263,15 @@ structure cmp.Ord [class] (Self : Type₁)  extends cmp.Eq Self, cmp.PartialOrd 
 definition «[T] as core.slice.SliceExt».binary_search {T : Type₁} [«cmp.Ord T» : cmp.Ord T] (selfₐ : (slice T)) (xₐ : T) : sem ((result.Result usize usize)) :=
 let' self ← (selfₐ);
 let' x ← (xₐ);
-let' t0 ← (self);
-let' t2 ← (x);
-let' t1 ← ((λ upvarsₐ pₐ, let' p ← (pₐ);
-let' t0 ← (p);
-let' t1 ← ((upvarsₐ));
-dostep «$tmp» ← @cmp.Ord.cmp _ «cmp.Ord T» (t0) (t1);
+let' t5 ← (self);
+let' t7 ← (x);
+let' t6 ← ((λ upvarsₐ pₐ, let' p ← (pₐ);
+let' t4 ← (p);
+let' t5 ← ((a1));
+dostep «$tmp» ← @cmp.Ord.cmp _ «cmp.Ord T» (t4) (t5);
 let' ret ← «$tmp»;
-return ret) (t2));
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».binary_search_by _ _ fn (t0) (t1);
+return ret) (t7));
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».binary_search_by _ _ fn (t5) (t6);
 let' ret ← «$tmp»;
 return (ret)
 
@@ -282,18 +282,18 @@ structure ops.BitAnd [class] (Self : Type₁) (RHS : Type₁) (Output : Type₁)
 definition «u32 as core.ops.BitAnd».bitand (selfₐ : u32) (rhsₐ : u32) : sem (u32) :=
 let' self ← (selfₐ);
 let' rhs ← (rhsₐ);
-let' t0 ← (self);
-let' t1 ← (rhs);
-let' ret ← ((t0) && (t1));
+let' t5 ← (self);
+let' t6 ← (rhs);
+let' ret ← (bitand u32.bits (t5) (t6));
 return (ret)
 
 
 definition «&'a u32 as core.ops.BitAnd<u32>».bitand (selfₐ : u32) (otherₐ : u32) : sem (u32) :=
 let' self ← (selfₐ);
 let' other ← (otherₐ);
-let' t0 ← (self);
-let' t1 ← (other);
-dostep «$tmp» ← @«u32 as core.ops.BitAnd».bitand (t0) (t1);
+let' t5 ← (self);
+let' t6 ← (other);
+dostep «$tmp» ← @«u32 as core.ops.BitAnd».bitand (t5) (t6);
 let' ret ← «$tmp»;
 return (ret)
 
@@ -305,8 +305,8 @@ definition «&'a u32 as core.ops.BitAnd<u32>» [instance] := ⦃
 
 definition «u32 as core.clone.Clone».clone (selfₐ : u32) : sem (u32) :=
 let' self ← (selfₐ);
-let' t0 ← (self);
-let' ret ← (t0);
+let' t3 ← (self);
+let' ret ← (t3);
 return (ret)
 
 

@@ -6,6 +6,7 @@ use itertools::Itertools;
 
 use syntax::ast::{self, NodeId};
 use rustc::hir::{self, FnDecl, PatKind};
+use rustc::hir::def::CtorKind;
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::*;
@@ -283,8 +284,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_struct(&self, variant: ty::VariantDef<'tcx>) -> String {
-        match variant.kind {
-            ty::VariantKind::Struct => {
+        match variant.ctor_kind {
+            CtorKind::Fictive => { // actual (non-fictive) struct
                 let mut fields = variant.fields.iter().map(|f| {
                     format!("({} : {})", self.mk_lean_name(&*f.name.as_str()), self.transpile_ty(f.unsubst_ty()))
                 });
@@ -292,7 +293,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                         self.as_generic_ty_def(None),
                         fields.join("\n"))
             }
-            ty::VariantKind::Tuple => {
+            CtorKind::Fn => { // tuple struct
                 let mut fields = variant.fields.iter().map(|f| {
                     self.transpile_ty(f.unsubst_ty())
                 });
@@ -302,7 +303,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                         fields.join(" → "),
                         applied_ty)
             }
-            ty::VariantKind::Unit =>
+            CtorKind::Const => // unit struct
                 format!("structure {} := mk {{}} ::",
                         self.as_generic_ty_def(None)),
         }
@@ -312,10 +313,10 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let generics = adt_def.type_scheme(self.tcx).generics;
         let applied_ty = (name, generics.types.iter().map(|p| p.name.as_str().to_string())).join(" ");
         let mut variants = adt_def.variants.iter().map(|variant| {
-            match variant.kind {
-                ty::VariantKind::Unit =>
+            match variant.ctor_kind {
+                CtorKind::Const => // unit variant
                     format!("| {} {{}} : {}", variant.name, applied_ty),
-                ty::VariantKind::Tuple => {
+                CtorKind::Fn => { // tuple variant
                     let fields = variant.fields.iter().map(|f| {
                         self.transpile_ty(f.unsubst_ty())
                     });
@@ -325,8 +326,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 ref data => panic!("unimplemented: enum variant {:?}", data)
             }
         });
-        // if no variants have data attached, add a function to extrac the discriminant
-        let discr = if adt_def.variants.iter().all(|variant| variant.kind == ty::VariantKind::Unit) {
+        // if no variants have data attached, add a function to extract the discriminant
+        let discr = if adt_def.variants.iter().all(|variant| variant.ctor_kind == CtorKind::Const) {
             let discrs = adt_def.variants.iter().map(|variant| {
                 format!("| {}.{} := {}", name, variant.name,
                         variant.disr_val.to_u64_unchecked() as i64)
