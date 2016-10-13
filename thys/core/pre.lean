@@ -10,6 +10,7 @@ open function
 open list
 open nat
 open option
+open prod.ops
 
 structure lens (Outer Inner : Type₁) :=
 (get : Outer → sem Inner)
@@ -177,17 +178,14 @@ namespace core
     structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
     (call_once : Self → Args → sem Output)
 
-    -- easy without mutable closures
-    abbreviation FnMut [parsing_only] := FnOnce
-    abbreviation Fn := FnOnce
+    structure FnMut [class] (Self : Type₁) (Args : Type₁) (Output : Type₁)
+      extends FnOnce Self Args Output :=
+    (call_mut : Self → Args → sem (Output × Self))
 
-    definition FnMut.call_mut [unfold_full] (Args : Type₁) (Self : Type₁) (Output : Type₁)
-      [FnOnce : FnOnce Self Args Output] : Self → Args → sem (Output × Self) := λself x,
-      do y ← @FnOnce.call_once Self Args Output FnOnce self x;
-      return (y, self)
-
+    abbreviation Fn := FnMut
     definition Fn.call (Self : Type₁) (Args : Type₁) (Output : Type₁)
-      [FnMut : FnMut Self Args Output] : Self → Args → sem Output := FnOnce.call_once Output
+      [FnMut : FnMut Self Args Output] : Self → Args → sem Output :=
+    FnOnce.call_once Output
   end ops
 end core
 
@@ -195,6 +193,12 @@ open core.ops
 
 definition fn [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce,
   call_once := id
+⦄
+
+-- only immutable closures for now
+definition fn_mut [instance] {A B : Type₁} : FnMut (A → sem (B × A)) A B := ⦃FnMut,
+  call_once := λ f a, do p ← f a; return p.1,
+  call_mut := λ f a, do p ← f a; return (p.1, f)
 ⦄
 
 notation `let'` binder ` ← ` x `; ` r:(scoped f, f x) := r

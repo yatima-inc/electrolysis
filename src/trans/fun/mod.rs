@@ -140,8 +140,6 @@ impl MaybeValue {
 #[derive(Clone)]
 pub struct FnTranspiler<'a, 'tcx: 'a> {
     sup: &'a item::ItemTranspiler<'a, 'tcx>,
-    param_names: Vec<String>,
-    return_expr: String,
     mir: &'a Mir<'tcx>,
     // helper definitions to be prepended to the translation
     prelude: Vec<String>,
@@ -157,12 +155,10 @@ impl<'a, 'tcx> Deref for FnTranspiler<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
-    pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>, param_names: Vec<String>, return_expr: String) -> FnTranspiler<'a, 'tcx> {
+    pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>) -> FnTranspiler<'a, 'tcx> {
         FnTranspiler {
             sup: sup,
             mir: &sup.mir_map.map[&sup.def_id],
-            param_names: param_names,
-            return_expr: return_expr,
             prelude: Default::default(),
             refs: Default::default(),
         }
@@ -179,6 +175,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             },
             LocalKind::ReturnPointer => "ret".to_string(),
         }
+    }
+
+    fn param_names(&self) -> ::std::vec::IntoIter<String> {
+        self.mir.args_iter().map(|l| self.local_name(l)).collect_vec().into_iter()
     }
 
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
@@ -443,23 +443,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 if upvars.iter().any(|lv| krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).map(|_| lv).is_some()) {
                     panic!("unimplemented: mutable capturing closure")
                 }
-                let decl = match self.tcx.map.expect_expr(self.tcx.map.as_local_node_id(def_id).unwrap()).node {
-                    hir::Expr_::ExprClosure(_, ref decl, _, _) => decl,
-                    _ => unreachable!(),
-                };
-                let param_names = iter::once("upvars".to_string()).chain(
-                    decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-                        hir::PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, _) => self.mk_lean_name(&*name.node.as_str()),
-                        _ => format!("p{}", i),
-                })).collect();
                 let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
-                let mut trans = FnTranspiler::new(&trans, param_names, "return ret".to_string());
+                let mut trans = FnTranspiler::new(&trans);
                 let body = trans.transpile_mir();
                 self.prelude.append(&mut trans.prelude);
                 MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)), |upvars| {
                     MaybeValue::total(format!(
                         "(λ {}, {}) {}",
-                        trans.param_names.iter().map(|n| n.clone() + "ₐ").join(" "),
+                        trans.param_names().join(" "),
                         body,
                         mk_tuple(upvars.into_iter())))
                 })
@@ -661,6 +652,24 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
+    fn return_expr(&self) -> String {
+        use rustc::hir::map::Node;
+        use rustc::hir::Item_;
+        let node = self.tcx.map.get(self.node_id());
+        match node {
+            Node::NodeItem(item) => match item.node {
+                Item_::ItemStatic(..) | Item_::ItemConst(..) =>
+                    return "ret".to_string(), // no monad inside constants
+                _ => {}
+            },
+            _ => {}
+        }
+        let mut_args = self.mir.args_iter().filter_map(|arg| {
+            krate::try_unwrap_mut_ref(self.mir.local_decls[arg].ty).map(|_| self.local_name(arg))
+        });
+        format!("return ({})\n", ("ret", mut_args).join(", "))
+    }
+
     fn transpile_basic_block(&mut self, bb: BasicBlock, comp: &Component) -> String {
         macro_rules! rec { ($bb:expr) => { self.transpile_basic_block_rec($bb, comp) } }
         use rustc::mir::repr::TerminatorKind::*;
@@ -705,7 +714,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         "if {} = bool.tt then\n{}else\n{}", cond,
                         rec!(bb_if),
                         rec!(bb_else))),
-                Return => self.return_expr.clone(),
+                Return => self.return_expr(),
                 Call { ref func, ref args, destination: Some((_, target)), ..  } => {
                     MaybeValue::map_multi(0, args.iter().map(|op| {
                         if let Operand::Consume(ref lv) = *op {
@@ -797,8 +806,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             return "".to_string()
         }
 
-        let params = self.param_names.iter().zip(self.mir.args_iter()).map(|(name, arg)| {
-            format!("({}ₐ : {})", name, self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty)))
+        let params = self.mir.args_iter().map(|arg| {
+            format!("({} : {})", self.local_name(arg), self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty)))
         }).collect_vec();
 
         let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {

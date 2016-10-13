@@ -5,7 +5,7 @@ use std::ops::Deref;
 use itertools::Itertools;
 
 use syntax::ast::{self, NodeId};
-use rustc::hir::{self, FnDecl, PatKind};
+use rustc::hir;
 use rustc::hir::def::CtorKind;
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::{Subst, Substs};
@@ -267,8 +267,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             }
             Vtable::VtableClosure(_) => {
                 TraitImplLookup::Dynamic {
-                    // global instance in core/pre.lean
-                    param: "fn".to_string()
+                    // global instances in core/pre.lean
+                    param: "_".to_string()
                 }
             },
             vtable => throw!("unimplemented: vtable {:?}", vtable),
@@ -346,7 +346,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         format!("definition {} : {} :=\n{}",
                 krate::name_def_id(self.tcx, self.def_id),
                 self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty),
-                ::trans::fun::FnTranspiler::new(self, vec![], "ret".to_string()).transpile_mir())
+                ::trans::fun::FnTranspiler::new(self).transpile_mir())
     }
 
     fn transpile_associated_types(&self, def_id: DefId) -> Vec<String> {
@@ -447,20 +447,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 (self.transpile_trait_ref(trait_ref, &assoc_ty_substs), supertrait_impls.into_iter().chain(items)).join(",\n  "))
     }
 
-    fn transpile_fn(&self, name: String, decl: &FnDecl) -> String {
-        let param_names = decl.inputs.iter().enumerate().map(|(i, param)| match param.pat.node {
-            PatKind::Binding(hir::BindingMode::BindByValue(_), ref name, None) => self.mk_lean_name(&*name.node.as_str()),
-            _ => format!("p{}", i),
-        }).collect_vec();
-        let return_expr = {
-            let sig = self.tcx.lookup_item_type(self.def_id).ty.fn_sig().skip_binder();
-            let muts = sig.inputs.iter().zip(param_names.iter()).filter_map(|(ty, name)| {
-                krate::try_unwrap_mut_ref(ty).map(|_| name.clone() + "ₐ")
-            });
-            format!("return ({})\n", ("ret", muts).join(", "))
-        };
-
-        ::trans::fun::FnTranspiler::new(self, param_names, return_expr).transpile_fn(name)
+    fn transpile_fn(&self, name: String) -> String {
+        ::trans::fun::FnTranspiler::new(self).transpile_fn(name)
     }
 
     pub fn transpile_def_id(&self) -> Option<String> {
@@ -508,13 +496,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     format!("definition {} := {}",
                             self.as_generic_ty_def(None),
                             self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty)),
-                Item_::ItemFn(ref decl, ..) =>
-                    self.transpile_fn(name, decl),
+                Item_::ItemFn(..) =>
+                    self.transpile_fn(name),
                 Item_::ItemUnion(..) => panic!("unimplemented: {:?}", node),
             },
-            Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(ref sig, Some(_)), .. })
-            | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(ref sig, _), ..}) =>
-                self.transpile_fn(name, &*sig.decl),
+            Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(_, Some(_)), .. })
+            | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(..), ..}) =>
+                self.transpile_fn(name),
             Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) | Node::NodeExpr(..) =>
                 return None,
             _ => panic!("unimplemented: {:?}", node),

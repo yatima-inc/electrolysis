@@ -265,13 +265,14 @@ let' self ← (selfₐ);
 let' x ← (xₐ);
 let' t5 ← (self);
 let' t7 ← (x);
-let' t6 ← ((λ upvarsₐ pₐ, let' p ← (pₐ);
+let' t6 ← ((λ a1 pₐ, let' p ← (pₐ);
 let' t4 ← (p);
 let' t5 ← ((a1));
 dostep «$tmp» ← @cmp.Ord.cmp _ «cmp.Ord T» (t4) (t5);
 let' ret ← «$tmp»;
-return ret) (t7));
-dostep «$tmp» ← @«[T] as core.slice.SliceExt».binary_search_by _ _ fn (t5) (t6);
+return (ret, a1)
+) (t7));
+dostep «$tmp» ← @«[T] as core.slice.SliceExt».binary_search_by _ _ _ (t5) (t6);
 let' ret ← «$tmp»;
 return (ret)
 
