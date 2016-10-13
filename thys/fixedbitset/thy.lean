@@ -22,6 +22,7 @@ eval
 attribute bool.bnot [unfold 1]
 
 attribute sem [reducible]
+attribute BITS [reducible]
 
 structure FixedBitSet' [class] (self : FixedBitSet) : Prop :=
 (length_eq : nat.div_ceil (length self) BITS = list.length (Vec.buf (data self)))
@@ -41,7 +42,7 @@ begin
   krewrite [if_congr (bool.of_Prop_eq_tt_iff (0 < bits % BITS)) rfl rfl],
   have bits / BITS + ite (0 < bits % BITS) 1 0 ≤ usize.max, from
     have bits / BITS ≤ usize.max - 1, from
-      nat.div_le_of_le_mul (le.trans `is_usize bits` (calc
+      nat.div_le_of_le_mul (le.trans (le_pred_of_lt `is_usize bits`) (calc
         usize.max ≤ usize.max + (usize.max - 1 - 1) : le_add_right
               ... = (usize.max - 1) + (usize.max - 1) : by
                 rewrite [-nat.add_sub_assoc (show usize.max - 1 ≥ 1, from
@@ -85,7 +86,7 @@ end
   ... = list.length (Vec.buf (data s)) : FixedBitSet'.length_eq s
 
 lemma contains.spec : sem.terminates_with (λ res,
-    option.any (λ b : u32, res = (b && 2 ^ (bit % BITS) ≠ᵇ 0))
+    option.any (λ b : u32, res = (b &&[32] 2 ^ (bit % BITS) ≠ᵇ 0))
       (list.nth (Vec.buf (FixedBitSet.data s)) (bit / BITS))
   ) (contains s bit) :=
 begin
@@ -118,6 +119,8 @@ lemma insert.spec :
     let s' := ret.2 in
     ∃ (h : FixedBitSet' s'), to_set s' = to_set s ∪ '{bit})
   (insert s bit) :=
+have is_bounded_nat BITS (2^(bit % BITS)), from
+  strictly_increasing_pow dec_trivial (!mod_lt dec_trivial),
 begin
   intro, rewrite [↑insert],
   have bool.bnot (bit <ᵇ FixedBitSet.length s) = bool.tt ↔ ¬(bit < length s),
@@ -170,12 +173,18 @@ begin
       cases (_ : decidable (bit' = bit)),
       { rewrite [`bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
           iff_true],
-        rewrite [bitwise.and_or_self],
-        intro contr,
-        apply nat.no_confusion (nat.eq_zero_of_pow_eq_zero contr)
+        rewrite [bitand_bitor_cancel],
+        apply not_imp_not_of_imp eq_zero_of_pow_eq_zero,
+        contradiction
       },
-      { rewrite [iff_false_intro `bit' ≠ bit`, or_false],
-        apply sorry }
+      { have bit % BITS ≠ bit' % BITS, begin
+          revert a, apply not_imp_not_of_imp, intro h,
+          rewrite [eq_div_mul_add_mod bit BITS, eq_div_mul_add_mod bit' BITS, h, same_blk],
+        end,
+        rewrite [iff_false_intro `bit' ≠ bit`, +bool.of_Prop_eq_tt_iff, bitand_bitor_distrib_right,
+          !bitand_disj_pow this, bitor_zero],
+        apply iff.symm !or_false
+      }
     },
     { rewrite [if_neg dif_blk at H],
       injection H with H,

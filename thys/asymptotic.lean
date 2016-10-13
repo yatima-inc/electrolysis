@@ -68,7 +68,7 @@ namespace asymptotic
                          ... ≤ (c₂ + 1) * g a     : mul_le_mul_right _ !le_succ,
       le_of_mul_le_mul_left this !zero_lt_succ)
 
-    lemma le_of_lt : lt f g → le f g :=
+    protected lemma le_of_lt : lt f g → le f g :=
     take Hf,
     have {a | 1 * f a ≤ g a} = {a | f a ≤ 1 * g a}, by rewrite [funext (λa, one_mul _) ],
     exists.intro 1 (this ▸ Hf 1)

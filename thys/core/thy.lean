@@ -31,14 +31,21 @@ attribute sem [reducible]
 definition is_slice [class] {T : Type₁} (xs : slice T) :=
 length xs ≤ usize.max
 
-definition is_usize [class] (x : usize) :=
-x ≤ usize.max
+definition is_bounded_nat [class] (bits x : ℕ) :=
+x < 2^bits
+abbreviation is_usize := is_bounded_nat usize.bits
 
-definition div_is_usize [instance] (x y : usize) [is_usize x] : is_usize (x / y) :=
-le.trans !nat.div_le_self `is_usize x`
+lemma bitvec.of_is_bounded_nat [instance] (bits : ℕ) (v : bitvec bits) :
+  is_bounded_nat bits (bitvec.to ℕ v) :=
+!bitvec.to_lt
 
-definition mod_is_usize [instance] (x y : usize) [is_usize x] : is_usize (x % y) :=
-le.trans !nat.mod_le `is_usize x`
+lemma div_is_bounded_nat [instance] (bits x y : ℕ) [h : is_bounded_nat bits x] :
+  is_bounded_nat bits (x / y) :=
+lt_of_le_of_lt !nat.div_le_self h
+
+lemma mod_is_bounded_nat [instance] (bits x y : ℕ) [h : is_bounded_nat bits x] :
+  is_bounded_nat bits (x % y) :=
+lt_of_le_of_lt !nat.mod_le h
 
 lemma usize.max_ge_u16_max : usize.max ≥ u16.max :=
 begin
@@ -49,11 +56,50 @@ end
 
 lemma usize.max_ge_1 : usize.max ≥ 1 := le.trans dec_trivial usize.max_ge_u16_max
 
+section bitwise
+open bitvec
+
+lemma bitand_bitor_distrib_right (bits x y z : ℕ) :
+  (x ||[bits] y) &&[bits] z = (x &&[bits] z) ||[bits] (y &&[bits] z) :=
+by rewrite [↑bitor, ↑bitand, +bitvec.of_to, bitvec.and_or_distrib_right]
+
+lemma bitand_self (bits x : ℕ) [h : is_bounded_nat bits x] : bitand bits x x = x :=
+by rewrite [↑bitand, bitvec.and_self, bitvec.to_of h]
+
+lemma bitand_bitor_cancel (bits x y : ℕ) [h : is_bounded_nat bits y] :
+  bitand bits (bitor bits x y) y = y :=
+by rewrite [↑bitor, ↑bitand, +bitvec.of_to, bitvec.and_or_cancel, bitvec.to_of h]
+
+lemma bitand_disj_pow (bits x y : ℕ) (h : x ≠ y) : bitand bits (2^x) (2^y) = 0 := sorry
+
+lemma bitor_zero (bits x : ℕ) [h : is_bounded_nat bits x] : bitor bits x 0 = x :=
+begin
+  rewrite [↑bitor, bitvec.of_zero, bitvec.or_zero, bitvec.to_of h]
+end
+
+-- make all tuples collapse to lists
+attribute tuple.nil [constructor]
+attribute tuple.replicate [constructor]
+attribute tuple.cons [unfold 4]
+attribute tuple.append [unfold 4 5]
+attribute tuple.firstn [unfold 4]
+attribute tuple.dropn [unfold 4]
+attribute tuple.to_list [unfold 3]
+
+attribute list.append [unfold 2]
+
 lemma checked.shl_1 {bits : ℕ} {y : u32} (h : y < bits) : checked.shl bits 1 y = return (2^y) :=
-have hpow : (2:ℕ)^y < 2^bits, from strictly_increasing_pow (show 2 > 1, from dec_trivial) h,
-by rewrite [if_pos h,
-    nat.one_mul,
-    if_pos (show 2^y ≤ unsigned.max bits, from le_pred_of_lt hpow)]
+begin
+  cases bits with bits,
+  { exfalso, apply !not_lt_zero h },
+  { rewrite [if_pos h, ↑shl, of_one, ↑bitvec.to, list.dropn_append
+      (show length (replicate bits ff) ≥ y, by rewrite [length_replicate]; apply le_of_lt_succ h),
+      list.dropn_replicate, append.assoc, bitsTo_append, ▸*, bitsTo_cons, +bitsTo_replicate_ff,
+      length_replicate, min_eq_right (le_of_lt h)],
+    simp }
+end
+
+end bitwise
 
 namespace core
 

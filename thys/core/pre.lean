@@ -1,16 +1,18 @@
 import data.nat data.list
 import theories.topology.limit
-import bitwise
+import bitvec
 import loop_combinator
 
 
 open bool
 open int
-open function
 open list
 open nat
 open option
 open prod.ops
+
+infixr ∘ := function.comp
+notation f ` $ `:1 x:0 := f x
 
 structure lens (Outer Inner : Type₁) :=
 (get : Outer → sem Inner)
@@ -83,10 +85,10 @@ abbreviation isize [parsing_only] := int
 
 abbreviation slice [parsing_only] := list
 
-definition u8.bits : ℕ := 8
-definition u16.bits : ℕ := 16
-definition u32.bits : ℕ := 32
-definition u64.bits : ℕ := 64
+definition u8.bits [reducible] : ℕ := 8
+definition u16.bits [reducible] : ℕ := 16
+definition u32.bits [reducible] : ℕ := 32
+definition u64.bits [reducible] : ℕ := 64
 
 -- Should perhaps be a constant-axiom pair, but that would break computability.
 -- TODO: `usize::MAX` will be determined by the current host anyway right now.
@@ -94,10 +96,10 @@ definition usize.bits : ℕ := 16
 definition usize.bits_ge_16 : usize.bits ≥ 16 := dec_trivial
 attribute usize.bits [irreducible]
 
-definition i8.bits : ℕ := 8
-definition i16.bits : ℕ := 16
-definition i32.bits : ℕ := 32
-definition i64.bits : ℕ := 64
+definition i8.bits [reducible] : ℕ := 8
+definition i16.bits [reducible] : ℕ := 16
+definition i32.bits [reducible] : ℕ := 32
+definition i64.bits [reducible] : ℕ := 64
 definition isize.bits : ℕ := usize.bits
 
 definition unsigned.max (bits : ℕ) : ℕ := 2^bits - 1
@@ -108,7 +110,7 @@ abbreviation u64.max : ℕ := unsigned.max u64.bits
 abbreviation usize.max : ℕ := unsigned.max usize.bits
 
 definition signed.min (bits : ℕ) : ℤ := -2^(bits-1)
-definition signed.max (bits : ℕ) : ℤ := 2^(bits-1) + 1
+definition signed.max (bits : ℕ) : ℤ := 2^(bits-1) - 1
 
 definition isize_to_usize (x : isize) : sem usize :=
 if x ≥ 0 then return (nat.of_int x)
@@ -135,11 +137,21 @@ sem.guard (y ≠ 0) $ return (div x y)
 definition checked.rem [reducible] (bits : ℕ) (x y : nat) : sem nat :=
 sem.guard (y ≠ 0) $ return (mod x y)
 
-export [notation] nat.bitwise
+abbreviation binary_bitwise_op (bits : ℕ) (op : bitvec bits → bitvec bits → bitvec bits)
+  (a b : nat) : nat :=
+bitvec.to ℕ (op (bitvec.of bits a) (bitvec.of bits b))
+
+definition bitor [reducible] bits := binary_bitwise_op bits bitvec.or
+definition bitand [reducible] bits := binary_bitwise_op bits bitvec.and
+definition bitxor [reducible] bits := binary_bitwise_op bits bitvec.xor
+
+notation a ` ||[`:65 n `] ` b:65  := bitor n a b
+notation a ` &&[`:70 n `] ` b:70  := bitand n a b
 
 definition checked.shl [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
-sem.guard (y < bits) $ check_unsigned bits (x * 2^y)
+sem.guard (y < bits) $ return $ bitvec.to ℕ $ bitvec.shl (bitvec.of bits x) y
 
+-- allows for arbitrary range of x in contrast to bitvec.ushr
 definition checked.shr [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
 sem.guard (y < bits) $ return (x / 2^y)
 

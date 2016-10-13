@@ -3,9 +3,9 @@ import algebra.interval
 import algebra.order_bigops
 import data.list
 import data.list.sorted
+import data.tuple
 
 open eq.ops
-open list
 open nat
 open option
 
@@ -57,6 +57,13 @@ namespace nat
   | a 0 ha hb := false.elim (hb rfl)
   | a (succ b) ha hb := take contr,
     ha (eq_zero_of_add_eq_zero_left contr)
+
+  lemma sub_eq_sub_min (a b : ℕ) : a - b = a - min a b :=
+  if h : a ≥ b then by rewrite [min_eq_right h]
+  else by rewrite [sub_eq_zero_of_le (le_of_not_ge h), min_eq_left (le_of_not_ge h), nat.sub_self]
+
+  lemma sub_add_min_cancel (a b : ℕ) : a - b + min a b = a :=
+  by rewrite [sub_eq_sub_min, nat.sub_add_cancel !min_le_left]
 end nat
 
 namespace option
@@ -297,6 +304,24 @@ section
   lemma map₂_self {B : Type} (f : A → A → B) : Π(xs : list A), map₂ f xs xs = map (λ x, f x x) xs
   | []      := rfl
   | (x::xs) := by rewrite [map_cons, ↑map₂, map₂_self]
+
+  lemma dropn_append {A : Type} : Π{n : ℕ} {xs ys : list A} (h : length xs ≥ n),
+    dropn n (xs ++ ys) = dropn n xs ++ ys
+  | 0 xs ys h := rfl
+  | (succ n) [] ys h := false.elim (not_le_of_gt !zero_lt_succ h)
+  | (succ n) (x::xs) ys h := by rewrite [append_cons, ↑dropn, dropn_append (le_of_succ_le_succ h)]
+
+  lemma dropn_replicate {A : Type} : Π(n m : ℕ) (a : A),
+    dropn n (replicate m a) = replicate (m-n) a
+  | 0 m a := rfl
+  | n 0 a := by rewrite [nat.zero_sub, ↑replicate, dropn_nil]
+  | (succ n) (succ m) a := by rewrite [↑replicate at {1}, ↑dropn at {1}, dropn_replicate,
+    succ_sub_succ]
+
+  lemma replicate_succ_right {A : Type} : Π(n : ℕ) (x : A),
+    replicate (succ n) x = replicate n x ++ [x]
+  | 0 x := rfl
+  | (succ n) x := by rewrite [↑replicate at {1}, replicate_succ_right at {1}]
 end
 
 inductive prefixeq {A : Type} : list A → list A → Prop :=
@@ -762,6 +787,8 @@ begin
 end
 
 namespace finset
+  open list
+
   lemma to_finset_ne_empty {A : Type} [decidable_eq A] {xs : list A} (H : xs ≠ []) :
     to_finset xs ≠ ∅ :=
   obtain x Hmem, from list.ex_mem_of_ne_nil H,
@@ -835,6 +862,27 @@ namespace set
     bounded_exists.intro Ha (bounded_exists.intro Hb (subset.trans Hp₁ `p₁ ⊆ p₂`))
   ⦄
 end set
+
+namespace tuple
+section
+  open subtype
+  parameters {A B C : Type}
+
+
+  definition length [reducible] {n} (xs : tuple A n) : ℕ := n
+
+  notation [ x ] := x :: nil
+
+  lemma map₂_cons {n : ℕ} (f : A → B → C) (x : A) (y : B): Π(xs : tuple A n) (ys : tuple B n),
+    map₂ f (x::xs) (y::ys) = f x y :: map₂ f xs ys
+  | (tag lxs hxs) (tag lys hys) := by esimp
+
+  lemma replicate_succ (n : ℕ) (x : A) : replicate (nat.succ n) x = x :: replicate n x := rfl
+
+  lemma replicate_succ_right (n : ℕ) (x : A) : replicate (nat.succ n) x = replicate n x ++ [x] :=
+  subtype.tag_eq !list.replicate_succ_right
+end
+end tuple
 
 lemma exists_true_Prop_iff {p : Prop} (h : p) (q : p → Prop) : Exists q ↔ q h :=
 iff.intro (take h, obtain h' hh', from h, hh') !exists.intro
