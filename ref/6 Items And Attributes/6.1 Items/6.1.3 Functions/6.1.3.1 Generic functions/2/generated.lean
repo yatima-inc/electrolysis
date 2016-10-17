@@ -21,15 +21,15 @@ return (ret)
 
 definition main : sem (unit) :=
 do promoted_0 ←
-let' t0 ← ([((1 : int)), ((2 : int))]);
-let' ret ← (t0);
+let' t1 ← ([((1 : int)), ((2 : int))]);
+let' ret ← (t1);
 return (ret)
 ;
-let' t3 ← (promoted_0);
+let' t4 ← (promoted_0);
+let' t3 ← (t4);
 let' t2 ← (t3);
-let' t1 ← (t2);
-dostep «$tmp» ← @foo _ (core.«i32 as core.default.Default» ) (t1);
-let' t0 ← «$tmp»;
+dostep «$tmp» ← @foo _ (core.«i32 as core.default.Default» ) (t2);
+let' t1 ← «$tmp»;
 let' ret ← (⋆);
 return (ret)
 

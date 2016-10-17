@@ -34,9 +34,9 @@ structure BitsNStrings := mk {} ::
 (mystring : string)
 
 definition BITS_N_STRINGS : (BitsNStrings) :=
-let' t1 ← (STRING);
-let' t0 ← (t1);
-let' ret ← (BitsNStrings.mk (BITS) (t0));
+let' t2 ← (STRING);
+let' t1 ← (t2);
+let' ret ← (BitsNStrings.mk (BITS) (t1));
 ret
 
 end test

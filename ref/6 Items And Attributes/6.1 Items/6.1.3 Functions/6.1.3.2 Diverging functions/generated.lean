@@ -19,21 +19,21 @@ ret
 
 definition my_err (sₐ : string) : sem (empty) :=
 let' s ← (sₐ);
-let' t3 ← (my_err.FILE_LINE);
-let' t2 ← (t3);
+let' t6 ← (my_err.FILE_LINE);
+let' t5 ← (t6);
 mzero
 
 
 definition f (iₐ : i32) : sem (i32) :=
 let' i ← (iₐ);
-let' t1 ← (i);
-let' t0 ← ((t1) =ᵇ ((42 : int)));
-if (t0) = bool.tt then
+let' t4 ← (i);
+let' t3 ← ((t4) =ᵇ ((42 : int)));
+if (t3) = bool.tt then
 let' ret ← ((42 : int));
 return (ret)
 else
-let' t8 ← ("Bad number!");
-let' t7 ← (t8);
+let' t11 ← ("Bad number!");
+let' t10 ← (t11);
 mzero
 
 

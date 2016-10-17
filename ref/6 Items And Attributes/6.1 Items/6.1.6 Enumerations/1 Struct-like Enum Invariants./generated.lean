@@ -14,7 +14,7 @@ open [notation] unit
 
 namespace test
 
-/- Animal: unimplemented: enum variant Struct -/
+/- Animal: unimplemented: enum variant Fictive -/
 
 /- main: failed dependencies Animal -/
 

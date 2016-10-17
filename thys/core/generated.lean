@@ -21,6 +21,58 @@ structure marker.Copy [class] (Self : Type₁)  extends clone.Clone Self
 
 structure marker.PhantomData (T : Type₁) := mk {} ::
 
+structure ops.BitAnd [class] (Self : Type₁) (RHS : Type₁) (Output : Type₁) :=
+(bitand : Self → RHS → sem (Output))
+
+definition «u32 as core.ops.BitAnd».bitand (selfₐ : u32) (rhsₐ : u32) : sem (u32) :=
+let' self ← (selfₐ);
+let' rhs ← (rhsₐ);
+let' t5 ← (self);
+let' t6 ← (rhs);
+let' ret ← (bitand u32.bits (t5) (t6));
+return (ret)
+
+
+definition «&'a u32 as core.ops.BitAnd<u32>».bitand (selfₐ : u32) (otherₐ : u32) : sem (u32) :=
+let' self ← (selfₐ);
+let' other ← (otherₐ);
+let' t5 ← (self);
+let' t6 ← (other);
+dostep «$tmp» ← @«u32 as core.ops.BitAnd».bitand (t5) (t6);
+let' ret ← «$tmp»;
+return (ret)
+
+
+definition «&'a u32 as core.ops.BitAnd<u32>» [instance] := ⦃
+  ops.BitAnd u32 u32 u32,
+  bitand := «&'a u32 as core.ops.BitAnd<u32>».bitand
+⦄
+
+definition «u32 as core.clone.Clone».clone (selfₐ : u32) : sem (u32) :=
+let' self ← (selfₐ);
+let' t3 ← (self);
+let' ret ← (t3);
+return (ret)
+
+
+definition «u32 as core.clone.Clone» [instance] := ⦃
+  clone.Clone u32,
+  clone := «u32 as core.clone.Clone».clone
+⦄
+
+structure default.Default [class] (Self : Type₁)  :=
+(default : sem (Self))
+
+definition «i32 as core.default.Default».default : sem (i32) :=
+let' ret ← ((0 : int));
+return (ret)
+
+
+definition «i32 as core.default.Default» [instance] := ⦃
+  default.Default i32,
+  default := «i32 as core.default.Default».default
+⦄
+
 inductive option.Option (T : Type₁) :=
 | None {} : option.Option T
 | Some {} : T → option.Option T
@@ -276,57 +328,5 @@ dostep «$tmp» ← @«[T] as core.slice.SliceExt».binary_search_by _ _ _ (t5) 
 let' ret ← «$tmp»;
 return (ret)
 
-
-structure ops.BitAnd [class] (Self : Type₁) (RHS : Type₁) (Output : Type₁) :=
-(bitand : Self → RHS → sem (Output))
-
-definition «u32 as core.ops.BitAnd».bitand (selfₐ : u32) (rhsₐ : u32) : sem (u32) :=
-let' self ← (selfₐ);
-let' rhs ← (rhsₐ);
-let' t5 ← (self);
-let' t6 ← (rhs);
-let' ret ← (bitand u32.bits (t5) (t6));
-return (ret)
-
-
-definition «&'a u32 as core.ops.BitAnd<u32>».bitand (selfₐ : u32) (otherₐ : u32) : sem (u32) :=
-let' self ← (selfₐ);
-let' other ← (otherₐ);
-let' t5 ← (self);
-let' t6 ← (other);
-dostep «$tmp» ← @«u32 as core.ops.BitAnd».bitand (t5) (t6);
-let' ret ← «$tmp»;
-return (ret)
-
-
-definition «&'a u32 as core.ops.BitAnd<u32>» [instance] := ⦃
-  ops.BitAnd u32 u32 u32,
-  bitand := «&'a u32 as core.ops.BitAnd<u32>».bitand
-⦄
-
-definition «u32 as core.clone.Clone».clone (selfₐ : u32) : sem (u32) :=
-let' self ← (selfₐ);
-let' t3 ← (self);
-let' ret ← (t3);
-return (ret)
-
-
-definition «u32 as core.clone.Clone» [instance] := ⦃
-  clone.Clone u32,
-  clone := «u32 as core.clone.Clone».clone
-⦄
-
-structure default.Default [class] (Self : Type₁)  :=
-(default : sem (Self))
-
-definition «i32 as core.default.Default».default : sem (i32) :=
-let' ret ← ((0 : int));
-return (ret)
-
-
-definition «i32 as core.default.Default» [instance] := ⦃
-  default.Default i32,
-  default := «i32 as core.default.Default».default
-⦄
 
 end core

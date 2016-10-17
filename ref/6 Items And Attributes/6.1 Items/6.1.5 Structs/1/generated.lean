@@ -19,8 +19,8 @@ structure Point := mk {} ::
 
 definition main : sem (unit) :=
 let' p ← (Point.mk ((10 : int)) ((11 : int)));
-let' t0 ← ((Point.x (p)));
-let' px ← (t0);
+let' t3 ← ((Point.x (p)));
+let' px ← (t3);
 let' ret ← (⋆);
 return (ret)
 

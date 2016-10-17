@@ -41,8 +41,9 @@ use itertools::Itertools;
 use petgraph::algo::*;
 use regex::Regex;
 
-use syntax::ast::NodeId;
+use syntax::ast::{self, NodeId};
 use rustc::hir::{self, intravisit};
+use rustc::ty;
 
 use rustc_driver::driver;
 use rustc::session;
@@ -137,12 +138,30 @@ fn get_rust_src_path() -> Option<path::PathBuf> {
 }
 
 /// Collects all node IDs of a crate
-struct IdCollector {
+struct IdCollector<'a, 'tcx : 'a> {
+    tcx: ty::TyCtxt<'a, 'tcx, 'tcx>,
     ids: Vec<NodeId>
 }
 
-impl<'a> intravisit::Visitor<'a> for IdCollector {
+impl<'a, 'tcx> IdCollector<'a, 'tcx> {
+    fn skip(&self, attrs: &[ast::Attribute]) -> bool {
+        // skip config-dependent definitions except for `#[cfg(not(test))]`
+        attrs.iter().any(|attr| attr.check_name("cfg") && !match *attr.meta().meta_item_list().unwrap() {
+            [ref arg] => arg.check_name("not") && match *arg.meta_item_list().unwrap() {
+                [ref argarg] => argarg.word().map_or(false, |word| word.check_name("test")),
+                _ => false,
+            },
+            _ => false,
+        })
+    }
+}
+
+impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
     fn visit_item(&mut self, item: &'a hir::Item) {
+        if self.skip(&item.attrs) {
+            return
+        }
+
         if let hir::Item_::ItemDefaultImpl(_, _) = item.node {
             return // default impls don't seem to be part of the HIR map
         }
@@ -151,11 +170,22 @@ impl<'a> intravisit::Visitor<'a> for IdCollector {
         intravisit::walk_item(self, item);
     }
 
+    fn visit_nested_item(&mut self, id: hir::ItemId) {
+        let tcx = self.tcx;
+        self.visit_item(tcx.map.expect_item(id.id))
+    }
+
     fn visit_impl_item(&mut self, ii: &'a hir::ImplItem) {
+        if self.skip(&ii.attrs) {
+            return
+        }
         self.ids.push(ii.id);
     }
 
     fn visit_trait_item(&mut self, trait_item: &'a hir::TraitItem) {
+        if self.skip(&trait_item.attrs) {
+            return
+        }
         self.ids.push(trait_item.id);
     }
 }
@@ -176,8 +206,8 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
     });
 
     // find targets' DefIds and transpile them
-    let mut id_collector = IdCollector { ids: vec![] };
-    state.hir_crate.unwrap().visit_all_items(&mut id_collector);
+    let mut id_collector = IdCollector { tcx: tcx, ids: vec![] };
+    intravisit::walk_crate(&mut id_collector, state.hir_crate.unwrap());
     for id in id_collector.ids {
         let def_id = tcx.map.local_def_id(id);
         let name = name_def_id(tcx, def_id);

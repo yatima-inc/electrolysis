@@ -18,9 +18,9 @@ namespace collections
 definition «[T]».get {T : Type₁} (selfₐ : (slice T)) (indexₐ : usize) : sem ((core.option.Option T)) :=
 let' self ← (selfₐ);
 let' index ← (indexₐ);
-let' t0 ← (self);
-let' t1 ← (index);
-dostep «$tmp» ← @core.«[T] as core.slice.SliceExt».get _ (t0) (t1);
+let' t5 ← (self);
+let' t6 ← (index);
+dostep «$tmp» ← @core.«[T] as core.slice.SliceExt».get _ (t5) (t6);
 let' ret ← «$tmp»;
 return (ret)
 

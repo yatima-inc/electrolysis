@@ -21,8 +21,8 @@ definition Foo.discr (self : Foo) : isize := match self with
 end
 
 definition main : sem (unit) :=
-let' t0 ← (Foo.Bar);
-do «$tmp0» ← (isize_to_u32 (Foo.discr (t0)));
+let' t2 ← (Foo.Bar);
+do «$tmp0» ← (isize_to_u32 (Foo.discr (t2)));
 let' x ← «$tmp0»;
 let' ret ← (⋆);
 return (ret)
