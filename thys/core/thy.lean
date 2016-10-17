@@ -58,6 +58,8 @@ lemma usize.max_ge_1 : usize.max ≥ 1 := le.trans dec_trivial usize.max_ge_u16_
 
 section bitwise
 open bitvec
+open bool
+open tuple
 
 lemma bitand_bitor_distrib_right (bits x y z : ℕ) :
   (x ||[bits] y) &&[bits] z = (x &&[bits] z) ||[bits] (y &&[bits] z) :=
@@ -66,27 +68,49 @@ by rewrite [↑bitor, ↑bitand, +bitvec.of_to, bitvec.and_or_distrib_right]
 lemma bitand_self (bits x : ℕ) [h : is_bounded_nat bits x] : bitand bits x x = x :=
 by rewrite [↑bitand, bitvec.and_self, bitvec.to_of h]
 
+lemma bitand.comm (bits x y : ℕ) : bitand bits x y = bitand bits y x :=
+by rewrite [↑bitand, bitvec.and.comm]
+
 lemma bitand_bitor_cancel (bits x y : ℕ) [h : is_bounded_nat bits y] :
   bitand bits (bitor bits x y) y = y :=
 by rewrite [↑bitor, ↑bitand, +bitvec.of_to, bitvec.and_or_cancel, bitvec.to_of h]
 
-lemma bitand_disj_pow (bits x y : ℕ) (h : x ≠ y) : bitand bits (2^x) (2^y) = 0 := sorry
+lemma bitand_disj_pow_aux : Π(bits : ℕ) {x y : ℕ}, x < y → bitand bits (2^x) (2^y) = 0
+| 0 x y h := rfl
+| (succ n) 0 (succ y) h := begin
+  krewrite [↑bitand, ↑bitvec.of, ↑bitvec.and, tuple.map₂_snoc],
+  rewrite [pow_zero, if_pos (show (1:ℕ) % 2 = 1, from dec_trivial),
+    pow_succ, !nat.mul_div_cancel_left (show 2 > 0, from dec_trivial),
+    mul_mod_eq_mod_mul_mod, mod_self, zero_mul, if_neg (show (0:ℕ) % 2 ≠ 1, from dec_trivial),
+    band_ff, (show (1:ℕ) / 2 = 0, from dec_trivial), ↑bitvec.to],
+  krewrite [to_list_append, ▸*],
+  rewrite [bitsTo_snoc, ↑cond, bitvec.and.comm, bitvec.of_zero, bitvec.and_zero, ↑bitvec.zero,
+    bitsTo_replicate_ff]
+end
+| (succ n) (succ x) 0 h := false.elim (not_le_of_gt h !zero_le)
+| (succ n) (succ x) (succ y) h := begin
+  krewrite [↑bitand, ↑bitvec.of, ↑bitvec.and, tuple.map₂_snoc],
+  rewrite [+pow_succ, +!nat.mul_div_cancel_left (show 2 > 0, from dec_trivial),
+    mul_mod_eq_mod_mul_mod, mul_mod_eq_mod_mul_mod 2, mod_self, +zero_mul,
+    if_neg (show (0:ℕ) % 2 ≠ 1, from dec_trivial),
+    band_ff, ↑bitvec.to],
+  krewrite [to_list_append, ▸*],
+  rewrite [bitsTo_snoc, ↑cond], xrewrite [!bitand_disj_pow_aux (lt_of_succ_lt_succ h)]
+end
+
+lemma bitand_disj_pow (bits : ℕ) {x y : ℕ} (h : x ≠ y) : bitand bits (2^x) (2^y) = 0 :=
+begin
+  cases lt_or_gt_of_ne h,
+  { apply bitand_disj_pow_aux bits `x < y` },
+  { rewrite [bitand.comm, bitand_disj_pow_aux bits `x > y`] }
+end
 
 lemma bitor_zero (bits x : ℕ) [h : is_bounded_nat bits x] : bitor bits x 0 = x :=
 begin
   rewrite [↑bitor, bitvec.of_zero, bitvec.or_zero, bitvec.to_of h]
 end
 
--- make all tuples collapse to lists
-attribute tuple.nil [constructor]
-attribute tuple.replicate [constructor]
-attribute tuple.cons [unfold 4]
-attribute tuple.append [unfold 4 5]
-attribute tuple.firstn [unfold 4]
-attribute tuple.dropn [unfold 4]
-attribute tuple.to_list [unfold 3]
-
-attribute list.append [unfold 2]
+attribute list.append [unfold 2 3]
 
 lemma checked.shl_1 {bits : ℕ} {y : u32} (h : y < bits) : checked.shl bits 1 y = return (2^y) :=
 begin
@@ -94,7 +118,8 @@ begin
   { exfalso, apply !not_lt_zero h },
   { rewrite [if_pos h, ↑shl, of_one, ↑bitvec.to, list.dropn_append
       (show length (replicate bits ff) ≥ y, by rewrite [length_replicate]; apply le_of_lt_succ h),
-      list.dropn_replicate, append.assoc, bitsTo_append, ▸*, bitsTo_cons, +bitsTo_replicate_ff,
+      list.dropn_replicate, append.assoc, bitsTo_append, append_cons, ↑list.append,
+      bitsTo_cons, +bitsTo_replicate_ff,
       length_replicate, min_eq_right (le_of_lt h)],
     simp }
 end

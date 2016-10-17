@@ -116,7 +116,30 @@ section
   variable {A : Type}
   variable xs : list A
 
+  definition butlast : list A → list A
+  | []      := []
+  | [x]     := []
+  | (x::xs) := x::butlast xs
+
+  lemma butlast_cons_nonnil {x : A} : Π {xs : list A} (h : xs ≠ nil),
+    butlast (x::xs) = x::butlast xs
+  | []       h := false.elim (h rfl)
+  | (x'::xs) h := rfl
+
+  lemma length_butlast_nonnil : Π {xs : list A} (h : xs ≠ nil),
+    length (butlast xs) + 1 = length xs
+  | []       h := false.elim (h rfl)
+  | [x]      h := rfl
+  | (x'::x''::xs) h := by rewrite [↑butlast, +length_cons, length_butlast_nonnil !cons_ne_nil]
+
+  lemma butlast_append_last : Π {xs : list A} (h : xs ≠ nil), butlast xs ++ [last xs h] = xs
+  | [] h := false.elim (h rfl)
+  | [x] h := rfl
+  | (x::x'::xs) h := by rewrite [butlast_cons_nonnil !cons_ne_nil, append_cons,
+    last_cons_cons, butlast_append_last]
+
   -- first without [inhabited], last without predicate
+
   definition first' [unfold 2] : option A := nth xs 0
   definition last' : list A → option A
   | []      := none
@@ -305,20 +328,27 @@ section
   | []      := rfl
   | (x::xs) := by rewrite [map_cons, ↑map₂, map₂_self]
 
-  lemma dropn_append {A : Type} : Π{n : ℕ} {xs ys : list A} (h : length xs ≥ n),
+  lemma map₂_snoc {B C : Type} (f : A → B → C) (x : A) (y : B) : Π{xs : list A} {ys : list B},
+    length xs = length ys → map₂ f (xs++[x]) (ys++[y]) = map₂ f xs ys ++ [f x y]
+  | [] [] h := rfl
+  | [] (y'::ys) h := by contradiction
+  | (x'::xs) [] h := by contradiction
+  | (x'::xs) (y'::ys) h := by rewrite [+append_cons, ↑map₂, map₂_snoc (eq_of_succ_eq_succ h)]
+
+  lemma dropn_append : Π{n : ℕ} {xs ys : list A} (h : length xs ≥ n),
     dropn n (xs ++ ys) = dropn n xs ++ ys
   | 0 xs ys h := rfl
   | (succ n) [] ys h := false.elim (not_le_of_gt !zero_lt_succ h)
   | (succ n) (x::xs) ys h := by rewrite [append_cons, ↑dropn, dropn_append (le_of_succ_le_succ h)]
 
-  lemma dropn_replicate {A : Type} : Π(n m : ℕ) (a : A),
+  lemma dropn_replicate : Π(n m : ℕ) (a : A),
     dropn n (replicate m a) = replicate (m-n) a
   | 0 m a := rfl
   | n 0 a := by rewrite [nat.zero_sub, ↑replicate, dropn_nil]
   | (succ n) (succ m) a := by rewrite [↑replicate at {1}, ↑dropn at {1}, dropn_replicate,
     succ_sub_succ]
 
-  lemma replicate_succ_right {A : Type} : Π(n : ℕ) (x : A),
+  lemma replicate_succ_right : Π(n : ℕ) (x : A),
     replicate (succ n) x = replicate n x ++ [x]
   | 0 x := rfl
   | (succ n) x := by rewrite [↑replicate at {1}, replicate_succ_right at {1}]
@@ -865,8 +895,18 @@ end set
 
 namespace tuple
 section
+  open list
   open subtype
   parameters {A B C : Type}
+
+  attribute tuple.to_list [unfold 3]
+  attribute tuple.cons [unfold 4]
+  attribute tuple.append [unfold 4 5]
+  attribute tuple.map₂ [unfold 6 7]
+  attribute tuple.firstn [unfold 4]
+  attribute tuple.dropn [unfold 4]
+  attribute tuple.nil [constructor]
+  attribute tuple.replicate [constructor]
 
 
   definition length [reducible] {n} (xs : tuple A n) : ℕ := n
@@ -875,7 +915,30 @@ section
 
   lemma map₂_cons {n : ℕ} (f : A → B → C) (x : A) (y : B): Π(xs : tuple A n) (ys : tuple B n),
     map₂ f (x::xs) (y::ys) = f x y :: map₂ f xs ys
-  | (tag lxs hxs) (tag lys hys) := by esimp
+  | (tag lxs hxs) (tag lys hys) := rfl
+
+  lemma map₂_snoc {n : ℕ} (f : A → B → C) (x : A) (y : B): Π(xs : tuple A n) (ys : tuple B n),
+    map₂ f (xs++[x]) (ys++[y]) = map₂ f xs ys ++ [f x y]
+  --| (tag lxs hxs) (tag lys hys) := _
+  := begin
+    intros,    
+    cases xs with lxs hxs, cases ys with lys hys,
+    esimp,
+    apply tag_eq,
+    apply list.map₂_snoc,
+    rewrite [hxs, hys]
+  end
+
+  lemma to_list_cons {n : ℕ} : Π(x : A) (xs : tuple A n),
+    to_list (x :: xs) = x :: to_list xs
+  | x (tag lxs hxs) := rfl
+
+  lemma to_list_append {n m : ℕ} : Π(xs : tuple A n) (ys : tuple A m),
+    to_list (xs ++ ys) = to_list xs ++ to_list ys
+  | (tag lxs hxs) (tag lys hys) := rfl
+
+  lemma eq_of_list_eq {n} : ∀ {v₁ v₂ : tuple A n}, to_list v₁ = to_list v₂ → v₁ = v₂
+  | (tag l₁ h₁) (tag l₂ h₂) eq := tag_eq eq
 
   lemma replicate_succ (n : ℕ) (x : A) : replicate (nat.succ n) x = x :: replicate n x := rfl
 
