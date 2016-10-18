@@ -9,7 +9,7 @@ open - [class] set
 open [class] classical
 
 -- fix semantics monad
-definition sem (a : Type₁) := option (a × nat)
+definition sem (a : Type₁) := option (a × ℕ)
 
 definition sem.incr [unfold 3] {a : Type₁} (n : ℕ) : sem a → sem a
 | (some (x, k)) := some (x, k+n)

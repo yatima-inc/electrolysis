@@ -175,8 +175,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)),
             ty::TypeVariants::TyStr => "string".to_string(),
             ty::TypeVariants::TyTrait(_) => panic!("unimplemented: trait objects"),
-            ty::TypeVariants::TyArray(ref ty, _size) =>
-                format!("(list {})", self.transpile_ty(ty)),
+            ty::TypeVariants::TyArray(ref ty, size) =>
+                format!("(array {} {})", self.transpile_ty(ty), size),
             ty::TypeVariants::TyNever => "empty".to_string(),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.name_def_id(did),

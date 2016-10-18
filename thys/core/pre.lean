@@ -83,17 +83,14 @@ abbreviation i32 [parsing_only] := int
 abbreviation i64 [parsing_only] := int
 abbreviation isize [parsing_only] := int
 
-abbreviation slice [parsing_only] := list
-
 definition u8.bits [reducible] : ℕ := 8
 definition u16.bits [reducible] : ℕ := 16
 definition u32.bits [reducible] : ℕ := 32
 definition u64.bits [reducible] : ℕ := 64
 
 -- Should perhaps be a constant-axiom pair, but that would break computability.
--- TODO: `usize::MAX` will be determined by the current host anyway right now.
 definition usize.bits : ℕ := 16
-definition usize.bits_ge_16 : usize.bits ≥ 16 := dec_trivial
+lemma usize.bits_ge_16 : usize.bits ≥ 16 := dec_trivial
 attribute usize.bits [irreducible]
 
 definition i8.bits [reducible] : ℕ := 8
@@ -165,12 +162,17 @@ sem.guard (signed.min bits ≤ x ∧ x ≤ signed.max bits) $ return x
 definition checked.sadd [reducible] (bits : ℕ) (x y : int) : sem int :=
 check_signed bits (x+y)
 
+
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)
 infix `≤ᵇ`:50 := λ a b, @bool.of_Prop (a ≤ b) (decidable_le a b) -- small elaborator hint
 infix `<ᵇ`:50 := λ a b, @bool.of_Prop (a < b) (decidable_lt a b)
 infix `≥ᵇ`:50 := λ a b, b ≤ᵇ a
 infix `>ᵇ`:50 := λ a b, b <ᵇ a
+
+
+abbreviation array [parsing_only] (A : Type₁) (n : ℕ) := list A
+abbreviation slice [parsing_only] := list
 
 namespace core
   abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)

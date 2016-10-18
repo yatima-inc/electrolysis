@@ -911,7 +911,7 @@ section
 
   definition length [reducible] {n} (xs : tuple A n) : ℕ := n
 
-  notation [ x ] := x :: nil
+  notation `[` l:(foldr `,` (h t, cons h t) nil `]`) := l
 
   lemma map₂_cons {n : ℕ} (f : A → B → C) (x : A) (y : B): Π(xs : tuple A n) (ys : tuple B n),
     map₂ f (x::xs) (y::ys) = f x y :: map₂ f xs ys
