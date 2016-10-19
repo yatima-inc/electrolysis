@@ -375,7 +375,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let items = self.tcx.trait_items(self.def_id).iter().filter_map(|item| match *item {
             ty::ImplOrTraitItem::TypeTraitItem(_) => None,
             ty::ImplOrTraitItem::MethodTraitItem(ref method) => {
-                // FIXME: Do something more clever than ignoring default method overrides
+                // TODO: allow overriding default methods
                 if self.tcx.provided_trait_methods(self.def_id).iter().any(|m| m.name == method.name) ||
                     only.iter().any(|only| !only.contains(&*method.name.as_str())) {
                     None
@@ -429,10 +429,10 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::ImplOrTraitItem::TypeTraitItem(_) =>
                 None,
             ty::ImplOrTraitItem::MethodTraitItem(ref method) => {
-                // FIXME: Do something more clever than ignoring default method overrides
-                if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == method.name) ||
-                    only.iter().any(|only| !only.contains(&*method.name.as_str())) {
-                    None
+                if only.iter().any(|only| !only.contains(&*method.name.as_str())) {
+                    None // method ignored in config
+                } else if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == method.name) {
+                    panic!("unimplemented: overriding default method {:?}", method)
                 } else {
                     Some(format!("{} := {}", method.name, self.name_def_id(method.def_id)))
                 }
