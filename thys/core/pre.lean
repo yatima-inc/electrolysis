@@ -148,6 +148,9 @@ notation a ` &&[`:70 n `] ` b:70  := bitand n a b
 definition checked.shl [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
 sem.guard (y < bits) $ return $ bitvec.to ℕ $ bitvec.shl (bitvec.of bits x) y
 
+definition checked.shls [reducible] (bits : ℕ) (x : nat) (y : i32) : sem nat :=
+sem.guard (0 ≤ y ∧ y < bits) $ return $ bitvec.to ℕ $ bitvec.shl (bitvec.of bits x) (nat.of_int y)
+
 -- allows for arbitrary range of x in contrast to bitvec.ushr
 definition checked.shr [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
 sem.guard (y < bits) $ return (x / 2^y)

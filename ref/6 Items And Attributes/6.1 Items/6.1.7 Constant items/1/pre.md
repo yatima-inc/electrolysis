@@ -1,0 +1,1 @@
+Constants are fun: If you want to be system-independent, expressions like `usize::MAX + 1` or `1usize << 33` suddenly are not so constant any more. Therefore, wrap them in the semantics <s>burrito</s> monad.

@@ -13,10 +13,12 @@ open [notation] unit
 
 namespace test
 
-definition Point := (u8 × u8)
+/- LEVELS: unimplemented: mutable static "LEVELS" -/
 
-definition p : sem (u8 × u8) :=
-let' ret ← ((((41 : nat)), ((68 : nat))));
+/- bump_levels_unsafe1: failed dependencies LEVELS -/
+
+definition LEVELS2 : sem u32 :=
+let' ret ← ((0 : nat));
 return (ret)
 
 

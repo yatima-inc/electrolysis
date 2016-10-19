@@ -13,4 +13,8 @@ open [notation] unit
 
 namespace test
 
+/- LEVELS: unimplemented: mutable static "LEVELS" -/
+
+/- bump_levels_unsafe1: failed dependencies LEVELS -/
+
 end test

@@ -311,18 +311,28 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn transpile_constant(&self, c: &Constant) -> String {
+    fn get_constant(&self, c: &Constant) -> MaybeValue {
         match c.literal {
-            Literal::Value { ref value } => self.transpile_constval(value),
-            Literal::Promoted { index }  => format!("promoted_{}", index.index()),
-            Literal::Item { def_id, .. } => self.name_def_id(def_id),
+            Literal::Value { ref value } => MaybeValue::total(self.transpile_constval(value)),
+            Literal::Promoted { index }  => MaybeValue::total(format!("promoted_{}", index.index())),
+            Literal::Item { def_id, .. } => {
+                use rustc::hir::*;
+                if let hir::map::Node::NodeItem(item) = self.tcx.map.get_if_local(def_id).unwrap() {
+                    match item.node {
+                        Item_::ItemStatic(..) | Item_::ItemConst(..) =>
+                            return MaybeValue::partial(self.name_def_id(def_id)),
+                        _ => {}
+                    }
+                }
+                MaybeValue::total(self.name_def_id(def_id))
+            }
         }
     }
 
     fn get_operand(&self, op: &Operand<'tcx>) -> MaybeValue {
         match *op {
             Operand::Consume(ref lv) => self.get_lvalue(lv),
-            Operand::Constant(ref c) => MaybeValue::total(self.transpile_constant(c)),
+            Operand::Constant(ref c) => self.get_constant(c),
         }
     }
 
@@ -653,17 +663,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn return_expr(&self) -> String {
-        use rustc::hir::map::Node;
-        use rustc::hir::Item_;
-        let node = self.tcx.map.get(self.node_id());
-        match node {
-            Node::NodeItem(item) => match item.node {
-                Item_::ItemStatic(..) | Item_::ItemConst(..) =>
-                    return "ret".to_string(), // no monad inside constants
-                _ => {}
-            },
-            _ => {}
-        }
         let mut_args = self.mir.args_iter().filter_map(|arg| {
             krate::try_unwrap_mut_ref(self.mir.local_decls[arg].ty).map(|_| self.local_name(arg))
         });

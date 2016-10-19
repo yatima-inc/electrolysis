@@ -13,10 +13,8 @@ open [notation] unit
 
 namespace test
 
-definition Point := (u8 × u8)
-
-definition p : sem (u8 × u8) :=
-let' ret ← ((((41 : nat)), ((68 : nat))));
+definition LEVELS : sem u32 :=
+let' ret ← ((0 : nat));
 return (ret)
 
 

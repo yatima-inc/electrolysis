@@ -20,7 +20,8 @@ def success(path):
                 return False  # wrong if there are passing sub items
         if f == 'generated.lean':
             gen = open(p).read()
-            if 'unimplemented' in gen or 'compiler error' in gen:
+            if ('unimplemented' in gen or 'compiler error' in gen)\
+               and not path.endswith('-'):
                 fail = True
             else:
                 ok = True

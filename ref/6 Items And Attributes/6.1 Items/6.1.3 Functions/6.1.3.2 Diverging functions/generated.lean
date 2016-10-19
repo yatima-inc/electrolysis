@@ -13,9 +13,10 @@ open [notation] unit
 
 namespace test
 
-definition my_err.FILE_LINE : (string × u32) :=
+definition my_err.FILE_LINE : sem (string × u32) :=
 let' ret ← ((("ref/6 Items And Attributes/6.1 Items/6.1.3 Functions/6.1.3.2 Diverging functions/lib.rs"), ((3 : nat))));
-ret
+return (ret)
+
 
 definition my_err (sₐ : string) : sem (empty) :=
 let' s ← (sₐ);

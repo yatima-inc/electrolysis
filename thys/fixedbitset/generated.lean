@@ -14,9 +14,10 @@ open [notation] unit
 
 namespace fixedbitset
 
-definition BITS : usize :=
+definition BITS : sem usize :=
 let' ret ← ((32 : nat));
-ret
+return (ret)
+
 
 definition div_rem (xₐ : usize) (dₐ : usize) : sem ((usize × usize)) :=
 let' x ← (xₐ);
@@ -42,7 +43,8 @@ structure FixedBitSet := mk {} ::
 definition FixedBitSet.with_capacity (bitsₐ : usize) : sem ((FixedBitSet)) :=
 let' bits ← (bitsₐ);
 let' t6 ← (bits);
-dostep «$tmp» ← @div_rem (t6) (BITS);
+do «$tmp1» ← BITS;
+dostep «$tmp» ← @div_rem (t6) «$tmp1»;
 let' t5 ← «$tmp»;
 let' blocks ← ((t5).1);
 let' rem ← ((t5).2);
@@ -65,7 +67,8 @@ definition FixedBitSet.contains (selfₐ : (FixedBitSet)) (bitₐ : usize) : sem
 let' self ← (selfₐ);
 let' bit ← (bitₐ);
 let' t8 ← (bit);
-dostep «$tmp» ← @div_rem (t8) (BITS);
+do «$tmp1» ← BITS;
+dostep «$tmp» ← @div_rem (t8) «$tmp1»;
 let' t7 ← «$tmp»;
 let' block ← ((t7).1);
 let' i ← ((t7).2);
@@ -94,9 +97,10 @@ return (ret)
 end
 
 
-definition FixedBitSet.insert.FILE_LINE : (string × u32) :=
+definition FixedBitSet.insert.FILE_LINE : sem (string × u32) :=
 let' ret ← ((("thys/fixedbitset/src/src/lib.rs"), ((87 : nat))));
-ret
+return (ret)
+
 
 definition FixedBitSet.insert (selfₐ : (FixedBitSet)) (bitₐ : usize) : sem (unit × (FixedBitSet)) :=
 let' self ← lens.id;
@@ -114,7 +118,8 @@ mzero
 else
 let' t5 ← (⋆);
 let' t16 ← (bit);
-dostep «$tmp» ← @div_rem (t16) (BITS);
+do «$tmp1» ← BITS;
+dostep «$tmp» ← @div_rem (t16) «$tmp1»;
 let' t15 ← «$tmp»;
 let' block ← ((t15).1);
 let' i ← ((t15).2);

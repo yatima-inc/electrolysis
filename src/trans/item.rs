@@ -343,7 +343,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_static(&self) -> String {
-        format!("definition {} : {} :=\n{}",
+        format!("definition {} : sem {} :=\n{}",
                 krate::name_def_id(self.tcx, self.def_id),
                 self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty),
                 ::trans::fun::FnTranspiler::new(self).transpile_mir())

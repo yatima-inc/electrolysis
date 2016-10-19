@@ -13,30 +13,45 @@ open [notation] unit
 
 namespace test
 
-definition BIT1 : u32 :=
-let' ret ← ((1 : nat));
-ret
+definition BIT1 : sem u32 :=
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shls u32.bits ((1 : nat)) ((0 : int)));
+let' t1 ← «$tmp0»;
+let' ret ← ((t1).1);
+return (ret)
 
-definition BIT2 : u32 :=
-let' ret ← ((2 : nat));
-ret
 
-definition BITS : (array u32 2) :=
-let' ret ← ([(BIT1), (BIT2)]);
-ret
+definition BIT2 : sem u32 :=
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shls u32.bits ((1 : nat)) ((1 : int)));
+let' t1 ← «$tmp0»;
+let' ret ← ((t1).1);
+return (ret)
 
-definition STRING : string :=
+
+definition BITS : sem (array u32 2) :=
+do «$tmp0» ← do «$tmp0» ← BIT1;
+do «$tmp1» ← BIT2;
+return ([«$tmp0», «$tmp1»]);
+let' ret ← «$tmp0»;
+return (ret)
+
+
+definition STRING : sem string :=
 let' ret ← ("bitstring");
-ret
+return (ret)
+
 
 structure BitsNStrings := mk {} ::
 (mybits : (array u32 2))
 (mystring : string)
 
-definition BITS_N_STRINGS : (BitsNStrings) :=
-let' t2 ← (STRING);
+definition BITS_N_STRINGS : sem (BitsNStrings) :=
+do «$tmp0» ← STRING;
+let' t2 ← «$tmp0»;
 let' t1 ← (t2);
-let' ret ← (BitsNStrings.mk (BITS) (t1));
-ret
+do «$tmp0» ← do «$tmp0» ← BITS;
+return (BitsNStrings.mk «$tmp0» (t1));
+let' ret ← «$tmp0»;
+return (ret)
+
 
 end test
