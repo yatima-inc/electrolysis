@@ -64,16 +64,21 @@ def rec(path, depth):
         rust = os.path.join(path, 'lib.rs')
         mir = subprocess.run(['rustc', '--crate-type', 'lib', '-Z', 'unstable-options', '--unpretty', 'mir', rust],
                              stdout=subprocess.PIPE, check=True).stdout.decode('utf8')
-        lean = open(os.path.join(path, 'generated.lean')).read()
+        generated = open(os.path.join(path, 'generated.lean')).read()
         if '5 Crates' not in path:
-            lean = re.search('namespace test(.*)end test', lean, flags=re.DOTALL).group(1)
+            generated = re.search('namespace test(.*)end test', generated, flags=re.DOTALL).group(1)
         yield """<div>
   <label><input type="checkbox" onchange="toggle_mir(this)">Show MIR</label>
   <div class="code-pair">{}{}{}</div>
 </div>""".format(
     highlight(open(rust).read(), RustLexer(), HtmlFormatter(cssclass="rust")),
     highlight(mir, RustLexer(), HtmlFormatter(cssclass="mir")),
-    highlight(lean, LeanLexer(), HtmlFormatter(cssclass="lean")))
+    highlight(generated, LeanLexer(), HtmlFormatter(cssclass="lean")))
+        if 'thy.lean' in entries:
+            thy = open(os.path.join(path, 'thy.lean')).read()
+            # trim import and open
+            thy = re.search('((|(open|import) .*)\n)*((.|\n)*)', thy, flags=re.MULTILINE).group(4)
+            yield highlight(thy, LeanLexer(), HtmlFormatter(cssclass="lean"))
 
     for f in entries:
         p = os.path.join(path, f)
