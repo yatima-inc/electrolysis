@@ -28,16 +28,12 @@ definition inv_image.wf' [trans_instance] {A : Type} {B : Type} {R : B → B →
 
 attribute sem [reducible]
 
-definition is_slice [class] {T : Type₁} (xs : slice T) :=
-length xs ≤ usize.max
-
-definition is_bounded_nat [class] (bits x : ℕ) :=
-x < 2^bits
-abbreviation is_usize := is_bounded_nat usize.bits
-
 lemma bitvec.of_is_bounded_nat [instance] (bits : ℕ) (v : bitvec bits) :
   is_bounded_nat bits (bitvec.to ℕ v) :=
 !bitvec.to_lt
+
+lemma zero_is_bounded_nat [instance] (bits : ℕ) : is_bounded_nat bits 0 :=
+!pow_pos_of_pos dec_trivial
 
 lemma div_is_bounded_nat [instance] (bits x y : ℕ) [h : is_bounded_nat bits x] :
   is_bounded_nat bits (x / y) :=
@@ -46,6 +42,17 @@ lt_of_le_of_lt !nat.div_le_self h
 lemma mod_is_bounded_nat [instance] (bits x y : ℕ) [h : is_bounded_nat bits x] :
   is_bounded_nat bits (x % y) :=
 lt_of_le_of_lt !nat.mod_le h
+
+lemma unsigned.max_is_bounded_nat [instance] (bits : ℕ) : is_bounded_nat bits (unsigned.max bits) :=
+begin
+  rewrite [↑is_bounded_nat, ↑unsigned.max],
+  apply generalize_with_eq (2^bits:ℕ), intro x hx, cases x,
+  { exfalso, apply dec_trivial (eq_zero_of_pow_eq_zero hx) },
+  { apply lt_succ_self }
+end
+
+lemma is_bounded_nat_of_le_max {bits x : ℕ} (h : x ≤ unsigned.max bits) : is_bounded_nat bits x :=
+lt_of_le_of_lt h !unsigned.max_is_bounded_nat
 
 lemma usize.max_ge_u16_max : usize.max ≥ u16.max :=
 begin
@@ -387,10 +394,11 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       rewrite [nth_eq_first'_dropn, add.comm, -dropn_dropn, -nth_eq_first'_dropn, len_s₁],
       apply prefixeq.nth_of_nth_prefixeq this (loop_4_invar.s_in_self Hinvar)
     end,
-    have base + (length s₁ + 1) ≤ usize.max, from le.trans (lt_length_of_nth nth_x) His_slice,
-    rewrite [if_pos (le.trans !le_add_left this), ▸*, if_pos this, ▸*],
-    rewrite [if_pos (show base + length s₁ ≤ usize.max, from
-      le.trans (add_le_add_left !le_add_right _) this)],
+    have is_usize (base + (length s₁ + 1)), from
+      lt_of_le_of_lt (lt_length_of_nth nth_x) His_slice,
+    rewrite [if_pos (lt_of_le_of_lt !le_add_left this), ▸*, if_pos this, ▸*],
+    rewrite [if_pos (show is_usize (base + length s₁), from
+      lt_of_le_of_lt (add_le_add_left !le_add_right _) this)],
     have Hle_max_cost : k ≤ cmp_max_cost, from
       Ord'.le_cmp_max_cost (mem_of_nth nth_x) cmp_eq,
     cases (decidable_lt x needle) with Hx_lt_needle Hx_ge_needle,

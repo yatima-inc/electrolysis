@@ -99,7 +99,7 @@ definition i32.bits [reducible] : ℕ := 32
 definition i64.bits [reducible] : ℕ := 64
 definition isize.bits : ℕ := usize.bits
 
-definition unsigned.max (bits : ℕ) : ℕ := 2^bits - 1
+definition unsigned.max [reducible] (bits : ℕ) : ℕ := 2^bits - 1
 abbreviation u8.max : ℕ := unsigned.max u8.bits
 abbreviation u16.max : ℕ := unsigned.max u16.bits
 abbreviation u32.max : ℕ := unsigned.max u32.bits
@@ -122,8 +122,17 @@ if x ≤ u32.max then return x
 else mzero
 
 
+definition is_bounded_nat [class] [reducible] (bits x : ℕ) :=
+x < 2^bits
+definition is_bounded_int [class] [reducible] (bits : ℕ) (x : int) :=
+-2^(bits-1) ≤ x ∧ x < 2^(bits-1)
+
+abbreviation is_usize := is_bounded_nat usize.bits
+abbreviation is_i32 := is_bounded_int i32.bits
+
+
 definition check_unsigned [reducible] (bits : ℕ) (x : nat) : sem nat :=
-sem.guard (x ≤ unsigned.max bits) (return x)
+sem.guard (is_bounded_nat bits x) (return x)
 
 definition checked.add [reducible] (bits : ℕ) (x y : nat) : sem nat :=
 check_unsigned bits (x+y)
@@ -160,7 +169,7 @@ sem.guard (0 ≤ y) $ checked.shr bits x (nat.of_int y)
 
 
 definition check_signed [reducible] (bits : ℕ) (x : int) : sem int :=
-sem.guard (signed.min bits ≤ x ∧ x ≤ signed.max bits) $ return x
+sem.guard (is_bounded_int bits x) $ return x
 
 definition checked.sadd [reducible] (bits : ℕ) (x y : int) : sem int :=
 check_signed bits (x+y)
@@ -176,6 +185,9 @@ infix `>ᵇ`:50 := λ a b, b <ᵇ a
 
 abbreviation array [parsing_only] (A : Type₁) (n : ℕ) := list A
 abbreviation slice [parsing_only] := list
+
+definition is_slice [class] [reducible] {T : Type₁} (xs : slice T) :=
+is_usize (length xs)
 
 namespace core
   abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)

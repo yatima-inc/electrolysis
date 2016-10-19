@@ -39,7 +39,7 @@ begin
   rewrite [↑nat.div_ceil at Hfrom_elem],
   rewrite [↑with_capacity, ↑BITS, div_rem_32, ↑bool_to_usize],
   krewrite [if_congr (bool.of_Prop_eq_tt_iff (0 < bits % 32)) rfl rfl],
-  have bits / 32 + ite (0 < bits % 32) 1 0 ≤ usize.max, from
+  have is_usize (bits / 32 + ite (0 < bits % 32) 1 0), from is_bounded_nat_of_le_max $
     have bits / 32 ≤ usize.max - 1, from
       nat.div_le_of_le_mul (le.trans (le_pred_of_lt `is_usize bits`) (calc
         usize.max ≤ usize.max + (usize.max - 1 - 1) : le_add_right
