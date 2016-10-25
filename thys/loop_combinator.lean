@@ -1,9 +1,12 @@
 import sem
+import asymptotic
 
 open eq.ops
+open [notation] function
 open nat
 open option
 open [notation] partial
+open [notation] set
 open sum
 
 open [class] classical
@@ -137,4 +140,42 @@ section
     rewrite [↑loop, dif_pos Hterm_rel],
     apply fix_eq_fix Hterm this,
   end
+
+  /-protected theorem loop.terminates_with
+    {R : State → State → Prop}
+    [Hwf_R : well_founded R]
+    (s : State)
+    (p : State → Prop)
+    (q : Res → Prop)
+    (start : p s)
+    (inv : ∀ s s', p s → sem.terminates_with (λ x, x = inl s') (body s) → p s' ∧ R s s')
+    (fin : ∀ s r, p s → sem.terminates_with (λ x, x = inr r) (body s) → q r) :
+    sem.terminates_with q (loop s)
+
+  section
+    open topology
+    open asymptotic
+    open prod.ops
+
+    parameters 
+      {R : State → State → Prop}
+      [Hwf_R : well_founded R]
+      (p : State → State → Prop)
+      (q : State → Res → Prop)
+
+    include State Res body R p q
+    structure loop.state_terminates_with_in_ub (init : State) (ub₁ ub₂ : ℕ) : Prop :=
+    (start : p init init)
+    (inv : ∀ s s', p init s →
+      sem.terminates_with_in (λ x, x = inl s') ub₁ (body s) → p init s' ∧ R s s')
+    (fin : ∀ s r, p init s → sem.terminates_with_in (λ x, x = inr r) ub₂ (body s) → q init r)
+
+    protected theorem loop.terminates_with_in_ub
+      (c₁ c₂ : State → ℕ)
+      (asym₁ asym₂ : ℕ → ℕ)
+      (h : ∀ s, ∃₀ f₁ ∈ 𝓞(asym₁) [at ∞], ∃₀ f₂ ∈ 𝓞(asym₂) [at ∞],
+        @loop.state_terminates_with_in_ub _ _ body R p q s (f₁ (c₁ s)) (f₂ (c₂ s))) :
+      ∀ s, ∃₀ f ∈ 𝓞(λ p, asym₁ p.1 * asym₂ p.2) [at ∞ × ∞],
+        sem.terminates_with_in (q s) (f (c₁ s, c₂ s)) (loop s)
+  end-/
 end

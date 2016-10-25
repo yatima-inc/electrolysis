@@ -11,13 +11,10 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
+definition test.Point := (u8 × u8)
 
-definition Point := (u8 × u8)
-
-definition p : sem (u8 × u8) :=
-let' ret ← ((((41 : nat)), ((68 : nat))));
+definition test.p : sem (u8 × u8) :=
+let' ret ← ((41 : nat), (68 : nat));
 return (ret)
 
 
-end test

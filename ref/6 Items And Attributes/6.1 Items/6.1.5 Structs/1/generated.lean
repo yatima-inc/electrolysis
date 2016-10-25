@@ -11,18 +11,15 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
-
-structure Point := mk {} ::
+structure test.Point := mk {} ::
 (x : i32)
 (y : i32)
 
-definition main : sem (unit) :=
-let' p ← (Point.mk ((10 : int)) ((11 : int)));
-let' t3 ← ((Point.x (p)));
-let' px ← (t3);
-let' ret ← (⋆);
+definition test.main : sem (unit) :=
+let' p ← test.Point.mk (10 : int) (11 : int);
+let' t3 ← (test.Point.x p);
+let' px ← t3;
+let' ret ← ⋆;
 return (ret)
 
 
-end test

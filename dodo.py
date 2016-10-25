@@ -30,10 +30,12 @@ def task_electrolysis_ref():
     for p in list(ref.rglob('lib.rs')):
         yield {
             'name': str(p),
-            'actions': [['cargo', 'run', p]],
+            'actions': [['cargo', 'run', p]] +
+            ([['mv', p.with_name('generated.lean'), p.with_name('broken.lean')]]
+             if '!' in str(p) else []),
             'file_dep': [p, 'target/debug/electrolysis'],
             'task_dep': ['electrolysis_thys'],
-            'targets': [p.with_name('generated.lean')],
+            #'targets': [p.with_name('generated.lean')],
         }
 
 @create_after(executed='electrolysis_ref', target_regex=r'ref/index\.html')

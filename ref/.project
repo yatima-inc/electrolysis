@@ -8,3 +8,6 @@
 
 # Exclude emacs temp files
 - .#*.lean
+
+# Exclude expect-crash files
+- broken.lean

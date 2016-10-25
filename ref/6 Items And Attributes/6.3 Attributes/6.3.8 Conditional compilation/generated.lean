@@ -11,11 +11,8 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
-
-definition not_test : sem (unit) :=
-let' ret ← (⋆);
+definition test.not_test : sem (unit) :=
+let' ret ← ⋆;
 return (ret)
 
 
-end test

@@ -21,6 +21,9 @@ end
 namespace bool
   open decidable
 
+  attribute bool.cond [unfold 2]
+  attribute bool.bnot [unfold 1]
+
   definition of_Prop [unfold 2] (P : Prop) : Π [decidable P], bool
   | (inl _) := tt
   | (inr _) := ff

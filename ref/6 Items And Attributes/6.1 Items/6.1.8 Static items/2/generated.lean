@@ -11,11 +11,8 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
-
-definition LEVELS : sem u32 :=
-let' ret ← ((0 : nat));
+definition test.LEVELS : sem u32 :=
+let' ret ← (0 : nat);
 return (ret)
 
 
-end test

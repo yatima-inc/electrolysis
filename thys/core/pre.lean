@@ -21,7 +21,7 @@ structure lens (Outer Inner : Type₁) :=
 definition lens.id [constructor] {Inner : Type₁} : lens Inner Inner :=
 ⦃lens, get := return, set := λ o, return⦄
 
-definition lens.comp [unfold 4 5] {A B C : Type₁} (l₁ : lens A B) (l₂ : lens B C) : lens A C :=
+definition lens.comp [unfold 4 5] {A B C : Type₁} (l₂ : lens B C) (l₁ : lens A B) : lens A C :=
 ⦃lens, get := λ o,
   do o' ← lens.get l₁ o;
   lens.get l₂ o',
@@ -121,6 +121,8 @@ do x ← isize_to_usize x;
 if x ≤ u32.max then return x
 else mzero
 
+definition i32_to_i64 (x : i32) :=
+return x
 
 definition is_bounded_nat [class] [reducible] (bits x : ℕ) :=
 x < 2^bits
@@ -137,6 +139,12 @@ sem.guard (is_bounded_nat bits x) (return x)
 definition checked.add [reducible] (bits : ℕ) (x y : nat) : sem nat :=
 check_unsigned bits (x+y)
 
+definition checked.sub [reducible] (bits : ℕ) (x y : nat) : sem nat :=
+check_unsigned bits (x-y)
+
+definition checked.mul [reducible] (bits : ℕ) (x y : nat) : sem nat :=
+check_unsigned bits (x*y)
+
 definition checked.div [reducible] (bits : ℕ) (x y : nat) : sem nat :=
 sem.guard (y ≠ 0) $ return (div x y)
 
@@ -150,6 +158,8 @@ bitvec.to ℕ (op (bitvec.of bits a) (bitvec.of bits b))
 definition bitor [reducible] bits := binary_bitwise_op bits bitvec.or
 definition bitand [reducible] bits := binary_bitwise_op bits bitvec.and
 definition bitxor [reducible] bits := binary_bitwise_op bits bitvec.xor
+definition bitnot [reducible] bits (a : nat) := bitvec.to ℕ (bitvec.not (bitvec.of bits a))
+-- TODO: signed
 
 notation a ` ||[`:65 n `] ` b:65  := bitor n a b
 notation a ` &&[`:70 n `] ` b:70  := bitand n a b
@@ -174,6 +184,20 @@ sem.guard (is_bounded_int bits x) $ return x
 definition checked.sadd [reducible] (bits : ℕ) (x y : int) : sem int :=
 check_signed bits (x+y)
 
+definition checked.ssub [reducible] (bits : ℕ) (x y : int) : sem int :=
+check_signed bits (x-y)
+
+definition checked.smul [reducible] (bits : ℕ) (x y : int) : sem int :=
+check_signed bits (x+y)
+
+definition checked.sdiv [reducible] (bits : ℕ) (x y : int) : sem int :=
+sem.guard (y ≠ 0) $ check_signed bits (div x y)
+
+definition checked.srem [reducible] (bits : ℕ) (x y : int) : sem int :=
+sem.guard (y ≠ 0) $ check_signed bits (mod x y)
+
+definition checked.neg [reducible] (bits : ℕ) (x : int) : sem int :=
+check_signed bits (-x)
 
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)

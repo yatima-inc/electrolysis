@@ -11,6 +11,3 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
-
-end test

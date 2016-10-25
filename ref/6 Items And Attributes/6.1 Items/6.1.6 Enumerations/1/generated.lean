@@ -11,22 +11,19 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
+inductive test.Animal :=
+| Dog {} : test.Animal
+| Cat {} : test.Animal
 
-inductive Animal :=
-| Dog {} : Animal
-| Cat {} : Animal
-
-definition Animal.discr (self : Animal) : isize := match self with
-| Animal.Dog := 0
-| Animal.Cat := 1
+definition test.Animal.discr (self : test.Animal) : isize := match self with
+| test.Animal.Dog := 0
+| test.Animal.Cat := 1
 end
 
-definition main : sem (unit) :=
-let' a ← (Animal.Dog);
-let' a ← (Animal.Cat);
-let' ret ← (⋆);
+definition test.main : sem (unit) :=
+let' a ← test.Animal.Dog;
+let' a ← test.Animal.Cat;
+let' ret ← ⋆;
 return (ret)
 
 
-end test

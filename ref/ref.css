@@ -19,13 +19,17 @@ a.ref {
     width: 400px;
 }
 
-nav a.fail::after {
+.fail::after {
     content: " ✗";
     color: red;
 }
-nav a.success::after {
+.success::after {
     content: " ✔";
     color: green;
+}
+
+.broken > pre {
+    border: 2px solid red;
 }
 
 /* from https://doc.rust-lang.org/reference.html */

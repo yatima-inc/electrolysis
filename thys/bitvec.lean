@@ -15,8 +15,6 @@ open prod
 open subtype
 open tuple
 
-attribute bool.cond [unfold 2]
-
 lemma nat.mod_2_eq_0_of_ne_1 {n : ℕ} (h : n % 2 ≠ 1) : n % 2 = 0 :=
 match nat.lt_trichotomy (n % 2) 1 with
 | or.inl lt := nat.eq_zero_of_le_zero (nat.le_of_lt_succ lt)

@@ -13,6 +13,3 @@ open [notation] prod.ops
 open [notation] unit
 open alloc
 
-namespace alloc
-
-end alloc

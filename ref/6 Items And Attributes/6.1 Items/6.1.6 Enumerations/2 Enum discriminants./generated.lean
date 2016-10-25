@@ -11,21 +11,18 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
+inductive test.Foo :=
+| Bar {} : test.Foo
 
-inductive Foo :=
-| Bar {} : Foo
-
-definition Foo.discr (self : Foo) : isize := match self with
-| Foo.Bar := 123
+definition test.Foo.discr (self : test.Foo) : isize := match self with
+| test.Foo.Bar := 123
 end
 
-definition main : sem (unit) :=
-let' t2 ← (Foo.Bar);
-do «$tmp0» ← (isize_to_u32 (Foo.discr (t2)));
+definition test.main : sem (unit) :=
+let' t2 ← test.Foo.Bar;
+do «$tmp0» ← (isize_to_u32 (test.Foo.discr t2));
 let' x ← «$tmp0»;
-let' ret ← (⋆);
+let' ret ← ⋆;
 return (ret)
 
 
-end test

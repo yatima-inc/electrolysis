@@ -3,5 +3,5 @@ rustc_args = "$RUST_SRC_PATH/libcollections/lib.rs"
 targets = [
   #"vec.«Vec<T>».(new|clear|push|pop)",
   #"«collections.vec.Vec<T> as core.ops.Deref»",
-  '«\[T\]».get'
+  'collections.«\[T\]».get'
 ]

@@ -1,0 +1,1 @@
+Traits, type classes, what's the difference? Well, apart from the implicit `Self` parameter becoming explicit, we always use explicit calls in the generated code because some Rust types (immutable references, integer types) are translated into the same Lean type, making implicit calls ambiguous. Most proof code should be fine though (see below).

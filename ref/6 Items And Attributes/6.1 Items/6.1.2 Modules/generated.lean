@@ -11,9 +11,6 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
+inductive test.foo.Bar :=
+mk {} : (core.cmp.Ordering) → test.foo.Bar
 
-inductive foo.Bar :=
-mk {} : (core.cmp.Ordering) → foo.Bar
-
-end test

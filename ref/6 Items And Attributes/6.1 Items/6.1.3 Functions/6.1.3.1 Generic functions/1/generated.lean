@@ -11,13 +11,10 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
-
-definition foo {A : Type₁} {B : Type₁} (xₐ : A) (yₐ : B) : sem (unit) :=
-let' x ← (xₐ);
-let' y ← (yₐ);
-let' ret ← (⋆);
+definition test.foo {A : Type₁} {B : Type₁} (xₐ : A) (yₐ : B) : sem (unit) :=
+let' x ← xₐ;
+let' y ← yₐ;
+let' ret ← ⋆;
 return (ret)
 
 
-end test

@@ -1,27 +1,31 @@
 rustc_args = "$RUST_SRC_PATH/libcore/lib.rs"
 
 targets = [
-  '«\[T\] as core.slice.SliceExt».(binary_search|get)',
-  #petgraph
-  "marker.PhantomData", "marker.Copy", "iter.iterator.Iterator",
-  "«&'a u32 as core.ops.BitAnd<u32>»",
-  "«u32 as core.clone.Clone»",
+  'core.«\[T\] as core.slice.SliceExt».(binary_search|get)',
+  #fixedbitset
+  "core.marker.PhantomData", "core.marker.Copy", "core.iter.iterator.Iterator",
+  "core.«&'a u32 as core.ops.BitAnd<u32>»",
+  "core.«u32 as core.clone.Clone»",
   #ref
-  "«i32 as core.default.Default»"
+  "core.«i32 as core.default.Default»",
+  'core.ops.Range\w*',
 ]
 
 # items axiomatized in pre.lean
 ignore = [
   # intrinsics
-  "ops.FnOnce", "ops.FnMut", "ops.Fn",
+  "core.ops.FnOnce", "core.ops.FnMut", "core.ops.Fn",
   # unsafe
-  "mem.swap",
-  "«[T] as core.slice.SliceExt».len"
+  "core.mem.swap",
+  "core.«[T] as core.slice.SliceExt».len"
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline
 [replace]
-"«[T] as core.ops.Index<core.ops.Range<usize>>».index" = """
+"core.«[T] as core.ops.Index<core.ops.Range<usize>>».index" = """
+section
+open core.ops
+
 /-
 /// Implements slicing with syntax `&self[begin .. end]`.
 ///
@@ -34,11 +38,13 @@ ignore = [
 /// Requires that `begin <= end` and `end <= self.len()`,
 /// otherwise slicing will panic.
 -/
-definition «[T] as core.ops.Index<core.ops.Range<usize>>».index {T : Type₁} (self : slice T) (index : ops.Range usize) : sem (slice T) :=
-if ops.Range.start index ≤ ops.Range.«end» index ∧ ops.Range.«end» index ≤ list.length self
-then return (list.firstn (ops.Range.«end» index - ops.Range.start index) (list.dropn (ops.Range.start index) self))
-else mzero"""
+definition core.«[T] as core.ops.Index<core.ops.Range<usize>>».index {T : Type₁} (self : slice T) (index : Range usize) : sem (slice T) :=
+if Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self
+then return (list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
+else mzero
 
-[traits."slice.SliceExt"]
+end"""
+
+[traits."core.slice.SliceExt"]
 # only method called from default methods, everything else should be static calls
 only = ["len"]

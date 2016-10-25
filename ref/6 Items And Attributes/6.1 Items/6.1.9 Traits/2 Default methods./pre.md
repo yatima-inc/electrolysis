@@ -1,0 +1,1 @@
+Default methods are terrible. They should be part of the type class just like standard methods, but they also depend on the type class in order to call other trait methods, creating a cyclic dependency. For now, we just declare them outside of (after) the type class, which works for all current proofs, but can create problems (see below).

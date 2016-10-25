@@ -4,6 +4,15 @@ import core.pre
 open list
 
 namespace alloc
+
+namespace boxed
+  structure Box (T : Type₁) :=
+  (val : T)
+
+  definition «Box<T>».new {T : Type₁} (val : T) : sem (Box T) := return (Box.mk val)
+end boxed
+
+/-
 namespace raw_vec
   definition RawVec (T : Type₁) := list (option T)
 
@@ -15,4 +24,5 @@ namespace raw_vec
   -- I think.
   definition «RawVec<T>».new {T : Type₁} : sem (RawVec T) := return []
 end raw_vec
+-/
 end alloc

@@ -14,6 +14,7 @@ extern crate toml;
 #[macro_use]
 extern crate rustc;
 extern crate rustc_const_eval;
+extern crate rustc_const_math;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;
@@ -249,10 +250,7 @@ open [notation] unit
     if has_pre {
         try!(write!(f, "open {}\n", crate_name));
     }
-    try!(write!(f, "
-namespace {}
-
-", crate_name));
+    try!(write!(f, "\n"));
 
     // condensate sets of cyclic dependencies into graph nodes
     let condensed = condensation(graph, /* make_acyclic */ true);
@@ -317,6 +315,5 @@ namespace {}
         }
     }
 
-    // the end!
-    write!(f, "end {}", crate_name)
+    Ok(())
 }

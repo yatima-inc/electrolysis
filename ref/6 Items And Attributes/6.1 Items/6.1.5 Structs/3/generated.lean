@@ -11,18 +11,15 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
+structure test.Cookie := mk {} ::
 
-structure Cookie := mk {} ::
-
-definition main : sem (unit) :=
-let' t2 ← (Cookie.mk);
-let' t3 ← (Cookie.mk);
-let' t4 ← (Cookie.mk);
-let' t5 ← (Cookie.mk);
-let' c ← ([(t2), (t3), (t4), (t5)]);
-let' ret ← (⋆);
+definition test.main : sem (unit) :=
+let' t2 ← test.Cookie.mk;
+let' t3 ← test.Cookie.mk;
+let' t4 ← test.Cookie.mk;
+let' t5 ← test.Cookie.mk;
+let' c ← [t2, t3, t4, t5];
+let' ret ← ⋆;
 return (ret)
 
 
-end test

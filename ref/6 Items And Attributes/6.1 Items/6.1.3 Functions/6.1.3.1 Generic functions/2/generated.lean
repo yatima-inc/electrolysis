@@ -11,27 +11,24 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-namespace test
-
-definition foo {T : Type₁} [«core.default.Default T» : core.default.Default T] (xₐ : (slice T)) : sem (unit) :=
-let' x ← (xₐ);
-let' ret ← (⋆);
+definition test.foo {T : Type₁} [«core.default.Default T» : core.default.Default T] (xₐ : (slice T)) : sem (unit) :=
+let' x ← xₐ;
+let' ret ← ⋆;
 return (ret)
 
 
-definition main : sem (unit) :=
+definition test.main : sem (unit) :=
 do promoted_0 ←
-let' t1 ← ([((1 : int)), ((2 : int))]);
-let' ret ← (t1);
+let' t1 ← [(1 : int), (2 : int)];
+let' ret ← t1;
 return (ret)
 ;
-let' t4 ← (promoted_0);
-let' t3 ← (t4);
-let' t2 ← (t3);
-dostep «$tmp» ← @foo _ (core.«i32 as core.default.Default» ) (t2);
+let' t4 ← promoted_0;
+let' t3 ← t4;
+let' t2 ← t3;
+dostep «$tmp» ← @test.foo _ (core.«i32 as core.default.Default» ) t2;
 let' t1 ← «$tmp»;
-let' ret ← (⋆);
+let' ret ← ⋆;
 return (ret)
 
 
-end test

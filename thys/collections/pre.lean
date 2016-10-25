@@ -12,7 +12,7 @@ namespace vec
 
 structure Vec (T : Type₁) := mk {} ::
 (buf : list T) -- (alloc.raw_vec.RawVec T))
--- (len : usize) -- useless without uninitialized storage
+-- (len : usize) -- useless without uninitialized storage -- except perhaps for implementing `capacity()`...
 
 definition from_elem {T : Type₁} [clone : Clone T] (elem : T) (n : usize) : sem (Vec T) :=
 dostep c ← @Clone.clone T clone elem;
@@ -24,8 +24,8 @@ definition new {T : Type₁} : sem (Vec T) :=
 return (Vec.mk [])
 
 -- TODO: amortized complexity
-definition push {T : Type₁} (self : Vec T) (value : T) : sem (Vec T) :=
-sem.return_incr (Vec.mk (Vec.buf self ++ [value])) (list.length (Vec.buf self))
+definition push {T : Type₁} (self : Vec T) (value : T) : sem (unit × Vec T) :=
+sem.return_incr (unit.star, Vec.mk (Vec.buf self ++ [value])) (list.length (Vec.buf self))
 
 definition pop {T : Type₁} (self : Vec T) : sem (Vec T × Option T) :=
 match reverse (Vec.buf self) with

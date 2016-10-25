@@ -79,6 +79,9 @@ begin
   }
 end
 
+lemma sem.not_terminates_mzero {a : Type₁} : ¬sem.terminates (mzero : sem a) :=
+id
+
 lemma return_bind {A B : Type₁} {a : A} {f : A → sem B} : (return a >>= f) = f a :=
 begin
   esimp,

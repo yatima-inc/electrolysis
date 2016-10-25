@@ -8,35 +8,51 @@ import markdown
 from pygments import highlight
 from pygments.lexers import RustLexer, LeanLexer
 from pygments.formatters import HtmlFormatter
+from pygments_markdown import CodeBlockExtension
 
 def success(path):
     ok = False
     fail = False
+    rec = False
     for f in os.listdir(path):
         p = os.path.join(path, f)
-        if f == 'lib.rs':
-            lib = open(p).read()
-            if 'FIXME' in lib:
-                return False  # wrong if there are passing sub items
+        #if f == 'lib.rs':
+        #    lib = open(p).read()
+        #    if 'FIXME' in lib:
+        #        return False  # wrong if there are passing sub items
         if f == 'generated.lean':
             gen = open(p).read()
-            if ('unimplemented' in gen or 'compiler error' in gen)\
-               and not path.endswith('-'):
+            if ('unimplemented' in gen or 'compiler error' in gen) and not path.endswith('-'):
                 fail = True
             else:
                 ok = True
+        if f == 'broken.lean':
+            fail = True
         if os.path.isdir(p):
+            rec = True
             s = success(p)
             if s != True:
                 fail = True
             if s != False:
                 ok = True
+    if not fail and not rec:
+        ok = True
     if ok and fail or not ok and not fail:
         return None
     return ok
 
+def success_class(path):
+    s = success(path)
+    return "success" if s else "fail" if s == False else ""
+
+def chapter_key(s):
+    if s[0].isdigit():
+        return ([int(s) for s in s.split(' ')[0].split('.')], s.split(' ')[1:])
+    else:
+        return ([], [s])
+
 def toc(path):
-    entries = sorted(os.listdir(path))
+    entries = sorted(os.listdir(path), key=chapter_key)
 
     yield "<ul>"
     for f in entries:
@@ -44,29 +60,27 @@ def toc(path):
         if os.path.isdir(p) and f[0].isdigit():
             if ' ' in f:
                 anchor = '-'.join(f.split(' ')[1:]).lower()
-                s = success(p)
                 name = f
                 if f.endswith('.'):
                     name = ' '.join(name.split(' ')[1:])[:-1]
                 yield """<li><a class="{}" href="#{}">{}</a>""".format(
-                    "success" if s else "fail" if s == False else "",
-                    anchor, name)
+                    success_class(p), anchor, name)
                 yield from toc(p)
                 yield "</li>"
     yield "</ul>"
     return success
 
 def rec(path, depth):
-    entries = sorted(os.listdir(path))
+    entries = sorted(os.listdir(path), key=chapter_key)
     if 'pre.md' in entries:
-        yield markdown.markdown(open(os.path.join(path, 'pre.md')).read())
+        yield markdown.markdown(open(os.path.join(path, 'pre.md')).read(), extensions=[CodeBlockExtension()])
     if 'lib.rs' in entries:
         rust = os.path.join(path, 'lib.rs')
         mir = subprocess.run(['rustc', '--crate-type', 'lib', '-Z', 'unstable-options', '--unpretty', 'mir', rust],
                              stdout=subprocess.PIPE, check=True).stdout.decode('utf8')
-        generated = open(os.path.join(path, 'generated.lean')).read()
+        generated = open(os.path.join(path, 'broken.lean' if '!' in path else 'generated.lean')).read()
         if '5 Crates' not in path:
-            generated = re.search('namespace test(.*)end test', generated, flags=re.DOTALL).group(1)
+            generated = re.search('(open [^\n]*\n)+\n(.*)', generated, flags=re.DOTALL).group(2)
         yield """<div>
   <label><input type="checkbox" onchange="toggle_mir(this)">Show MIR</label>
   <div class="code-pair">{}{}{}</div>
@@ -74,6 +88,11 @@ def rec(path, depth):
     highlight(open(rust).read(), RustLexer(), HtmlFormatter(cssclass="rust")),
     highlight(mir, RustLexer(), HtmlFormatter(cssclass="mir")),
     highlight(generated, LeanLexer(), HtmlFormatter(cssclass="lean")))
+        if 'broken.lean' in entries:
+            errors = subprocess.run(['lean', 'broken.lean'],
+                                    cwd=path,
+                                    stdout=subprocess.PIPE).stdout.decode('utf8')
+            yield """<div class="broken"><pre>{}</pre></div>""".format(errors)
         if 'thy.lean' in entries:
             thy = open(os.path.join(path, 'thy.lean')).read()
             # trim import and open
@@ -88,7 +107,7 @@ def rec(path, depth):
                 name = f
                 if f.endswith('.'):
                     name = ' '.join(name.split(' ')[1:])[:-1]
-                yield """<h{} id={id}><a href="#{id}">{}</a>""".format(depth, name, id=id)
+                yield """<h{} id="{id}"><a href="#{id}" class="{}">{}</a>""".format(depth, success_class(p), name, id=id)
                 if not f.endswith('.'):
                     yield """<a class="ref" href="https://doc.rust-lang.org/reference.html#{}">[ref]</a>""".format(id)
                 yield """</h{}>""".format(depth)

@@ -99,7 +99,7 @@ impl MaybeValue {
 
     fn and_then<F: FnOnce(String) -> MaybeValue>(self, depth: u32, f: F) -> MaybeValue {
         if self.total {
-            f(format!("({})", self.val))
+            f(self.val)
         } else {
             let tmp = format!("«$tmp{}»", depth);
             let new = f(tmp.clone());
@@ -221,7 +221,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 MaybeValue::total(format!("{}_{}", self.local_name(base), field.index())),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
                 self.get_lvalue(base).and_then(0, |base| self.get_operand(idx).and_then(1, |idx| {
-                    MaybeValue::partial(format!("«[T] as core.slice.SliceExt».get_unchecked {} {}", base, idx))
+                    MaybeValue::partial(format!("core.«[T] as core.slice.SliceExt».get_unchecked {} {}", base, idx))
                 })),
             // `x.0`, `x.f`
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) =>
@@ -255,6 +255,17 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         lv.ty(self.mir, self.tcx).to_ty(self.tcx)
     }
 
+    fn update_struct(&self, adt_def: &ty::AdtDef<'tcx>, field: Field, base: &str, val: &str) -> String {
+        let field_name = adt_def.struct_variant().fields[field.index()].name;
+        let rest = if adt_def.struct_variant().fields.len() > 1 {
+            format!(", {}", base)
+        } else { "".to_string() };
+        format!("⦃ {}, {} := {}{} ⦄",
+                self.name_def_id(adt_def.did),
+                field_name, val,
+                rest)
+    }
+
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> String {
         if let Some(name) = self.lvalue_name(lv) {
             if name == val { // no-op
@@ -277,18 +288,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                             self.set_lvalue(base, val)
                         }
                     }
-                    ProjectionElem::Field(ref field, _) => {
+                    ProjectionElem::Field(field, _) => {
                         match unwrap_refs(self.lvalue_ty(base)).sty {
-                            ty::TypeVariants::TyAdt(ref adt_def, _) => {
-                                let field_name = adt_def.struct_variant().fields[field.index()].name;
-                                self.set_lvalue(base, &format!("⦃ {}, {} := {}, {} ⦄", self.name_def_id(adt_def.did), field_name, val, sbase))
-                            },
+                            ty::TypeVariants::TyAdt(ref adt_def, _) =>
+                                self.set_lvalue(base, &self.update_struct(adt_def, field, &sbase, val)),
                             ref ty => panic!("unimplemented: setting field of {:?}", ty),
                         }
                     }
                     ProjectionElem::Index(ref index) => {
                         self.get_operand(index).map(1, |index| {
-                            self.set_lvalue(base, &format!("(list.update {} {} {})", sbase, index, val))
+                            MaybeValue::partial(format!("sem.lift_opt (list.update {} {} {})", sbase, index, val)).map(2, |new| {
+                                self.set_lvalue(base, &new)
+                            })
                         })
                     }
                     _ => panic!("unimplemented: setting lvalue {:?}", lv),
@@ -331,7 +342,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
     fn get_operand(&self, op: &Operand<'tcx>) -> MaybeValue {
         match *op {
-            Operand::Consume(ref lv) => self.get_lvalue(lv),
+            Operand::Consume(ref lv) => {
+                if self.deref_mut(lv).is_some() {
+                    panic!("unimplemented: arbitrary move of &mut {:?}", lv)
+                }
+                self.get_lvalue(lv)
+            }
             Operand::Constant(ref c) => self.get_constant(c),
         }
     }
@@ -343,7 +359,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 let toperand = operand.ty(self.mir, self.tcx);
                 self.get_operand(operand).and_then(0, |soperand| MaybeValue::total(format!("{} {}", match op {
                     UnOp::Not if toperand.is_bool() => "bool.bnot",
-                    UnOp::Not => "NOT",
+                    UnOp::Not if !toperand.is_signed() => "bitnot",
+                    UnOp::Not => panic!("unimplemented: signed bitwise negation"),
                     UnOp::Neg =>
                         return MaybeValue::partial(format!("checked.neg {}.bits {}",
                                                            self.transpile_ty(toperand),
@@ -365,9 +382,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         let name = if to2.is_signed() { name + "s" } else { name.to_string() };
                         MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
                     };
-                    let bitop = |name| {
+                    let bitop = |name, bool_name| {
                         assert!(to1 == to2);
-                        MaybeValue::total(format!("{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
+                        if to1.is_signed() {
+                            panic!("unimplemented: signed bitwise operator")
+                        }
+                        if to1.is_bool() {
+                            MaybeValue::total(format!("{} {} {}", bool_name, so1, so2))
+                        } else {
+                            MaybeValue::total(format!("{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
+                        }
                     };
                     let infix_binop = |name| MaybeValue::total(format!("{} {} {}", so1, name, so2));
                     match op {
@@ -378,9 +402,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         BinOp::Rem => checked_homogenous_binop("rem"),
                         BinOp::Shl => checked_shift("shl"),
                         BinOp::Shr => checked_shift("shr"),
-                        BinOp::BitOr => bitop("bitor"),
-                        BinOp::BitAnd => bitop("bitand"),
-                        BinOp::BitXor => bitop("bitxor"),
+                        BinOp::BitOr => bitop("bitor", "bor"),
+                        BinOp::BitAnd => bitop("bitand", "band"),
+                        BinOp::BitXor => bitop("bitxor", "bxor"),
                         BinOp::Eq => infix_binop("=ᵇ"),
                         BinOp::Lt => infix_binop("<ᵇ"),
                         BinOp::Le => infix_binop("≤ᵇ"),
@@ -390,11 +414,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     }
                 }))
             }
-            // checked operators used in `Assert`, which we ignore anyway
+            // checked operators used in `Assert`... but we've already checked
             Rvalue::CheckedBinaryOp(op, ref o1, ref o2) => {
                 let MaybeValue { val, total } = self.get_rvalue(&Rvalue::BinaryOp(op, o1.clone(), o2.clone()));
                 if total {
-                    MaybeValue::total(format!("({}, true)", val))
+                    MaybeValue::total(format!("({}, tt)", val))
                 } else {
                     MaybeValue::partial(format!("sem.map (λx, (x, tt)) ({})", val))
                 }
@@ -417,7 +441,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     }))
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
-            Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
+            //Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
                 self.get_lvalue(lv),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
@@ -439,11 +463,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
                 let variant = &adt_def.variants[variant_idx];
                 MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
-                    MaybeValue::total(
-                        (format!("{}{}",
-                                 self.name_def_id(variant.did),
-                                 if adt_def.adt_kind() == ty::AdtKind::Struct && adt_def.struct_variant().ctor_kind == CtorKind::Fictive { ".mk" } else { "" }),
-                         ops).join(" "))
+                    let mut val = self.name_def_id(variant.did);
+                    if variant.ctor_kind == CtorKind::Fictive {
+                        match adt_def.adt_kind() {
+                            ty::AdtKind::Struct => val += ".mk",
+                            ty::AdtKind::Enum =>
+                                return MaybeValue::total(
+                                    format!("{val} ({val}.struct.mk {})",
+                                            ops.join(" "), val=val)),
+                            ty::AdtKind::Union => unreachable!(),
+                        }
+                    }
+                    MaybeValue::total((val, ops).join(" "))
                 })
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
@@ -468,6 +499,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Rvalue::Len(ref lv) => self.get_lvalue(lv).and_then(0, |lv| {
                 MaybeValue::total(format!("list.length {}", lv))
             }),
+            Rvalue::Repeat(ref op, ref times) => self.get_operand(op).and_then(0, |op| {
+                use rustc_const_math::ConstUsize::*;
+                let times = match times.value {
+                    Us16(t) => t as u64,
+                    Us32(t) => t as u64,
+                    Us64(t) => t,
+                };
+                // multiplying `op` is okay because it's known to implement `Copy`
+                MaybeValue::total(format!("list.replicate {} {}", times, op))
+            }),
             _ => panic!("unimplemented: rvalue {:?}", rv),
         }
     }
@@ -485,13 +526,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         if self.deref_mut(base).is_some() {
                             return base
                         },
-                    ProjectionElem::Field(ref field, _) => {
+                    ProjectionElem::Field(field, _) => {
                         let ty = unwrap_refs(self.lvalue_ty(base));
                         match ty.sty {
                             ty::TypeVariants::TyAdt(ref adt_def, _) => {
-                                let field = adt_def.struct_variant().fields[field.index()].name;
-                                lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return ⦃ {ty}, {field} := i, o ⦄)",
-                                                    ty=self.name_def_id(adt_def.did), field=field))
+                                let field_name = adt_def.struct_variant().fields[field.index()].name;
+                                lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return {setter})",
+                                                    ty=self.name_def_id(adt_def.did), field=field_name,
+                                                    setter=self.update_struct(adt_def, field, "o", "i")))
                             },
                             ref ty => panic!("unimplemented: lens on field of {:?}", ty),
                         }
@@ -514,19 +556,21 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let source = match self.deref_mut(source) {
             Some(ult_source) => {
                 // reborrow ~> combine lenses
-                lenses.insert(0, self.get_lvalue(source).to_total());
+                lenses.push(self.get_lvalue(source).to_total());
                 ult_source.clone()
             }
             _ => source.clone()
         };
         self.refs.insert(dest_local, source);
-        let val = if lenses.is_empty() { "lens.id".to_string() }
+        let val = if lenses.is_empty() {
+            format!("@lens.id {}", self.transpile_ty(krate::try_unwrap_mut_ref(self.lvalue_ty(dest)).unwrap()))
+        }
         else { format!("({})", lenses.into_iter().join(" ∘ₗ ")) };
         self.set_lvalue(dest, &val)
     }
 
-    fn transpile_statement(&mut self, stmt: &'a Statement<'tcx>) -> String {
-        match stmt.kind {
+    fn transpile_statement(&mut self, kind: &StatementKind<'tcx>) -> String {
+        match *kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 match *rv {
                     Rvalue::Ref(_, BorrowKind::Mut, ref source) => {
@@ -544,7 +588,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 }
             }
             StatementKind::SetDiscriminant { .. } =>
-                panic!("unimplemented: statement {:?}", stmt),
+                panic!("unimplemented: statement kind {:?}", kind),
             StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop =>
                 "".to_string(),
         }
@@ -642,10 +686,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         _ => (def_id, substs)
                     };
 
-                    // analogous to transpile_fn - see there for examples
-
                     // TODO: should probably substitute and make explicit
                     let ty_params = self.full_generics(def_id).iter().map(|_| "_".to_string()).collect_vec();
+                    // analogous to `ItemTranspiler::transpile_trait_params` - see there for examples
                     let assoc_ty_substs = self.get_assoc_ty_substs(def_id);
                     let trait_params = try_iter!(self.trait_predicates_without_markers(def_id).map(|trait_pred| -> TransResult<_> {
                         let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
@@ -702,7 +745,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
 
         let data = &self.mir[bb];
-        let stmts = data.statements.iter().map(|s| self.transpile_statement(s)).collect_vec();
+        let stmts = data.statements.iter().map(|s| self.transpile_statement(&s.kind)).collect_vec();
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match terminator.kind {
                 Goto { target } =>
@@ -774,11 +817,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                 arms.into_iter().chain(iter::once(fallback)).join(""))
                     })
                 },
-                // out-of-bounds/overflow checks - already part of core/pre.lean or ignored
-                Assert { target, .. } => rec!(target),
+                // out-of-bounds/overflow checks - already part of core/pre.lean
+                Assert { target, /*ref cond, expected,*/ .. } => rec!(target), /*self.get_operand(cond).map(0, |cond| {
+                    format!("cond {} mzero ({})", if expected {cond} else {
+                        format!("(bnot {})", cond)
+                    }, rec!(target))
+                }),*/
                 Drop { target, .. } => rec!(target),
+                DropAndReplace { ref location, ref value, target, .. } => {
+                    self.transpile_statement(&StatementKind::Assign(location.clone(), Rvalue::Use(value.clone()))) +
+                    &rec!(target)
+                }
                 Resume => String::new(),
-                _ => panic!("unimplemented: terminator {:?}", terminator),
             }),
             None => None,
         };
@@ -817,16 +867,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let body = (promoted, self.transpile_mir()).join("\n");
 
         let ty_params = self.full_generics(self.def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
-        let assoc_ty_substs = self.get_assoc_ty_substs(self.def_id);
-        // `where T : Iterator` ~> `'(Item : Type) [Iterator : Iterator T Item]'`
-        let trait_params = self.trait_predicates_without_markers(self.def_id).flat_map(|trait_pred| {
-            let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
-            let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| format!("({} : Type₁)", ty));
-            let trait_param = format!("[{} : {}]",
-                                      self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)),
-                                      self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs));
-            free_assoc_tys.chain(iter::once(trait_param))
-        }).collect_vec();
+        let trait_params = self.transpile_trait_params(self.def_id, None);
 
         let is_rec = self.is_recursive(self.def_id);
         let body = if is_rec {
