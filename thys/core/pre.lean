@@ -235,7 +235,7 @@ namespace core
       extends FnOnce Self Args Output :=
     (call_mut : Self → Args → sem (Output × Self))
 
-    abbreviation Fn := FnMut
+    abbreviation Fn := FnMut -- `call` is again `call_once`
     definition Fn.call (Self : Type₁) (Args : Type₁) (Output : Type₁)
       [FnMut : FnMut Self Args Output] : Self → Args → sem Output :=
     FnOnce.call_once Output
@@ -244,7 +244,7 @@ end core
 
 open core.ops
 
-definition fn [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce,
+definition fn_once [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce,
   call_once := id
 ⦄
 
@@ -252,6 +252,11 @@ definition fn [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce
 definition fn_mut [instance] {A B : Type₁} : FnMut (A → sem (B × A)) A B := ⦃FnMut,
   call_once := λ f a, do p ← f a; return p.1,
   call_mut := λ f a, do p ← f a; return (p.1, f)
+⦄
+
+definition fn [instance] {A B : Type₁} : Fn (A → sem B) A B := ⦃FnMut,
+  call_once := id,
+  call_mut := λ f a, do p ← f a; return (p, f)
 ⦄
 
 notation `let'` binder ` ← ` x `; ` r:(scoped f, f x) := r
