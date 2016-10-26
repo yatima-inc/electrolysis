@@ -150,11 +150,19 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             .collect_vec()
     }
 
-    /// `Fn(&mut T) -> R` ~> `(R × T)'`
+    /// `Fn(&mut T) -> R` ~> `(R × T)`
+    /// `Fn(&mut T) -> &mut S` ~> `lens T S`
     pub fn ret_ty(&self, fun_ty: &ty::BareFnTy<'tcx>) -> String {
         let sig = fun_ty.sig.skip_binder();
         let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
-        let out_ty = self.transpile_ty(sig.output);
+        let out_ty = match krate::try_unwrap_mut_ref(&sig.output) {
+            Some(inner) => match sig.inputs.first().cloned().and_then(krate::try_unwrap_mut_ref) {
+                Some(outer) =>
+                    format!("(lens {} {})", self.transpile_ty(outer), self.transpile_ty(inner)),
+                None => panic!("unimplemented: returning mutable reference to argument other than the first"),
+            },
+            None => self.transpile_ty(sig.output),
+        };
         format!("({})", (out_ty, muts.map(|ty| self.transpile_ty(ty))).join(" × "))
     }
 

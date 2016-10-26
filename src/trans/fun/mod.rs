@@ -561,6 +561,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             _ => source.clone()
         };
+        if *dest == Lvalue::Local(RETURN_POINTER) &&
+            krate::try_unwrap_mut_ref(self.mir.return_ty).is_some() &&
+            source != Lvalue::Local(Local::new(1)) {
+            panic!("unimplemented: returning mutable reference to argument other than the first")
+        }
         self.refs.insert(dest_local, source);
         let val = if lenses.is_empty() {
             format!("@lens.id {}", self.transpile_ty(krate::try_unwrap_mut_ref(self.lvalue_ty(dest)).unwrap()))
