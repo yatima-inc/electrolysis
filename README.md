@@ -10,7 +10,8 @@
 
 A tool for formally verifying Rust programs by transpiling them into definitions in the [Lean](http://leanprover.github.io/) theorem prover. 
 
-* [Presentation at Oregon Programming Languages Summer School](presentation/presentation.pdf) (10 minutes isn't nearly enough time)
+* **[Official reference and coverage](http://kha.github.io/electrolysis/)**
+* [Presentation at Oregon Programming Languages Summer School](presentation/presentation.pdf)
 * [Blog post: A Formal Verification of Rust's Binary Search Implementation](https://kha.github.io/2016/07/22/formally-verifying-rusts-binary-search.html)
 
 ## Installation
