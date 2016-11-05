@@ -1,0 +1,1 @@
+We [know](#returning-mutable-reference-to-first-argument.) that the return value will be a lens into the first argument, so we compose it with that one's lens. Note that we also get back the new value of the first argument.

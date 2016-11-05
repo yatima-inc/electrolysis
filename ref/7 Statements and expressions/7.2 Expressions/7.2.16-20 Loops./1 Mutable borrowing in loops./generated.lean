@@ -11,5 +11,5 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-/- test.foo: unimplemented: lens on field of TyTuple(Slice([i32, i32])) -/
+/- test.foo: unimplemented: ty &mut [i32] -/
 

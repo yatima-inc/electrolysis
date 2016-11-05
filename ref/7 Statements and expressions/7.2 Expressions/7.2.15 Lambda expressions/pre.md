@@ -1,0 +1,1 @@
+We currently restrict ourselves to immutable closures, using [the closure itself](https://github.com/Kha/electrolysis/blob/4d67a73fc8edcb453fe4a80e21ed7286f461ffe4/thys/core/pre.lean#L247) as the `self` argument to the `Fn*` traits. We do not remember why.

@@ -583,12 +583,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         let source = self.mk_lenses(source, &mut lenses);
                         self.set_mut_ref(lv, lenses, source)
                     }
+                    // move &mut
                     Rvalue::Use(Operand::Consume(Lvalue::Local(source)))
-                        if self.mir.local_kind(source) == LocalKind::Arg &&
-                            krate::try_unwrap_mut_ref(self.mir.local_decls[source].ty).is_some() => {
-                        // create identity lens to &mut arg on first use
-                        self.set_mut_ref(lv, vec![], &Lvalue::Local(source))
-                    }
+                        if krate::try_unwrap_mut_ref(self.mir.local_decls[source].ty).is_some() =>
+                        self.set_mut_ref(lv, vec![], &Lvalue::Local(source)),
                     _ => self.get_rvalue(rv).map(0, |rv| self.set_lvalue(lv, &rv)),
                 }
             }
@@ -731,10 +729,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 .filter(|v| l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
             // vars that are redefined by l ~> loop state
             let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.mir.local_decls.indices().filter_map(|v| {
-                // safe to unwrap since we write back the value anyway
-                let ty = self.transpile_ty(krate::unwrap_mut_ref(self.lvalue_ty(&Lvalue::Local(v))));
                 let name = self.local_name(v);
                 if defs.contains(&name) && l_defs.contains(&name) {
+                    let ty = self.transpile_ty(self.lvalue_ty(&Lvalue::Local(v)));
                     Some((ty, name))
                 } else { None }
             }).unzip();
@@ -815,7 +812,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
                     self.get_lvalue(discr).map(0, |discr| {
                         let arms = values.iter().zip(targets).map(|(val, &target)| {
-                            format!("| {} :=\n{}", self.transpile_constval(val), rec!(target))
+                            let val = match *val {
+                                ConstVal::Integral(i) => match i.int_type().unwrap() {
+                                    ::syntax::attr::IntType::SignedInt(_) =>
+                                        format!("{}", i.to_u64_unchecked() as i64),
+                                    ::syntax::attr::IntType::UnsignedInt(_) =>
+                                        format!("{}", i.to_u64_unchecked()),
+                                },
+                                _ => unreachable!(),
+                            };
+                            format!("| {} :=\n{}", val, rec!(target))
                         }).collect_vec();
                         let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap()));
                         format!("match {} with\n{}\nend\n", discr,

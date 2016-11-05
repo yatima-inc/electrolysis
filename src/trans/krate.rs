@@ -109,8 +109,8 @@ pub struct CrateTranspiler<'a, 'tcx: 'a> {
     pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
     pub mir_map: &'a MirMap<'tcx>,
     pub config: Config<'a>,
+    pub deps: RefCell<Deps>,
     trans_results: HashMap<DefId, Result<Option<String>, String>>,
-    deps: RefCell<Deps>,
 }
 
 impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {

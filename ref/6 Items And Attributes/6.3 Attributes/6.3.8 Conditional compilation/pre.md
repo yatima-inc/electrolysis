@@ -1,1 +1,1 @@
-Since the verification should not depend on the host system, we skip all items marked with `#[cfg(..)]` except for the harmless `#[cfg(not(test))]`.
+Since the verification should not depend on the host system, we skip all items marked with `#[cfg(..)]` except for the harmless `#[cfg(not(test))]`. These items instead have to be axiomatized in a sensible way by the user.

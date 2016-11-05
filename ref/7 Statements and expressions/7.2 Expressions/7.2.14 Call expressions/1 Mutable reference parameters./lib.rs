@@ -1,10 +1,10 @@
-fn add(x: &mut i32, y: i32) {
-    *x += y
-        ; () // TODO: removing this line leaves `ret` uninitialized, which sounds at least like 'undesired behavior' from MIR
+fn set(x: &mut i32, y: i32) {
+    *x = y
+        ; () // FIXME: removing this line leaves `ret` uninitialized, which sounds at least like 'undesired behavior' from MIR
 }
 
 fn foo() -> i32 {
-    let mut x: i32 = 1i32;
-    add(&mut x, 2i32);
+    let mut x = 1;
+    set(&mut x, 2);
     x
 }

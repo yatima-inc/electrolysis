@@ -214,6 +214,10 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyTrait(_) => panic!("unimplemented: trait objects"),
             ty::TypeVariants::TyArray(ref ty, size) =>
                 format!("(array {} {})", self.transpile_ty(ty), size),
+            ty::TypeVariants::TyBox(ref ty) => {
+                self.deps.borrow_mut().crate_deps.insert("alloc".to_string());
+                format!("(alloc.boxed.Box {})", self.transpile_ty(ty))
+            }
             ty::TypeVariants::TyNever => "empty".to_string(),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.name_def_id(did),

@@ -1,5 +1,7 @@
-fn foo() -> i32 {
-    let mut xs = vec![1, 2];
-    xs[0] = 42;
-    xs[0]
+fn foo(xs: &mut [i32]) -> &mut i32 {
+    &mut xs[0]
+}
+
+fn bar(xs: &mut [i32]) {
+    *foo(xs) = 2;
 }

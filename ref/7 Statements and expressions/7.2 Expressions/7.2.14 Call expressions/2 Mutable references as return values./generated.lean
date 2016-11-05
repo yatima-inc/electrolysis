@@ -11,5 +11,28 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-/- test.foo: unimplemented: rvalue Box([i32; 2]) -/
+definition test.foo (xsₐ : (slice i32)) : sem ((lens (slice i32) i32) × (slice i32)) :=
+let' xs ← @lens.id (slice i32);
+do «$tmp0» ← do «$tmp0» ← lens.get xs xsₐ;
+return (list.length «$tmp0»);
+let' t4 ← «$tmp0»;
+let' t5 ← (0 : nat) <ᵇ t4;
+let' t3 ← (lens.index _ (0 : nat) ∘ₗ xs);
+let' ret ← (t3);
+return (ret, xsₐ)
+
+
+definition test.bar (xsₐ : (slice i32)) : sem (unit × (slice i32)) :=
+let' xs ← @lens.id (slice i32);
+let' t4 ← (xs);
+do «$tmp0» ← lens.get t4 xsₐ;
+dostep «$tmp» ← @test.foo «$tmp0»;
+match «$tmp» with («t3$», «t4$») :=
+do xsₐ ← lens.set t4 xsₐ «t4$»;
+let' t3 ← («t3$» ∘ₗ t4);
+do xsₐ ← lens.set t3 xsₐ (2 : int);
+let' ret ← ⋆;
+return (ret, xsₐ)
+end
+
 
