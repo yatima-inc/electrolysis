@@ -26,7 +26,20 @@ section
     | (inl s') (inl s) := R s' s
     | _        _       := false
 
-    private definition R'.wf [trans_instance] [H : well_founded R] : well_founded R' :=
+    hypothesis [decidable_rel R]
+
+    private definition R'.dec [instance] : decidable_rel R' :=
+    begin
+      intro x' x,
+      cases x',
+      { cases x,
+        { apply (_ : decidable_rel R) },
+        { apply decidable_false }
+      },
+      { apply decidable_false }
+    end
+
+    private definition R'.wf [instance] [H : well_founded R] : well_founded R' :=
     let f := sum.rec some (λr, none) in
     have subrelation R' (partial.inv_image R f),
     begin
@@ -36,7 +49,7 @@ section
     end,
     subrelation.wf this (partial.inv_image.wf f H)
 
-    private noncomputable definition F (x : State') (f : Π (x' : State'), R' x' x → sem State') : sem State' :=
+    private definition F (x : State') (f : Π (x' : State'), R' x' x → sem State') : sem State' :=
     do s ← sem.lift_opt (sum.inl_opt x);
     dostep x' ← body s;
     match x' with
@@ -44,18 +57,17 @@ section
     | x'    := if H : R' x' x then f x' H else mzero
     end
 
-    protected noncomputable definition loop.fix [irreducible] [Hwf: well_founded R] (s : State) : sem Res :=
+    protected definition loop.fix [irreducible] [Hwf: well_founded R] (s : State) : sem Res :=
     do x ← well_founded.fix F (inl s);
     sem.lift_opt (sum.inr_opt x)
 
-    private noncomputable definition term_rel (s : State) :=
-    if Hwf : well_founded R then loop.fix s ≠ mzero
-    else false
+    private abbreviation terminating (s : State) :=
+    ∃ Hwf : well_founded R, loop.fix s ≠ mzero
   end
 
   noncomputable definition loop [irreducible] (s : State) : sem Res :=
-  if Hex : ∃ R, term_rel R s then
-    @loop.fix (classical.some Hex) (classical.dite_else_false (classical.some_spec Hex)) s
+  if Hex : ∃ R, terminating R s then
+    @loop.fix (classical.some Hex) _ (classical.some (classical.some_spec Hex)) s
   else mzero
 
   parameter {body}
@@ -72,9 +84,8 @@ section
     rewrite [↑loop.fix, well_founded.fix_eq, ↑F at {2}, return_bind, -incr_bind, bind.assoc],
     apply congr_arg (sem.incr 1), apply congr_arg (sem.bind (body s)), apply funext, intro x',
     cases x' with s' r,
-    { esimp,
-      cases classical.prop_decidable (R s' s), esimp, esimp
-    },
+    { esimp [R'.dec],
+      cases classical.prop_decidable (R s' s), esimp, esimp },
     { esimp }
   end
 
@@ -93,7 +104,7 @@ section
     { intros, apply rfl },
     { esimp,
       cases x' with st k, cases st with s' r,
-      { esimp, cases classical.prop_decidable (R₁ s' s) with HR₁,
+      { esimp [R'.dec], cases classical.prop_decidable (R₁ s' s) with HR₁,
         { cases classical.prop_decidable (R₂ s' s) with HR₂ HnR₂,
           { esimp,
             rewrite [-+incr_bind],
@@ -123,22 +134,12 @@ section
     {s : State}
     (Hterm : loop.fix R s ≠ mzero) :
     loop.fix R s = loop s :=
-  have Hterm_rel : ∃ R, term_rel R s,
+  have term : ∃ R, terminating R s, from exists.intro R (exists.intro Hwf_R Hterm),
+  let R₀ := classical.some term in
   begin
-    existsi R,
-    rewrite [↑term_rel, dif_pos _],
-    assumption
-  end,
-  let R₀ := classical.some Hterm_rel in
-  have well_founded R₀, from classical.dite_else_false (classical.some_spec Hterm_rel),
-  have term_rel R₀ s, from classical.some_spec Hterm_rel,
-  have loop.fix R₀ s ≠ none, begin
-    rewrite [↑term_rel at this {2}, dif_pos `well_founded R₀` at this],
-    apply this,
-  end,
-  begin
-    rewrite [↑loop, dif_pos Hterm_rel],
-    apply fix_eq_fix Hterm this,
+    cases classical.some_spec term with wf_R₀ term_R₀,
+    rewrite [↑loop, dif_pos term],
+    apply fix_eq_fix Hterm term_R₀,
   end
 
   /-protected theorem loop.terminates_with
