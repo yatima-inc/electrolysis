@@ -7,6 +7,7 @@ import data.list.sorted
 import asymptotic
 
 open bool (tt ff)
+open [class] classical
 open core
 open eq.ops
 open list

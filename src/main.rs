@@ -1,7 +1,6 @@
 // we require access to many rustc internals
 #![feature(rustc_private)]
 #![feature(box_patterns, slice_patterns, advanced_slice_patterns, dotdot_in_tuple_patterns)]
-#![feature(question_mark)]
 #![feature(conservative_impl_trait)]
 
 extern crate itertools;
@@ -90,7 +89,7 @@ fn main() {
     // parse rustc options
     let rustc_args = iter::once("rustc").chain(rustc_args.split(" ")).map(|s| s.to_string());
     let rustc_matches = rustc_driver::handle_options(&rustc_args.collect_vec()).expect("error parsing rustc args");
-    let (mut options, rustc_cfg) = session::config::build_session_options_and_crate_config(&rustc_matches);
+    let (mut options, cfg) = session::config::build_session_options_and_crate_config(&rustc_matches);
     options.crate_name = Some(crate_name);
     options.maybe_sysroot = Some(sysroot);
     options.crate_types = vec![rustc::session::config::CrateType::CrateTypeRlib];
@@ -99,14 +98,18 @@ fn main() {
     // some more rustc orchestration
     let dep_graph = rustc::dep_graph::DepGraph::new(false);
     let cstore = std::rc::Rc::new(rustc_metadata::cstore::CStore::new(&dep_graph));
-    let sess = session::build_session(options, &dep_graph, Some(input.clone()),
+    let mut sess = session::build_session(options, &dep_graph, Some(input.clone()),
         rustc_errors::registry::Registry::new(&rustc::DIAGNOSTICS),
         cstore.clone()
     );
-    let rustc_cfg = session::config::build_configuration(&sess, rustc_cfg);
+
+    let mut cfg = session::config::build_configuration(&sess, cfg);
+    rustc_driver::target_features::add_configuration(&mut cfg, &sess);
+    sess.parse_sess.config = cfg;
+
 
     println!("Compiling up to MIR...");
-    let _ = driver::compile_input(&sess, &cstore, rustc_cfg,
+    let _ = driver::compile_input(&sess, &cstore,
         &session::config::Input::File(input),
         &None, &None, None, &driver::CompileController {
             after_analysis: driver::PhaseController {
@@ -199,7 +202,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
     let tcx = state.tcx.unwrap();
     let crate_name = state.crate_name.unwrap();
 
-    let mut trans = CrateTranspiler::new(tcx, &state.mir_map.unwrap(), config);
+    let mut trans = CrateTranspiler::new(tcx, config);
     println!("Transpiling...");
 
     let targets = config.lookup("targets").map(|targets| {

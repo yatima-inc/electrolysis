@@ -9,7 +9,7 @@ use itertools::Itertools;
 use rustc::hir;
 use rustc::hir::def::CtorKind;
 use rustc::hir::def_id::DefId;
-use rustc::mir::repr::*;
+use rustc::mir::*;
 use rustc::middle::const_val::ConstVal;
 use rustc::traits;
 use rustc::ty::{self, Ty};
@@ -155,10 +155,10 @@ impl<'a, 'tcx> Deref for FnTranspiler<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
-    pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>) -> FnTranspiler<'a, 'tcx> {
+    pub fn new(sup: &'a item::ItemTranspiler<'a, 'tcx>, mir: &'a Mir<'tcx>) -> FnTranspiler<'a, 'tcx> {
         FnTranspiler {
             sup: sup,
-            mir: &sup.mir_map.map[&sup.def_id],
+            mir: mir,
             prelude: Default::default(),
             refs: Default::default(),
         }
@@ -485,7 +485,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     panic!("unimplemented: mutable capturing closure")
                 }
                 let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
-                let mut trans = FnTranspiler::new(&trans);
+                let mir = self.tcx.item_mir(def_id);
+                let mut trans = FnTranspiler::new(&trans, &*mir);
                 let body = trans.transpile_mir();
                 self.prelude.append(&mut trans.prelude);
                 MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)), |upvars| {
@@ -631,7 +632,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         impl_def_id: DefId,
         impl_substs: &Substs<'t>,
         name: ast::Name,
-    ) -> (DefId, Substs<'t>) {
+    ) -> (DefId, &'a Substs<'t>) {
         let trait_def_id = tcx.trait_id_of_impl(impl_def_id).unwrap();
         let trait_def = tcx.lookup_trait_def(trait_def_id);
 
@@ -672,7 +673,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
                 let substs = substs.clone();
                 self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| -> TransResult {
-                    let (def_id, substs): (_, ty::subst::Substs<'tcx>) = match self.tcx.trait_of_item(def_id) {
+                    let (def_id, substs) = match self.tcx.trait_of_item(def_id) {
                         Some(trait_def_id) => {
                             // from trans::meth::trans_method_callee
                             let trait_ref = ty::TraitRef::from_method(self.tcx, trait_def_id, &substs);
@@ -717,7 +718,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
     fn transpile_basic_block(&mut self, bb: BasicBlock, comp: &Component) -> String {
         macro_rules! rec { ($bb:expr) => { self.transpile_basic_block_rec($bb, comp) } }
-        use rustc::mir::repr::TerminatorKind::*;
+        use rustc::mir::TerminatorKind::*;
 
         if let Some(l) = comp.loops.iter().find(|l| l.contains(&bb)) {
             // entering a loop

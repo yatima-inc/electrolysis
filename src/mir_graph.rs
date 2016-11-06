@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use petgraph::Graph;
 use petgraph::algo::*;
 
-use rustc::mir::repr::*;
+use rustc::mir::*;
 use rustc_data_structures::indexed_vec::Idx;
 
 /// Builds a graph of all blocks in `blocks` reachables from `start`, ignoring back edges to `start`

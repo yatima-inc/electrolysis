@@ -17,7 +17,7 @@ use trans::TransResult;
 use trans::krate::{self, CrateTranspiler};
 
 pub enum TraitImplLookup<'tcx> {
-    Static { impl_def_id: DefId, params: Vec<String>, substs: Substs<'tcx> },
+    Static { impl_def_id: DefId, params: Vec<String>, substs: &'tcx Substs<'tcx> },
     Dynamic { param: String },
 }
 
@@ -402,7 +402,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         format!("definition {} : sem {} :=\n{}",
                 krate::name_def_id(self.tcx, self.def_id),
                 self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty),
-                ::trans::fun::FnTranspiler::new(self).transpile_mir())
+                ::trans::fun::FnTranspiler::new(self, &*self.tcx.item_mir(self.def_id)).transpile_mir())
     }
 
     fn transpile_trait(&self, name: &str) -> String {
@@ -500,7 +500,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_fn(&self, name: String) -> String {
-        ::trans::fun::FnTranspiler::new(self).transpile_fn(name)
+        ::trans::fun::FnTranspiler::new(self, &*self.tcx.item_mir(self.def_id)).transpile_fn(name)
     }
 
     pub fn transpile_def_id(&self) -> Option<String> {

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rustc::mir::repr::*;
+use rustc::mir::*;
 
 use trans::fun::FnTranspiler;
 use mir_graph::mir_sccs;

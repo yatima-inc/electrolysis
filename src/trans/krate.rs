@@ -8,7 +8,6 @@ use toml;
 
 use rustc::hir;
 use rustc::hir::def_id::DefId;
-use rustc::mir::mir_map::MirMap;
 use rustc::ty::{self, Ty, TyCtxt};
 
 use item_path;
@@ -107,17 +106,15 @@ impl Deps {
 
 pub struct CrateTranspiler<'a, 'tcx: 'a> {
     pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    pub mir_map: &'a MirMap<'tcx>,
     pub config: Config<'a>,
     pub deps: RefCell<Deps>,
     trans_results: HashMap<DefId, Result<Option<String>, String>>,
 }
 
 impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
-    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir_map: &'a MirMap<'tcx>, config: &'a ::toml::Value) -> CrateTranspiler<'a, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, config: &'a ::toml::Value) -> CrateTranspiler<'a, 'tcx> {
         CrateTranspiler {
             tcx: tcx,
-            mir_map: mir_map,
             trans_results: HashMap::new(),
             deps: Default::default(),
             config: Config::new(config),
