@@ -14,6 +14,7 @@ open [notation] unit
 section
 parameters 
 parameters 
+section
 parameters (xₐ : i32)
 
 definition test.foo.loop_1 (state__ : i32) : sem (sum (i32) (unit)) :=
@@ -57,5 +58,6 @@ return (sum.inr tmp__)
 definition test.foo : sem (unit) :=
 let' x ← xₐ;
 loop (test.foo.loop_1) (x)
+end
 end
 

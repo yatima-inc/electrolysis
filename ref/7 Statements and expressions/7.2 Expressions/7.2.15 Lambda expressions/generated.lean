@@ -22,18 +22,36 @@ let' ret ← «$tmp»;
 return (ret)
 
 
-definition test.foo (xₐ : i32) (yₐ : i32) : sem (i32) :=
+structure test.foo.closure_13 := (val : i32)
+
+section
+parameters 
+parameters 
+section
+parameters (a1 : (test.foo.closure_13)) (xₐ : i32)
+
+
+
+definition test.foo.closure_13.fn : sem (i32) :=
 let' x ← xₐ;
-let' y ← yₐ;
-let' t6 ← y;
-let' t5 ← (λ a1 xₐ, let' x ← xₐ;
 let' t4 ← x;
-let' t5 ← a1;
+let' t5 ← (test.foo.closure_13.val a1);
 do «$tmp0» ← sem.map (λx, (x, tt)) (checked.sadd i32.bits t4 t5);
 let' t6 ← «$tmp0»;
 let' ret ← t6.1;
 return (ret)
-) t6;
+
+end
+definition test.foo.closure_13.inst [instance] : core.ops.FnOnce (test.foo.closure_13) i32 i32 :=
+core.ops.FnOnce.mk test.foo.closure_13.fn
+
+end
+
+definition test.foo (xₐ : i32) (yₐ : i32) : sem (i32) :=
+let' x ← xₐ;
+let' y ← yₐ;
+let' t6 ← y;
+let' t5 ← test.foo.closure_13.mk t6;
 let' t7 ← x;
 dostep «$tmp» ← @test.apply _ _ _ _ t5 t7;
 let' ret ← «$tmp»;

@@ -138,10 +138,12 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
         }
     }
 
-    pub fn is_recursive(&self, def_id: DefId) -> bool {
-        let idx = self.deps.borrow_mut().get_def_idx(def_id);
+    pub fn is_recursive(&self, _def_id: DefId) -> bool {
+        //let idx = self.deps.borrow_mut().get_def_idx(def_id);
         // look for self-loop
-        self.deps.borrow().graph.neighbors_directed(idx, ::petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx)
+        // FIXME: false positives for closures
+        false
+        //self.deps.borrow().graph.neighbors_directed(idx, ::petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx)
     }
 
     pub fn transpile(&mut self, def_id: DefId, catch_panics: bool) {

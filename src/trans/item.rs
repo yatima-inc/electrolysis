@@ -152,16 +152,15 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     /// `Fn(&mut T) -> R` ~> `(R × T)`
     /// `Fn(&mut T) -> &mut S` ~> `lens T S`
-    pub fn ret_ty(&self, fun_ty: &ty::BareFnTy<'tcx>) -> String {
-        let sig = fun_ty.sig.skip_binder();
-        let muts = sig.inputs.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
-        let out_ty = match krate::try_unwrap_mut_ref(&sig.output) {
-            Some(inner) => match sig.inputs.first().cloned().and_then(krate::try_unwrap_mut_ref) {
+    pub fn ret_ty(&self, in_tys: &[ty::Ty<'tcx>], out_ty: ty::Ty<'tcx>) -> String {
+        let muts = in_tys.iter().filter_map(|i| krate::try_unwrap_mut_ref(i));
+        let out_ty = match krate::try_unwrap_mut_ref(out_ty) {
+            Some(inner) => match in_tys.first().cloned().and_then(krate::try_unwrap_mut_ref) {
                 Some(outer) =>
                     format!("(lens {} {})", self.transpile_ty(outer), self.transpile_ty(inner)),
                 None => panic!("unimplemented: returning mutable reference to argument other than the first"),
             },
-            None => self.transpile_ty(sig.output),
+            None => self.transpile_ty(out_ty),
         };
         format!("({})", (out_ty, muts.map(|ty| self.transpile_ty(ty))).join(" × "))
     }
@@ -198,7 +197,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) => {
                 let sig = data.sig.skip_binder();
                 let inputs = sig.inputs.iter().map(|ty| self.transpile_ty(krate::unwrap_mut_ref(ty)));
-                inputs.chain(iter::once(format!("sem {}", self.ret_ty(data)))).join(" → ")
+                inputs.chain(iter::once(format!("sem {}", self.ret_ty(&sig.inputs, sig.output)))).join(" → ")
             },
             ty::TypeVariants::TyAdt(ref adt_def, ref substs) => format!(
                 "({})",
@@ -218,6 +217,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 self.deps.borrow_mut().crate_deps.insert("alloc".to_string());
                 format!("(alloc.boxed.Box {})", self.transpile_ty(ty))
             }
+            ty::TypeVariants::TyClosure(def_id, ref substs) =>
+                format!("({})", (&self.name_def_id(def_id), substs.func_substs.types().map(|ty| self.transpile_ty(ty))).join(" ")),
             ty::TypeVariants::TyNever => "empty".to_string(),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.name_def_id(did),
@@ -322,7 +323,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         (self.name() + name_suffix, generics.types.iter().map(|p| format!("({} : Type₁)", p.name))).join(" ")
     }
 
-    fn mk_applied_ty(&self, name: &str, generics: &ty::Generics) -> String {
+    pub fn mk_applied_ty(&self, name: &str, generics: &ty::Generics) -> String {
         (name, generics.types.iter().map(|p| p.name.as_str().to_string())).join(" ")
     }
 
@@ -552,10 +553,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                     self.transpile_fn(name),
                 Item_::ItemUnion(..) => panic!("unimplemented: {:?}", node),
             },
+            Node::NodeExpr(_) => // top-level expr? closure!
+                self.transpile_fn(name),
             Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(_, Some(_)), .. })
             | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(..), .. }) =>
                 self.transpile_fn(name),
-            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_) | Node::NodeExpr(..)
+            Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_)
             | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Type(..), .. }) =>
                 return None,
             _ => panic!("unimplemented: {:?}", node),

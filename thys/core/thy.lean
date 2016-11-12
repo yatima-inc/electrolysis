@@ -255,12 +255,11 @@ end
 
 section binary_search
 open «[T] as core.slice.SliceExt».binary_search_by
+open «[T] as core.slice.SliceExt».binary_search
+attribute closure_5594.inst [constructor]
 
 parameter {T : Type₁}
 parameter [Ord' T]
-
-attribute FnMut.call_mut [unfold 4]
-attribute fn_mut [constructor]
 
 -- use separate section for everything but the main theorem
 section
@@ -271,7 +270,7 @@ parameter needle : T
 hypothesis Hsorted : sorted le self
 hypothesis His_slice : is_slice self
 
-abbreviation f y := dostep r ← Ord.cmp y needle; return (r, needle)
+abbreviation f := closure_5594.mk needle
 abbreviation cmp_max_cost := Ord'.cmp_max_cost needle self
 
 /- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
@@ -291,7 +290,7 @@ section loop_4
 variable s : slice T
 variable base : usize
 
-private abbreviation loop_4.state := (T → sem (cmp.Ordering × T)) × usize × slice T
+private abbreviation loop_4.state := closure_5594 T × usize × slice T
 
 include self needle base s -- HACK
 structure loop_4_invar :=
@@ -388,7 +387,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     rewrite [▸*, ↑get_unchecked, nth_zero, ↑f],
     --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
     cases Ord'.ord_cmp_eq x needle with k cmp_eq,
-    rewrite [+incr_incr, cmp_eq, ↑ordering, ▸*],
+    rewrite [+incr_incr, ↑closure_5594.fn, cmp_eq, ↑ordering, ▸*],
     have nth_x : nth self (base + length s₁) = some x,
     begin
       have nth s (length s / 2) = some x, by rewrite [nth_eq_first'_dropn, Hs, ▸*, nth_zero],

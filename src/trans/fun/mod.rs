@@ -39,6 +39,13 @@ fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
     iter::once(value.as_ref()).chain(fsts).chain(snd).join("")
 }
 
+/// `get_tuple_elem('x', 1, 3)` ~> `'x.1.2'`
+fn set_tuple_elem<S : AsRef<str>>(tuple: S, value: S, idx: usize, len: usize) -> String {
+    format!("({})", (0..len).into_iter().map(|i| if idx == i {value.as_ref().to_string()} else {
+        get_tuple_elem(tuple.as_ref(), i, len)
+    }).join(", "))
+}
+
 // TODO: instead implement pattern let in Lean
 fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
     match *pat {
@@ -177,10 +184,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    fn param_names(&self) -> ::std::vec::IntoIter<String> {
-        self.mir.args_iter().map(|l| self.local_name(l)).collect_vec().into_iter()
-    }
-
     fn lvalue_name(&self, lv: &Lvalue) -> Option<String> {
         match *lv {
             Lvalue::Local(local) => Some(self.local_name(local)),
@@ -242,9 +245,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     sbase)
                         }
                     }
-                    ty::TypeVariants::TyClosure(_, ref substs) =>
-                        // captured variables become a tuple parameter
-                        get_tuple_elem(sbase, field.index(), substs.upvar_tys.len()),
+                    ty::TypeVariants::TyClosure(def_id, ref substs) => {
+                        let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
+                        get_tuple_elem(sbase, field.index(), substs.upvar_tys.len())
+                    }
                     ref ty => panic!("unimplemented: accessing field of {:?}", ty),
                 })),
             _ => panic!("unimplemented: loading {:?}", lv),
@@ -292,6 +296,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         match unwrap_refs(self.lvalue_ty(base)).sty {
                             ty::TypeVariants::TyAdt(ref adt_def, _) =>
                                 self.set_lvalue(base, &self.update_struct(adt_def, field, &sbase, val)),
+                            ty::TypeVariants::TyClosure(def_id, ref substs) => {
+                                let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
+                                self.set_lvalue(base, &format!(
+                                    "{}.mk {}", self.name_def_id(def_id),
+                                    set_tuple_elem(sbase, val.to_string(), field.index(), substs.upvar_tys.len())))
+                            }
                             ref ty => panic!("unimplemented: setting field of {:?}", ty),
                         }
                     }
@@ -478,23 +488,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 })
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
-                // start small with immutable closures: compile to Lean closure using
-                // recursive FnTranspiler
                 let upvars = ops.iter().map(lvalue_of_operand).collect_vec();
-                if upvars.iter().any(|lv| krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).map(|_| lv).is_some()) {
-                    panic!("unimplemented: mutable capturing closure")
-                }
-                let trans = item::ItemTranspiler { sup: self.sup.sup, def_id: def_id };
-                let mir = self.tcx.item_mir(def_id);
-                let mut trans = FnTranspiler::new(&trans, &*mir);
-                let body = trans.transpile_mir();
-                self.prelude.append(&mut trans.prelude);
                 MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)), |upvars| {
-                    MaybeValue::total(format!(
-                        "(λ {}, {}) {}",
-                        trans.param_names().join(" "),
-                        body,
-                        mk_tuple(upvars.into_iter())))
+                    MaybeValue::total(format!("{}.mk {}", self.name_def_id(def_id),
+                                              mk_tuple(upvars.into_iter())))
                 })
             }
             Rvalue::Len(ref lv) => self.get_lvalue(lv).and_then(0, |lv| {
@@ -854,19 +851,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     fn ret_ty(&self) -> String {
-        match self.normalize_ty(self.tcx.lookup_item_type(self.def_id).ty).sty {
-            ty::TypeVariants::TyFnDef(_, _, ref data) | ty::TypeVariants::TyFnPtr(ref data) =>
-                self.sup.ret_ty(data),
-            _ => unreachable!(),
+        self.sup.ret_ty(&self.mir.args_iter().map(|arg| self.mir.local_decls[arg].ty).collect_vec(),
+                        self.mir.return_ty)
+    }
+
+    fn is_closure(&self) -> bool {
+        match self.tcx.map.get(self.node_id()) {
+            hir::map::NodeExpr(_) => true,
+            _ => false,
         }
     }
 
-    pub fn transpile_fn(mut self, name: String) -> String {
-        // FIXME... or not
-        if name.starts_with("tuple._A__B__C__D") {
-            return "".to_string()
-        }
-
+    pub fn transpile_fn(mut self, mut name: String) -> String {
         let params = self.mir.args_iter().map(|arg| {
             format!("({} : {})", self.local_name(arg), self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty)))
         }).collect_vec();
@@ -878,33 +874,60 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         let body = (promoted, self.transpile_mir()).join("\n");
 
-        let ty_params = self.full_generics(self.def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
-        let trait_params = self.transpile_trait_params(self.def_id, None);
+        // for closures, lookup generics in surrounding fn
+        let fn_def_id = if self.is_closure() { self.tcx.parent_def_id(self.def_id).unwrap() } else { self.def_id };
+
+        let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
+        let trait_params = self.transpile_trait_params(fn_def_id, None);
+        let (closure_def, closure_impl) = if self.is_closure() {
+            let closure_ty = unwrap_refs(krate::unwrap_mut_ref(&self.mir.local_decls[Local::new(1)].ty));
+            let upvar_tys = match closure_ty.sty {
+                ty::TypeVariants::TyClosure(_, ref substs) => &substs.upvar_tys,
+                _ => unreachable!(),
+            }.into_iter().map(|ty| self.transpile_ty(ty)).join(" × ");
+            let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("({} : Type₁)", p.name)).collect_vec();
+            let closure_def = format!("structure {} := (val : {})\n\n", (&name, &ty_params).join(" "), upvar_tys);
+            let closure_kind = self.tcx.closure_kind(self.def_id);
+            let closure_impl = format!("definition {clo}.inst [instance] : {fn_type} ({}) {} {} :=
+{fn_type}.mk {clo}.fn\n\n",
+                                       (&name, self.full_generics(fn_def_id).iter().map(|p| format!("{}", p.name))).join(" "),
+                                       upvar_tys, self.transpile_ty(self.mir.return_ty),
+                                       clo=name,
+                                       fn_type=self.name_def_id(closure_kind.trait_did(self.tcx)));
+            (closure_def, closure_impl)
+        } else { (String::new(), String::new()) };
+
 
         let is_rec = self.is_recursive(self.def_id);
+        if self.is_closure() {
+            name += ".fn";
+        }
         let body = if is_rec {
             // FIXME: not actually implemented yet
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
-        if self.prelude.is_empty() {
-            let def = format!("definition {} : sem {} :=\n{}",
-                              (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
-                              self.ret_ty(),
-                              body);
-            self.prelude.into_iter().chain(iter::once(def)).join("\n\n")
+        if self.prelude.is_empty() && !self.is_closure() {
+            format!("definition {} : sem {} :=\n{}",
+                    (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
+                    self.ret_ty(), body)
         } else {
-            format!("section
+            format!("{}section
 {}
+section
+parameters {}
 
 {}
 
 definition {} : sem {} :=\n{}
-end",
-                    vec![ty_params, trait_params, params].into_iter().map(|p| {
+end
+{}end",
+                    closure_def,
+                    vec![ty_params, trait_params].into_iter().map(|p| {
                         format!("parameters {}", p.into_iter().join(" "))
                     }).join("\n"),
+                    params.into_iter().join(" "),
                     self.prelude.iter().join("\n\n"),
-                    name, self.ret_ty(), body)
+                    name, self.ret_ty(), body, closure_impl)
         }
     }
 }

@@ -222,7 +222,7 @@ namespace core
   return (list.length self)
   definition «[T] as core.slice.SliceExt».get_unchecked {T : Type₁} (self : slice T) (index : usize)
     : sem T :=
-  option.rec mzero return (list.nth self index)
+  sem.lift_opt (list.nth self index)
 
   /- This trait has way too many freaky dependencies -/
   structure fmt.Debug [class] (Self : Type₁) := mk ::
@@ -231,33 +231,24 @@ namespace core
     structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
     (call_once : Self → Args → sem Output)
 
-    structure FnMut [class] (Self : Type₁) (Args : Type₁) (Output : Type₁)
-      extends FnOnce Self Args Output :=
+    structure FnMut [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
     (call_mut : Self → Args → sem (Output × Self))
 
-    abbreviation Fn := FnMut -- `call` is again `call_once`
-    definition Fn.call (Self : Type₁) (Args : Type₁) (Output : Type₁)
-      [FnMut : FnMut Self Args Output] : Self → Args → sem Output :=
-    FnOnce.call_once Output
+    definition FnMut_to_FnOnce [instance] (Self Args Output : Type₁) [FnMut Self Args Output]
+      : FnOnce Self Args Output :=
+    ⦃FnOnce, call_once := λ self args, sem.map prod.pr1 (FnMut.call_mut _ self args)⦄
+
+    structure Fn [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
+    (call : Self → Args → sem Output)
+
+    definition Fn_to_FnMut [instance] (Self Args Output : Type₁) [Fn Self Args Output]
+      : FnMut Self Args Output :=
+    ⦃FnMut, call_mut := λ self args, do x ← Fn.call _ self args;
+      return (x, self)⦄
   end ops
 end core
 
-open core.ops
-
-definition fn_once [instance] {A B : Type₁} : FnOnce (A → sem B) A B := ⦃FnOnce,
-  call_once := id
-⦄
-
--- only immutable closures for now
-definition fn_mut [instance] {A B : Type₁} : FnMut (A → sem (B × A)) A B := ⦃FnMut,
-  call_once := λ f a, do p ← f a; return p.1,
-  call_mut := λ f a, do p ← f a; return (p.1, f)
-⦄
-
-definition fn [instance] {A B : Type₁} : Fn (A → sem B) A B := ⦃FnMut,
-  call_once := id,
-  call_mut := λ f a, do p ← f a; return (p, f)
-⦄
+export [class] core.ops
 
 notation `let'` binder ` ← ` x `; ` r:(scoped f, f x) := r
 attribute sem [irreducible]

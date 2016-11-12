@@ -128,6 +128,11 @@ let' ret ← core.option.Option.None;
 return (ret)
 
 
+structure core.cmp.PartialEq [class] (Self : Type₁) (Rhs : Type₁)  :=
+(eq : Self → Rhs → sem (bool))
+
+structure core.cmp.Eq [class] (Self : Type₁)  extends core.cmp.PartialEq Self Self 
+
 inductive core.cmp.Ordering :=
 | Less {} : core.cmp.Ordering
 | Equal {} : core.cmp.Ordering
@@ -137,6 +142,36 @@ definition core.cmp.Ordering.discr (self : core.cmp.Ordering) : isize := match s
 | core.cmp.Ordering.Less := -1
 | core.cmp.Ordering.Equal := 0
 | core.cmp.Ordering.Greater := 1
+end
+
+structure core.cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁)  extends core.cmp.PartialEq Self Rhs :=
+(partial_cmp : Self → Rhs → sem ((core.option.Option (core.cmp.Ordering))))
+
+structure core.cmp.Ord [class] (Self : Type₁)  extends core.cmp.Eq Self, core.cmp.PartialOrd Self Self :=
+(cmp : Self → Self → sem ((core.cmp.Ordering)))
+
+structure core.«[T] as core.slice.SliceExt».binary_search.closure_5594 (T : Type₁) := (val : T)
+
+section
+parameters {T : Type₁}
+parameters [«core.cmp.Ord T» : core.cmp.Ord T]
+section
+parameters (a1 : (core.«[T] as core.slice.SliceExt».binary_search.closure_5594 T)) (pₐ : T)
+
+
+
+definition core.«[T] as core.slice.SliceExt».binary_search.closure_5594.fn : sem ((core.cmp.Ordering) × (core.«[T] as core.slice.SliceExt».binary_search.closure_5594 T)) :=
+let' p ← pₐ;
+let' t4 ← p;
+let' t5 ← (core.«[T] as core.slice.SliceExt».binary_search.closure_5594.val a1);
+dostep «$tmp» ← @core.cmp.Ord.cmp _ «core.cmp.Ord T» t4 t5;
+let' ret ← «$tmp»;
+return (ret, a1)
+
+end
+definition core.«[T] as core.slice.SliceExt».binary_search.closure_5594.inst [instance] : core.ops.FnMut (core.«[T] as core.slice.SliceExt».binary_search.closure_5594 T) T (core.cmp.Ordering) :=
+core.ops.FnMut.mk core.«[T] as core.slice.SliceExt».binary_search.closure_5594.fn
+
 end
 
 inductive core.result.Result (T : Type₁) (E : Type₁) :=
@@ -238,6 +273,7 @@ return (ret)
 section
 parameters {F : Type₁} {T : Type₁}
 parameters [«core.ops.FnMut F (T)» : core.ops.FnMut F (T) (core.cmp.Ordering)]
+section
 parameters (selfₐ : (slice T)) (fₐ : F)
 
 definition core.«[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((core.result.Result usize usize))) :=
@@ -321,30 +357,14 @@ let' t8 ← self;
 let' s ← t8;
 loop (core.«[T] as core.slice.SliceExt».binary_search_by.loop_4) (f, base, s)
 end
-
-structure core.cmp.PartialEq [class] (Self : Type₁) (Rhs : Type₁)  :=
-(eq : Self → Rhs → sem (bool))
-
-structure core.cmp.Eq [class] (Self : Type₁)  extends core.cmp.PartialEq Self Self 
-
-structure core.cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁)  extends core.cmp.PartialEq Self Rhs :=
-(partial_cmp : Self → Rhs → sem ((core.option.Option (core.cmp.Ordering))))
-
-structure core.cmp.Ord [class] (Self : Type₁)  extends core.cmp.Eq Self, core.cmp.PartialOrd Self Self :=
-(cmp : Self → Self → sem ((core.cmp.Ordering)))
+end
 
 definition core.«[T] as core.slice.SliceExt».binary_search {T : Type₁} [«core.cmp.Ord T» : core.cmp.Ord T] (selfₐ : (slice T)) (xₐ : T) : sem ((core.result.Result usize usize)) :=
 let' self ← selfₐ;
 let' x ← xₐ;
 let' t5 ← self;
 let' t7 ← x;
-let' t6 ← (λ a1 pₐ, let' p ← pₐ;
-let' t4 ← p;
-let' t5 ← a1;
-dostep «$tmp» ← @core.cmp.Ord.cmp _ «core.cmp.Ord T» t4 t5;
-let' ret ← «$tmp»;
-return (ret, a1)
-) t7;
+let' t6 ← core.«[T] as core.slice.SliceExt».binary_search.closure_5594.mk t7;
 dostep «$tmp» ← @core.«[T] as core.slice.SliceExt».binary_search_by _ _ _ t5 t6;
 let' ret ← «$tmp»;
 return (ret)

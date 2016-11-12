@@ -6,9 +6,9 @@ pub trait Join {
     fn join(self, sep: &str) -> String;
 }
 
-impl<S, T> Join for (S, T) where S: ToString, T: IntoIterator<Item=String> {
+impl<S, T> Join for (S, T) where S: ToString, T: IntoIterator, T::Item: ToString {
     fn join(self, sep: &str) -> String {
-        iter::once(self.0.to_string()).chain(self.1).join(sep)
+        iter::once(self.0.to_string()).chain(self.1.into_iter().map(|x| x.to_string())).join(sep)
     }
 }
 
