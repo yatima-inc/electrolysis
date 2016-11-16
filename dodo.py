@@ -30,7 +30,8 @@ def task_electrolysis_ref():
     for p in list(ref.rglob('lib.rs')):
         yield {
             'name': str(p),
-            'actions': [['cargo', 'run', p]] +
+            'actions': [['cargo', 'run', p],
+                        'rustc --crate-type lib -Z unstable-options --unpretty mir "{}" > "{}"'.format(p, p.with_name('mir'))] +
             ([['mv', p.with_name('generated.lean'), p.with_name('broken.lean')]]
              if '!' in str(p) else []),
             'file_dep': [p, 'target/debug/electrolysis'],

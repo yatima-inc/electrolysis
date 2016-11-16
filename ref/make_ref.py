@@ -76,8 +76,7 @@ def rec(path, depth):
         yield markdown.markdown(open(os.path.join(path, 'pre.md')).read(), extensions=[CodeBlockExtension()])
     if 'lib.rs' in entries:
         rust = os.path.join(path, 'lib.rs')
-        mir = subprocess.run(['rustc', '--crate-type', 'lib', '-Z', 'unstable-options', '--unpretty', 'mir', rust],
-                             stdout=subprocess.PIPE, check=True).stdout.decode('utf8')
+        mir = open(os.path.join(path, 'mir')).read()
         generated = open(os.path.join(path, 'broken.lean' if '!' in path else 'generated.lean')).read()
         if '5 Crates' not in path:
             generated = re.search('(open [^\n]*\n)+\n(.*)', generated, flags=re.DOTALL).group(2)

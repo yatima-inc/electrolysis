@@ -11,3 +11,4 @@ build.ninja
 *.olean
 ref/index.html
 ref/src/generated.lean
+mir
