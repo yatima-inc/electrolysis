@@ -130,6 +130,7 @@ definition is_bounded_int [class] [reducible] (bits : ℕ) (x : int) :=
 -2^(bits-1) ≤ x ∧ x < 2^(bits-1)
 
 abbreviation is_usize := is_bounded_nat usize.bits
+abbreviation is_index := is_bounded_nat (usize.bits - 1)
 abbreviation is_i32 := is_bounded_int i32.bits
 
 
@@ -211,7 +212,7 @@ abbreviation array [parsing_only] (A : Type₁) (n : ℕ) := list A
 abbreviation slice [parsing_only] := list
 
 definition is_slice [class] [reducible] {T : Type₁} (xs : slice T) :=
-is_usize (length xs)
+is_index (length xs)
 
 namespace core
   abbreviation intrinsics.add_with_overflow (x y : nat) : sem (nat × Prop) := return (x + y, false)

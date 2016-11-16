@@ -64,6 +64,10 @@ end
 
 lemma usize.max_ge_1 : usize.max ≥ 1 := le.trans dec_trivial usize.max_ge_u16_max
 
+lemma length_is_usize_of_is_slice [instance] {T : Type₁} (xs : list T) [is_slice xs] :
+  is_usize (length xs) :=
+le.trans `is_slice xs` (nondecreasing_pow dec_trivial !sub_le)
+
 section bitwise
 open bitvec
 open bool
@@ -395,7 +399,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       apply prefixeq.nth_of_nth_prefixeq this (loop_4_invar.s_in_self Hinvar)
     end,
     have is_usize (base + (length s₁ + 1)), from
-      lt_of_le_of_lt (lt_length_of_nth nth_x) His_slice,
+      lt_of_le_of_lt (lt_length_of_nth nth_x) (length_is_usize_of_is_slice self),
     rewrite [if_pos (lt_of_le_of_lt !le_add_left this), ▸*, if_pos this, ▸*],
     rewrite [if_pos (show is_usize (base + length s₁), from
       lt_of_le_of_lt (add_le_add_left !le_add_right _) this)],
