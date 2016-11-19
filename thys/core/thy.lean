@@ -350,15 +350,15 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     rewrite [length_firstn_eq, min_eq_left this],
   eapply generalize_with_eq (dropn (length s / 2) s),
   intro s' Hs, cases s' with x xs,
-  { intro H, rewrite -H,
+  { intro H, rewrite -H, clear H,
     have Hs : s = nil, begin
       have 0 = length s - length s / 2, from Hs ▸ !length_dropn,
       apply classical.by_contradiction, intro Hs_not_nil,
       apply lt.irrefl (length s / 2) (calc
         length s / 2 < length s     : div_lt_of_ne_zero (take Hcontr, Hs_not_nil (eq_nil_of_length_eq_zero Hcontr))
-                  ... = (length s - length s / 2) + length s / 2 : (nat.sub_add_cancel !nat.div_le_self)⁻¹
-                  ... = 0 + length s / 2 : { this⁻¹ }
-                  ... = length s / 2 : !zero_add
+                 ... = (length s - length s / 2) + length s / 2 : (nat.sub_add_cancel !nat.div_le_self)⁻¹
+                 ... = 0 + length s / 2 : { this⁻¹ }
+                 ... = length s / 2 : !zero_add
       )
     end,
     have base = sorted.insert_pos self needle, begin
@@ -457,7 +457,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
           rewrite [{k + _}add.comm],
           apply add_le_add dec_trivial Hle_max_cost }
       },
-      { have Hx_ge_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
+      { have Hx_gt_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
         apply sem.terminates_with_in.mk rfl,
         { split,
           exact ⦃loop_4_invar,
@@ -465,7 +465,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
             insert_pos := begin
               split,
               { apply and.left (loop_4_invar.insert_pos Hinvar) },
-              { apply sorted.insert_pos_le Hsorted Hx_ge_needle nth_x }
+              { apply sorted.insert_pos_le Hsorted Hx_gt_needle nth_x }
             end,
             needle_mem := assume Hneedle : needle ∈ self,
               have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_4_invar.needle_mem Hinvar Hneedle,
@@ -475,7 +475,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
                   have x ≤ needle, from sorted.first_le
                     (show sorted le (x::xs), from Hs ▸ sorted.sorted_dropn_of_sorted sorted_s _)
                     (show needle ∈ x::xs, from Hs ▸ this),
-                  false.elim (not_le_of_gt Hx_ge_needle this))
+                  false.elim (not_le_of_gt Hx_gt_needle this))
           ⦄,
           exact !length_firstn_le,
           exact `length s ≠ 0`

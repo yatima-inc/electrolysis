@@ -39,9 +39,8 @@ open core.ops
 /// otherwise slicing will panic.
 -/
 definition core.«[T] as core.ops.Index<core.ops.Range<usize>>».index {T : Type₁} (self : slice T) (index : Range usize) : sem (slice T) :=
-if Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self
-then return (list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
-else mzero
+sem.guard (Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self)
+$ return (list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
 
 end"""
 
@@ -62,12 +61,11 @@ open core.ops
 /// otherwise slicing will panic.
 -/
 definition core.«[T] as core.ops.IndexMut<core.ops.Range<usize>>».index_mut {T : Type₁} (self : slice T) (index : Range usize) : sem (lens (slice T) (slice T) × slice T) :=
-if Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self
-then return (lens.mk
-     (λ self, list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
-     (λ self new, list.firstn (Range.start index) self ++ new ++ list.dropn (Range.end index) self),
-     self)
-else mzero
+sem.guard (Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self)
+$ return (lens.mk
+    (λ self, list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
+    (λ self new, list.firstn (Range.start index) self ++ new ++ list.dropn (Range.end index) self),
+    self)
 
 end"""
 

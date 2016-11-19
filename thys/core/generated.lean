@@ -194,9 +194,8 @@ open core.ops
 /// otherwise slicing will panic.
 -/
 definition core.«[T] as core.ops.Index<core.ops.Range<usize>>».index {T : Type₁} (self : slice T) (index : Range usize) : sem (slice T) :=
-if Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self
-then return (list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
-else mzero
+sem.guard (Range.start index ≤ Range.«end» index ∧ Range.«end» index ≤ list.length self)
+$ return (list.firstn (Range.«end» index - Range.start index) (list.dropn (Range.start index) self))
 
 end
 
