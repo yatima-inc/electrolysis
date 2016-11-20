@@ -142,6 +142,17 @@ namespace asymptotic
     calc f₁ a + f₂ a ≤ c₁ * g a + c₂ * g a : add_le_add (and.left Ha) (and.right Ha)
                  ... = (c₁ + c₂) * g a     : nat.right_distrib))
 
+  lemma ub_add_left (g₁ : A → ℕ) {g₂ : A → ℕ} (h : f ∈ 𝓞(g₂) F) : f ∈ 𝓞(g₁ + g₂) F :=
+  obtain c hc, from h,
+  exists.intro c (eventually_mono hc
+    (λ x h, nat.le_trans h (nat.mul_le_mul !nat.le_refl !le_add_left)))
+
+  lemma ub_add_const {k : ℕ} (h : f₁ ∈ 𝓞(g) F ∩ Ω(λ x, k) F) : f₁ + (λ x, k) ∈ 𝓞(g) F ∩ Ω(λ x, k) F :=
+  obtain h₁ h₂, from h,
+  and.intro (ub_add h₁ (asymptotic.le.trans h₂ h₁))
+    (have (λ x, k) ∈ 𝓞(f₁ + (λ x, k)) F, from ub_add_left f₁ (@le.refl _ _ (λ x, k)),
+     show f₁ + (λ x, k) ∈ Ω(λ x, k) F, from this)
+
   lemma ub_mul_prod_filter {A B : Type} {f₁ g₁ : A → ℕ} {f₂ g₂ : B → ℕ} {F₁ : filter A}
     {F₂ : filter B} (H₁ : f₁ ∈ 𝓞(g₁) F₁) (H₂ : f₂ ∈ 𝓞(g₂) F₂) :
     (λp, f₁ p.1 * f₂ p.2) ∈ 𝓞(λp, g₁ p.1 * g₂ p.2) (prod_filter F₁ F₂) :=
@@ -168,6 +179,10 @@ namespace asymptotic
   lemma ub_of_eventually_le (H : eventually (λa, f₁ a ≤ f₂ a) F) : f₁ ∈ 𝓞(f₂) F :=
   exists.intro 1 (eventually_mono H (take a Ha,
     show f₁ a ≤ 1 * f₂ a, by rewrite one_mul; apply Ha))
+
+  lemma ub_of_eventually_le_at_infty [linear_strong_order_pair A] (x : A)
+    (H : ∀ y, y ≥ x → f₁ y ≤ f₂ y) : f₁ ∈ 𝓞(f₂) [at ∞] :=
+  ub_of_eventually_le (eventually_at_infty_intro H)
 
   lemma ub_const (k : ℕ) : (λa, k) ∈ 𝓞(1) F := exists.intro k (eventually_of_always
     (λa, le_of_eq (mul_one _)⁻¹))

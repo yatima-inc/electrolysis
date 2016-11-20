@@ -1,5 +1,6 @@
 import move
 
+open eq.ops
 open nat
 open [notation] partial
 open prod.ops
@@ -21,8 +22,46 @@ option.any (λ p, H p.1) s
 definition sem.terminates [unfold 2] {a : Type₁} (s : sem a) : Prop :=
 sem.terminates_with (λ a, true) s
 
+lemma sem.terminates_with_incr {a : Type₁} {p : a → Prop} (k : ℕ) {s : sem a}
+  (h : sem.terminates_with p s) : sem.terminates_with p (sem.incr k s) :=
+begin
+  cases s with x,
+  { contradiction },
+  { cases x, apply h }
+end
+
 inductive sem.terminates_with_in {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=
 mk : Π {ret x k}, ret = some (x, k) → H x → k ≤ max_cost → sem.terminates_with_in H max_cost ret
+
+lemma sem.terminates_with_in.imp {a : Type₁} {h₁ h₂ : a → Prop} {c₁ c₂ : ℕ} {s : sem a}
+  (h : sem.terminates_with_in h₁ c₁ s) (hh : ∀ a, h₁ a → h₂ a) (hc : c₁ ≤ c₂) :
+  sem.terminates_with_in h₂ c₂ s :=
+begin
+  cases h with ret x k hr hx hk,
+  apply sem.terminates_with_in.mk hr (hh x hx) (le.trans hk hc)
+end
+
+lemma sem.terminates_with_in_incr {a : Type₁} {p : a → Prop} {c : ℕ} (k : ℕ) {s : sem a}
+  (h : sem.terminates_with_in p c s) : sem.terminates_with_in p (c+k) (sem.incr k s) :=
+begin
+  cases h with ret x k hr hx hk,
+  rewrite hr,
+  apply sem.terminates_with_in.mk rfl, apply hx, apply add_le_add_right hk
+end
+
+lemma sem.terminates_with_in_of_incr {a : Type₁} {p : a → Prop} {c₁ c₂ : ℕ} {s : sem a}
+  (h : sem.terminates_with_in p (c₁+c₂) (sem.incr c₂ s)) : sem.terminates_with_in p c₁ s :=
+begin
+  cases h with ret x k hr hx hk,
+  cases s with s',
+  { contradiction },
+  { cases s' with x' k', injection hr with x'_eq k'_eq,
+    esimp at hr,
+    apply sem.terminates_with_in.mk rfl,
+    { apply (x'_eq⁻¹ ▸ hx) },
+    { exact le_of_add_le_add_right (k'_eq⁻¹ ▸ hk) },
+  }
+end
 
 definition sem.map [unfold 4] {a b : Type₁} (f : a → b) (m : sem a) : sem b :=
 option.map (λs, match s with

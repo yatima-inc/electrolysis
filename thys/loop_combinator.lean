@@ -142,41 +142,146 @@ section
     apply fix_eq_fix Hterm term_R₀,
   end
 
-  /-protected theorem loop.terminates_with
+  protected theorem loop.terminates_with
     {R : State → State → Prop}
     [Hwf_R : well_founded R]
     (s : State)
     (p : State → Prop)
     (q : Res → Prop)
     (start : p s)
-    (inv : ∀ s s', p s → sem.terminates_with (λ x, x = inl s') (body s) → p s' ∧ R s s')
-    (fin : ∀ s r, p s → sem.terminates_with (λ x, x = inr r) (body s) → q r) :
-    sem.terminates_with q (loop s)
+    (step : ∀ s, p s → match body s with
+      | some (inl s', _) := p s' ∧ R s' s
+      | some (inr r, _)  := q r
+      | none := false
+      end) :
+    sem.terminates_with q (loop s) :=
+  have ∀ s, p s → sem.terminates_with q (loop.fix R s),
+  begin
+    intro s hp,
+    induction (well_founded.apply Hwf_R s) with s₀ acc ih,
+    rewrite [loop.fix_eq],
+    note step := step s₀ hp,
+    revert step,
+    cases body s₀ with x,
+    { contradiction },
+    { cases x with st' k,
+      cases st' with s' r,
+      { esimp,
+        intro inv, cases inv,        
+        rewrite [if_pos `R s' s₀`],
+        apply sem.terminates_with_incr,
+        apply sem.terminates_with_incr,
+        apply ih, repeat assumption
+      },
+      { apply id }
+    }
+  end,
+  have t : sem.terminates_with q (loop.fix R s), from this s start,
+  have loop.fix R s ≠ mzero,
+  begin
+    revert t,
+    cases loop.fix R s,
+    { contradiction },
+    { contradiction }
+  end,
+  begin
+    rewrite [-loop.fix_eq_loop this],
+    apply t,
+  end
+end
 
-  section
-    open topology
-    open asymptotic
-    open prod.ops
+section
+  open topology
+  open asymptotic
+  open prod.ops
 
-    parameters 
-      {R : State → State → Prop}
-      [Hwf_R : well_founded R]
-      (p : State → State → Prop)
-      (q : State → Res → Prop)
-
-    include State Res body R p q
-    structure loop.state_terminates_with_in_ub (init : State) (ub₁ ub₂ : ℕ) : Prop :=
-    (start : p init init)
-    (inv : ∀ s s', p init s →
-      sem.terminates_with_in (λ x, x = inl s') ub₁ (body s) → p init s' ∧ R s s')
-    (fin : ∀ s r, p init s → sem.terminates_with_in (λ x, x = inr r) ub₂ (body s) → q init r)
-
-    protected theorem loop.terminates_with_in_ub
-      (c₁ c₂ : State → ℕ)
-      (asym₁ asym₂ : ℕ → ℕ)
-      (h : ∀ s, ∃₀ f₁ ∈ 𝓞(asym₁) [at ∞], ∃₀ f₂ ∈ 𝓞(asym₂) [at ∞],
-        @loop.state_terminates_with_in_ub _ _ body R p q s (f₁ (c₁ s)) (f₂ (c₂ s))) :
-      ∀ s, ∃₀ f ∈ 𝓞(λ p, asym₁ p.1 * asym₂ p.2) [at ∞ × ∞],
-        sem.terminates_with_in (q s) (f (c₁ s, c₂ s)) (loop s)
-  end-/
+  protected theorem loop.terminates_with_in_ub
+    {In State Res : Type₁}
+    (citer : ℕ → ℕ)
+    (p : In → State → State → Prop)
+    (pre : In → State → Prop)
+    (q : In → State → Res → Prop)
+    (miter : State → ℕ)
+    (mbody : In → State → ℕ)
+    (aiter abody : ℕ → ℕ)
+    (body : In → State → sem (State + Res))
+    (citer_aiter : citer ∈ 𝓞(aiter) [at ∞] ∩ Ω(1) [at ∞])
+    (pre_p : ∀ args s, pre args s → p args s s)
+    (step : ∃₀ f ∈ 𝓞(abody) [at ∞] ∩ Ω(1) [at ∞], ∀ args init s, pre args init → p args init s →
+      sem.terminates_with_in (λ x, match x with
+        | inl s' := p args init s' ∧ citer (miter s') < citer (miter s)
+        | inr r  := q args init r
+        end) (f (mbody args init)) (body args s)) :
+    ∃₀ f ∈ 𝓞(λ p, aiter p.1 * abody p.2) [at ∞ × ∞], ∀ args s, pre args s →
+      sem.terminates_with_in (q args s) (f (miter s, mbody args s)) (loop (body args) s) :=
+    begin
+      cases step with cbody step,
+      cases step with cbody_abody step,
+      existsi λ p, (citer p.1 + 1) * (cbody p.2 + 1),
+      split,
+      { apply ub_mul_prod_filter
+          (and.left $ ub_add_const citer_aiter)
+          (and.left $ ub_add_const cbody_abody) },
+      { intro args init hpre,
+        esimp,
+        let R := measure (citer ∘ miter),
+        have well_founded R, from measure.wf _,
+        have ∀ s, p args init s → sem.terminates_with_in (q args init)
+          ((citer (miter s) + 1) * (cbody (mbody args init) + 1))
+          (loop.fix (body args) R s),
+        begin
+          intro s₀ hp,
+          induction well_founded.apply `well_founded R` s₀ with s acc ih,
+          rewrite loop.fix_eq,
+          note step' := step args init s hpre hp,
+          clear step,
+          cases step' with ret x k h_eq h hk,
+          cases x with s' r,
+          { cases h with hps' var,
+            note ih' := ih s' var hps',
+            clear acc ih,
+            rewrite [h_eq, ▸*, incr_incr, if_pos (show R s' s, from var)],
+            revert var,
+            cases citer (miter s) with i,
+            { intro var, exfalso, apply not_lt_zero _ var },
+            { intro var,
+              rewrite [succ_eq_add_one, nat.right_distrib, one_mul],
+              have sem.terminates_with_in (q args init)
+                ((i + 1) * (cbody (mbody args init) + 1) + (1 + k))
+                (sem.incr (1 + k) (loop.fix (body args) (measure (citer ∘ miter)) s')),
+              begin
+                apply sem.terminates_with_in_incr,
+                apply sem.terminates_with_in.imp ih',
+                { intros, assumption },
+                { apply nat.mul_le_mul (nat.add_le_add_right (nat.le_of_succ_le_succ var) _) !le.refl },
+              end,
+              apply sem.terminates_with_in.imp this,
+              { intros, assumption },
+              { apply nat.add_le_add_left,
+                rewrite nat.add_comm,
+                apply nat.add_le_add_right hk }
+            }
+          },
+          { esimp at h,
+            rewrite [h_eq, ▸*],
+            apply sem.terminates_with_in.mk rfl,
+            { apply h },
+            { rewrite [zero_add, nat.right_distrib, one_mul],
+              apply le_add_of_le_left,
+              apply nat.add_le_add_right hk,
+            }
+          }
+        end,
+        have sem.terminates_with_in (q args init)
+          ((citer (miter init) + 1) * (cbody (mbody args init) + 1))
+          (loop.fix (body args) R init), from this init (pre_p args init hpre),
+        rewrite [-loop.fix_eq_loop (show loop.fix (body args) R init ≠ mzero,
+          begin
+            revert this,
+            intro t, cases t with ret x k hq hk ht,
+            intro contr, rewrite contr at hq, contradiction
+          end)],
+        apply this,
+      }
+    end
 end

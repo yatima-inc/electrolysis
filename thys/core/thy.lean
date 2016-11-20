@@ -297,7 +297,7 @@ variable base : usize
 private abbreviation loop_4.state := closure_5594 T × usize × slice T
 
 include self needle base s -- HACK
-structure loop_4_invar :=
+structure loop_4_invar : Prop :=
 (s_in_self  : s ⊑ₚ (dropn base self))
 (insert_pos : sorted.insert_pos self needle ∈ '[base, base + length s])
 (needle_mem : needle ∈ self → needle ∈ s)
@@ -331,7 +331,7 @@ end
 include His_slice
 private lemma loop_4.spec (Hinvar : loop_4_invar s base) : sem.terminates_with_in
   (loop_4_res s)
-  (15 + cmp_max_cost)
+  (cmp_max_cost + 15)
   (loop_4 (f, base, s)) :=
 have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
   (loop_4_invar.s_in_self Hinvar)
@@ -376,7 +376,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         Hs ▸ this },
       { apply sorted.sorted_insert_at_insert_pos Hsorted }
     },
-    { apply le_add_of_le_right, apply dec_trivial }
+    { apply le_add_of_le_left, apply dec_trivial }
   },
   { have length s ≠ 0,
     begin
@@ -445,8 +445,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         exact Hwf, exact `length s ≠ 0` },
       { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                 rewrite [{_ + k}add.comm]),
-        rewrite [{k + _}add.comm],
-        apply add_le_add_left Hle_max_cost }
+        apply add_le_add_right Hle_max_cost }
     },
     { intro H, subst H,
       cases (has_decidable_eq : decidable (x = needle)) with Hfound Hnot_found,
@@ -454,8 +453,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         { left, apply Hfound ▸ nth_x },
         { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                   rewrite [{_ + k}add.comm]),
-          rewrite [{k + _}add.comm],
-          apply add_le_add dec_trivial Hle_max_cost }
+          apply add_le_add Hle_max_cost dec_trivial }
       },
       { have Hx_gt_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
         apply sem.terminates_with_in.mk rfl,
@@ -482,101 +480,88 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
         },
         { repeat (rewrite [{k + _ + _}add.assoc] | rewrite [-{_ + (k + _)}add.assoc] |
                   rewrite [{_ + k}add.comm]),
-          rewrite [{k + _}add.comm],
-          apply add_le_add dec_trivial Hle_max_cost }
+          apply add_le_add Hle_max_cost dec_trivial }
       }
     }
   }
 end)
-
-private definition R := measure (λst : loop_4.state, length st.2)
-
-private lemma R_wf [instance] : well_founded R := inv_image.wf'
-
--- proof via strong induction (probably easier than well-founded induction over the whole state tuple)
-include Hsorted
-private lemma fix_loop_4 (Hinvar : loop_4_invar s base) : sem.terminates_with_in
-  binary_search_res
-  ((log₂ (2 * length s) + 1) * (16 + cmp_max_cost))
-  (loop.fix loop_4 R (f, base, s)) :=
-begin
-  eapply generalize_with_eq (length s), intro l,
-  revert base s Hinvar,
-  induction l using nat.strong_induction_on with l' ih,
-  intro base s Hinvar Hlen,
-  subst Hlen,
-  rewrite loop.fix_eq,
-  note Hres := loop_4.spec s base Hinvar, revert Hres,
-  eapply generalize_with_eq (loop_4 (f, base, s)), intro res _,
-  -- exact match res with -- unifier doesn't like this anymore
-  -- | some (sum.inl st', k) := begin
-  cases res,
-  { intro H, cases H, contradiction },
-  { intro H, cases H with _ res k Hsem_eq Hstep Hmax_cost,
-    rewrite Hsem_eq,
-    cases res with st' r,
-    { cases Hstep with base' s' Hinvar' Hvar Hs_ne_nil,
-      esimp,
-      have R (f, base', s') (f, base, s), from
-        lt_of_le_of_lt Hvar (div_lt_of_ne_zero Hs_ne_nil),
-      rewrite [if_pos' this],
-      cases ih _ this _ _ Hinvar' rfl with _ res' k' Hsem'_eq Hres' Hmax_cost',
-      clear ih,
-      rewrite Hsem'_eq,      
-      esimp,
-      apply sem.terminates_with_in.mk rfl,
-      exact Hres',
-      exact calc k' + k + 1
-          = k + k' + 1 : by rewrite (add.comm k k')
-      ... ≤ (15 + cmp_max_cost) + k' + 1 : add_le_add_right (add_le_add_right Hmax_cost _) _
-      ... ≤ (15 + cmp_max_cost) + (log₂ (length s) + 1) * (16 + cmp_max_cost) + 1 :
-        add_le_add_right (add_le_add_left
-          (show k' ≤ (log₂ (length s) + 1) * (16 + cmp_max_cost), from le.trans Hmax_cost' (mul_le_mul_right _
-            (show log₂ (2 * length s') + 1 ≤ log₂ (length s) + 1, from add_le_add_right
-              (nondecreasing_log dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
-              _)))
-        _) _
-      ... = (log₂ (length s) + 1 + 1) * (16 + cmp_max_cost) :
-        by rewrite [add.comm, -+add.assoc, nat.right_distrib (_ + 1), add.comm, one_mul]
-      ... = (log₂ (2 * length s) + 1) * (16 + cmp_max_cost) : begin
-        { rewrite [-@log.rec 2 dec_trivial _ (pos_of_ne_zero `length s ≠ 0`)] }
-      end
-    },
-    { esimp,
-      apply sem.terminates_with_in.mk rfl,
-      apply Hstep,
-      exact calc 0 + k + 1
-          = k + 1 : by rewrite zero_add
-      ... ≤ 15 + cmp_max_cost + 1 : add_le_add_right Hmax_cost
-      ... = 16 + cmp_max_cost : by rewrite nat.add_right_comm
-      ... ≤ (log 2 (2 * length s) + 1) * (16 + cmp_max_cost) : by
-        rewrite [nat.right_distrib, one_mul]; apply le_add_left }
-  }
-end
-
 end loop_4
-
-include Hsorted His_slice
-theorem binary_search_by.spec : sem.terminates_with_in
-  binary_search_res
-  ((log₂ (2 * length self) + 1) * (16 + cmp_max_cost))
-  (binary_search_by self f) :=
-begin
-  have loop_4_invar self 0, from ⦃loop_4_invar,
-    s_in_self := !prefixeq.refl,
-    insert_pos := and.intro !zero_le (!zero_add⁻¹ ▸ !sorted.insert_pos_le_length),
-    needle_mem := id
-  ⦄,
-  note H := fix_loop_4 self 0 this,
-  have loop.fix loop_4 R (f, 0, self) ≠ none, begin
-    intro Hnonterm, rewrite Hnonterm at H, cases H, contradiction
-  end,
-  rewrite [↑binary_search_by, -!loop.fix_eq_loop this],
-  apply H
-end
 end
 
 local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
+
+theorem binary_search_by.spec :
+  ∃₀g ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
+  ∀ needle (st : closure_5594 T × usize × slice T), let self := st.2 in
+    st.1.1 = closure_5594.mk needle ∧ st.1.2 = 0 ∧ is_slice self ∧ sorted le self → sem.terminates_with_in
+    (binary_search_res self needle)
+    (g (length self, Ord'.cmp_max_cost needle self))
+    (loop loop_4 st) :=
+begin
+  apply loop.terminates_with_in_ub
+    (λ n, log₂ (2 * n) + 1)
+    (λ needle init s, s.1.1 = f needle ∧ loop_4_invar init.2 needle s.2 s.1.2),
+  { split,
+    calc (λa, log₂ (2 * a) + 1)
+        ≼ (λa, log₂ a + 2) : ub_of_eventually_le_at_infty 1 (
+          take a, suppose a ≥ 1,
+          calc log₂ (2 * a) + 1 = log₂ a + 1 + 1 : { @log.rec 2 dec_trivial _ this }
+                            ... ≤ log₂ a + 2     : le_of_eq !add.assoc)
+    ... ≼ log₂ : ub_add asymptotic.le.refl (
+          calc (λx, 2) ≼ (λx, 1) : ub_const
+                   ... ≼ log₂    : asymptotic.le_of_lt (@log_unbounded 2 dec_trivial)),
+    show (λa, 1) ≼ (λa, log₂ (2 * a) + 1), from ub_of_eventually_le_at_infty 0 (λ y h, !le_add_left)
+  },
+  { intro needle st pre,
+    split, apply and.left pre,
+    cases pre with _ pre,
+    cases pre with hbase,
+    rewrite hbase,
+    let self := st.2,
+    show loop_4_invar self needle self 0, from ⦃loop_4_invar,
+      s_in_self := !prefixeq.refl,
+      insert_pos := and.intro !zero_le (!zero_add⁻¹ ▸ !sorted.insert_pos_le_length),
+      needle_mem := id
+    ⦄,
+  },
+  existsi λ n, n + 15,
+  split,
+  { have id + (λ n, 15) ∈ 𝓞(id) [at ∞] ∩ Ω(λ n, 15) [at ∞], begin
+      apply ub_add_const,
+      apply and.intro asymptotic.le.refl (ub_of_eventually_le_at_infty 15 (λ y h, h)),
+    end,
+    exact and.intro (and.left this)
+      (asymptotic.le.trans (ub_of_eventually_le_at_infty 0 (λ y h, dec_trivial)) (and.right this))
+  },
+  intro needle st,
+  cases st with st₁ self,
+  cases st₁ with f base,
+  intro st pre inv,
+  cases st with st₁ s,
+  cases pre with Hf pre,
+  cases pre with _ pre,
+  cases pre with Hslice Hsorted,
+  cases inv with Hf' Hinv,
+  esimp,
+  rewrite [-prod.eta, -prod.eta st₁, ▸*, Hf'],
+  apply sem.terminates_with_in.imp (!loop_4.spec Hsorted Hslice _ _ Hinv),
+  { intro x, cases x with st' r,
+    esimp,
+    { intro Hstep, cases Hstep with base' s' Hinvar' Hvar Hs_ne_nil,
+      esimp,
+      split,
+      { split, apply rfl, apply Hinvar' },
+      calc log₂ (2 * length s') + 1 ≤ log₂ (length s) + 1 : add_le_add_right
+        (nondecreasing_log dec_trivial (le.trans (mul_le_mul_left 2 Hvar) (!mul.comm ▸ div_mul_le _ _)))
+        _
+      ... = log₂ (2 * length s) : by
+        rewrite [-@log.rec 2 dec_trivial _ (pos_of_ne_zero `length s ≠ 0`)]
+      ... < log₂ (2 * length s) + 1: le.refl,
+    },
+    apply id,
+  },
+  esimp
+end
 
 theorem binary_search.spec :
   ∃₀f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
@@ -585,36 +570,23 @@ theorem binary_search.spec :
     (f (length self, Ord'.cmp_max_cost needle self))
     (binary_search self needle) :=
 begin
-  existsi λp, (log₂ (2 * p.1) + 1) * (16 + p.2) + 1,
+  cases binary_search_by.spec with g spec,
+  cases spec with hg spec,
+  existsi λ p, g p + 1 * 1,
   split,
-  { apply ub_add,
-    show (λp, (log₂ (2 * p.1) + 1) * (16 + p.2)) ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞], from
-    ub_mul_prod_filter
-      (calc (λa, log₂ (2 * a) + 1)
-          ≼ (λa, log₂ a + 2) : ub_of_eventually_le (eventually_at_infty_intro (
-            take a, suppose a ≥ 1,
-            calc log₂ (2 * a) + 1 = log₂ a + 1 + 1 : { @log.rec 2 dec_trivial _ this }
-                              ... ≤ log₂ a + 2     : le_of_eq !add.assoc))
-      ... ≼ log₂ : ub_add asymptotic.le.refl (
-            calc (λx, 2) ≼ (λx, 1) : ub_const
-                    ... ≼ log₂    : asymptotic.le_of_lt (@log_unbounded 2 dec_trivial)))
-      (have (λa, 16) ≼ id, from ub_of_eventually_le (eventually_at_infty_intro (λx Hx, Hx)),
-        calc (λa, 16 + a) = (λa, a + 16) : funext (λa, !add.comm)
-                      ... ≼ id           : ub_add asymptotic.le.refl this),
-    show (λp, 1) ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
-    begin
-      rewrite [-mul_one 1 at {1}],
-      apply ub_mul_prod_filter,
-      { apply asymptotic.le_of_lt, apply log_unbounded dec_trivial },
-      { apply asymptotic.le_of_lt, apply id_unbounded },
-    end
+  { apply ub_add hg,
+    apply ub_mul_prod_filter,
+    { apply asymptotic.le_of_lt (@log_unbounded 2 dec_trivial) },
+    { apply ub_of_eventually_le (eventually_at_infty_intro (λx Hx, Hx)) },
   },
-  { intro self needle His_slice Hsorted,
-    cases binary_search_by.spec self needle Hsorted His_slice with  _ res k Hsem_eq Hres Hmax_cost,
-    rewrite [↑binary_search, bind_return, ↑binary_search_by, Hsem_eq],
-    apply sem.terminates_with_in.mk rfl,
-    apply Hres,
-    apply add_le_add_right Hmax_cost }
+  { intros,
+    rewrite [↑binary_search, ↑binary_search_by, bind_return],
+    apply sem.terminates_with_in_incr,
+    apply spec needle,
+    esimp,
+    repeat split,
+    repeat (exact rfl | assumption)
+  }
 end
 
 end binary_search
