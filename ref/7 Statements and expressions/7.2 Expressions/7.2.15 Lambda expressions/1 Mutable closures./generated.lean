@@ -15,6 +15,7 @@ definition test.apply {T : Type₁} {F : Type₁} [«core.ops.FnMut F (T)» : co
 let' f ← fₐ;
 let' x ← xₐ;
 let' t6 ← @lens.id F;
+do «$tmp» ← lens.get t6 f;
 let' t9 ← x;
 let' t8 ← (t9);
 do «$tmp0» ← lens.get t6 f;
@@ -22,6 +23,7 @@ dostep «$tmp» ← @core.ops.FnMut.call_mut _ _ _ «core.ops.FnMut F (T)» «$t
 match «$tmp» with (y, «t6$») :=
 do f ← lens.set t6 f «t6$»;
 let' t10 ← @lens.id F;
+do «$tmp» ← lens.get t10 f;
 let' t12 ← y;
 let' t11 ← (t12);
 do «$tmp0» ← lens.get t10 f;

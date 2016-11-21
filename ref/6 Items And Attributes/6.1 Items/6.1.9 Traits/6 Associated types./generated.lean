@@ -26,6 +26,7 @@ definition test.«collections.vec.Vec<T> as test.Container».insert {T : Type₁
 let' self ← @lens.id (collections.vec.Vec T);
 let' x ← xₐ;
 let' t6 ← (self);
+do «$tmp» ← lens.get t6 selfₐ;
 let' t8 ← x;
 do «$tmp0» ← lens.get t6 selfₐ;
 dostep «$tmp» ← @collections.vec.«Vec<T>».push _ «$tmp0» t8;

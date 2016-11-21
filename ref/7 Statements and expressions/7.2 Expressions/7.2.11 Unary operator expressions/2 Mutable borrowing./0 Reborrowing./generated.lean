@@ -22,6 +22,7 @@ return (list.length «$tmp0»);
 let' t4 ← «$tmp0»;
 let' t5 ← (0 : nat) <ᵇ t4;
 let' p ← (lens.index _ (0 : nat) ∘ₗ lens.mk (return ∘ test.S.x) (λ (o : test.S) i, return ⦃ test.S, x := i ⦄) ∘ₗ s);
+do «$tmp» ← lens.get p sₐ;
 do «$tmp0» ← lens.get p sₐ;
 let' t6 ← «$tmp0»;
 let' ret ← t6;

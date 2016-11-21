@@ -299,6 +299,7 @@ return (ret)
 return (sum.inr tmp__)else
 let' t18 ← ⋆;
 let' t24 ← @lens.id F;
+do «$tmp» ← lens.get t24 f;
 let' t28 ← list.length tail;
 let' t29 ← (0 : nat) <ᵇ t28;
 do «$tmp0» ← core.«[T] as core.slice.SliceExt».get_unchecked tail (0 : nat);

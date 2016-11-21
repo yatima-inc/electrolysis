@@ -579,7 +579,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     Rvalue::Ref(_, BorrowKind::Mut, ref source) => {
                         let mut lenses = vec![];
                         let source = self.mk_lenses(source, &mut lenses);
-                        self.set_mut_ref(lv, lenses, source)
+                        let set = self.set_mut_ref(lv, lenses, source);
+                        // probe lens to eagerly propagate out-of-bounds panics
+                        format!("{}do «$tmp» ← {};\n", set, self.get_lvalue(&lv.clone().deref()).to_partial())
                     }
                     // move &mut
                     Rvalue::Use(Operand::Consume(Lvalue::Local(source)))

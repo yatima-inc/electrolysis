@@ -18,7 +18,9 @@ return (list.length «$tmp0»);
 let' t4 ← «$tmp0»;
 let' t5 ← (0 : nat) <ᵇ t4;
 let' t3 ← (lens.index _ (0 : nat) ∘ₗ xs);
+do «$tmp» ← lens.get t3 xsₐ;
 let' ret ← (t3);
+do «$tmp» ← lens.get ret xsₐ;
 return (ret, xsₐ)
 
 

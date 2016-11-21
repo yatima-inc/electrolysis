@@ -23,7 +23,9 @@ return (ret, xₐ)
 definition test.foo : sem (i32) :=
 let' x ← (1 : int);
 let' t4 ← @lens.id i32;
+do «$tmp» ← lens.get t4 x;
 let' t3 ← (t4);
+do «$tmp» ← lens.get t3 x;
 do «$tmp0» ← lens.get t3 x;
 dostep «$tmp» ← @test.set «$tmp0» (2 : int);
 match «$tmp» with (t2, «t3$») :=

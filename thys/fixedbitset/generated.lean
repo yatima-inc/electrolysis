@@ -126,12 +126,14 @@ do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shl u32.bits (1 : nat) t18);
 let' t19 ← «$tmp0»;
 let' t17 ← t19.1;
 let' t23 ← (lens.mk (return ∘ fixedbitset.FixedBitSet.data) (λ (o : fixedbitset.FixedBitSet) i, return ⦃ fixedbitset.FixedBitSet, data := i, o ⦄) ∘ₗ self);
+do «$tmp» ← lens.get t23 selfₐ;
 do «$tmp0» ← lens.get t23 selfₐ;
 dostep «$tmp» ← @collections.«collections.vec.Vec<T> as core.ops.DerefMut».deref_mut _ «$tmp0»;
 match «$tmp» with («t22$», «t23$») :=
 do selfₐ ← lens.set t23 selfₐ «t23$»;
 let' t22 ← («t22$» ∘ₗ t23);
 let' t21 ← (t22);
+do «$tmp» ← lens.get t21 selfₐ;
 let' t24 ← block;
 do «$tmp0» ← lens.get t21 selfₐ;
 dostep «$tmp» ← @collections.«[T]».get_unchecked_mut _ «$tmp0» t24;

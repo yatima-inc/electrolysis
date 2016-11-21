@@ -28,6 +28,7 @@ let' t17 ← z;
 let' t16 ← bitnot t17;
 let' t18 ← x;
 let' t19 ← @lens.id i32;
+do «$tmp» ← lens.get t19 x;
 let' ret ← ⋆;
 return (ret)
 
