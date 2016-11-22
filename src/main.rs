@@ -1,6 +1,6 @@
 // we require access to many rustc internals
 #![feature(rustc_private)]
-#![feature(box_patterns, slice_patterns, advanced_slice_patterns, dotdot_in_tuple_patterns)]
+#![feature(box_patterns, slice_patterns, advanced_slice_patterns)]
 #![feature(conservative_impl_trait)]
 
 extern crate itertools;
@@ -177,6 +177,11 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
     fn visit_nested_item(&mut self, id: hir::ItemId) {
         let tcx = self.tcx;
         self.visit_item(tcx.map.expect_item(id.id))
+    }
+
+    fn visit_nested_impl_item(&mut self, id: hir::ImplItemId) {
+        let tcx = self.tcx;
+        self.visit_impl_item(tcx.map.expect_impl_item(id.node_id))
     }
 
     fn visit_impl_item(&mut self, ii: &'a hir::ImplItem) {

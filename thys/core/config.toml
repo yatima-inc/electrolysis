@@ -70,5 +70,5 @@ $ return (lens.mk
 end"""
 
 [traits."core.slice.SliceExt"]
-# only method called from default methods, everything else should be static calls
+# only method called from default methods (`is_empty`), everything else should be static calls
 only = ["len"]

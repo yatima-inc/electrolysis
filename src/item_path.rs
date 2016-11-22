@@ -49,7 +49,7 @@ pub fn push_item_path(tcx: TyCtxt, buffer: &mut Vec<String>, def_id: DefId)
 
 fn push_impl_path(tcx: TyCtxt, buffer: &mut Vec<String>, impl_def_id: DefId)
 {
-    let self_ty = tcx.lookup_item_type(impl_def_id).ty;
+    let self_ty = tcx.item_type(impl_def_id);
     if let Some(trait_ref) = tcx.impl_trait_ref(impl_def_id) {
         // we suppress the unnecessary parent path, but still need the crate root
         push_krate(tcx, buffer, impl_def_id);

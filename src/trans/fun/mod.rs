@@ -247,7 +247,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     }
                     ty::TypeVariants::TyClosure(def_id, ref substs) => {
                         let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
-                        get_tuple_elem(sbase, field.index(), substs.upvar_tys.len())
+                        get_tuple_elem(sbase, field.index(), substs.upvar_tys(def_id, self.tcx).count())
                     }
                     ref ty => panic!("unimplemented: accessing field of {:?}", ty),
                 })),
@@ -300,7 +300,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                 let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
                                 self.set_lvalue(base, &format!(
                                     "{}.mk {}", self.name_def_id(def_id),
-                                    set_tuple_elem(sbase, val.to_string(), field.index(), substs.upvar_tys.len())))
+                                    set_tuple_elem(sbase, val.to_string(), field.index(), substs.upvar_tys(def_id, self.tcx).count())))
                             }
                             ref ty => panic!("unimplemented: setting field of {:?}", ty),
                         }
@@ -635,7 +635,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let trait_def_id = tcx.trait_id_of_impl(impl_def_id).unwrap();
         let trait_def = tcx.lookup_trait_def(trait_def_id);
 
-        match trait_def.ancestors(impl_def_id).fn_defs(tcx, name).next() {
+        match trait_def.ancestors(impl_def_id).defs(tcx, name, ty::AssociatedKind::Method).next() {
             Some(node_item) => {
                 let substs = tcx.infer_ctxt(None, None, traits::Reveal::All).enter(|infcx| {
                     let substs = substs.rebase_onto(tcx, trait_def_id, impl_substs);
@@ -659,7 +659,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn full_generics(&self, def_id: DefId) -> Vec<&'tcx ty::TypeParameterDef<'tcx>> {
         ::itertools::Unfold::new(Some(def_id), |opt_def_id| {
             opt_def_id.map(|def_id| {
-                let g = self.tcx.lookup_generics(def_id);
+                let g = self.tcx.item_generics(def_id);
                 *opt_def_id = g.parent;
                 g.types.iter()
             })
@@ -679,8 +679,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
                             match self.infer_trait_impl(trait_ref, &infcx)? {
                                 item::TraitImplLookup::Static { impl_def_id, substs: impl_substs, .. }  => {
-                                    let method = self.tcx.impl_or_trait_item(def_id).as_opt_method().unwrap();
-                                    FnTranspiler::get_impl_method(self.tcx, &substs, impl_def_id, &impl_substs, method.name)
+                                    FnTranspiler::get_impl_method(self.tcx, &substs, impl_def_id, &impl_substs, self.tcx.item_name(def_id))
                                 }
                                 item::TraitImplLookup::Dynamic { .. } =>
                                     (def_id, substs)
@@ -884,9 +883,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let (closure_def, closure_impl) = if self.is_closure() {
             let closure_ty = unwrap_refs(krate::unwrap_mut_ref(&self.mir.local_decls[Local::new(1)].ty));
             let upvar_tys = match closure_ty.sty {
-                ty::TypeVariants::TyClosure(_, ref substs) => &substs.upvar_tys,
+                ty::TypeVariants::TyClosure(_, ref substs) => substs.upvar_tys(self.def_id, self.tcx),
                 _ => unreachable!(),
-            }.into_iter().map(|ty| self.transpile_ty(ty)).join(" × ");
+            }.map(|ty| self.transpile_ty(ty)).join(" × ");
             let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("({} : Type₁)", p.name)).collect_vec();
             let closure_def = format!("structure {} := (val : {})\n\n", (&name, &ty_params).join(" "), upvar_tys);
             let closure_kind = self.tcx.closure_kind(self.def_id);

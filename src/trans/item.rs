@@ -77,7 +77,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     /// `Item = u32` ~> `{'Item': 'u32'}`
     pub fn get_assoc_ty_substs(&self, def_id: DefId) -> HashMap<String, String> {
-        self.tcx.lookup_predicates(def_id).predicates.into_iter().filter_map(|trait_pred| match trait_pred {
+        self.tcx.item_predicates(def_id).predicates.into_iter().filter_map(|trait_pred| match trait_pred {
             ty::Predicate::Projection(ty::Binder(proj_pred)) => {
                 let assoc_ty = self.transpile_associated_type(proj_pred.projection_ty.trait_ref, &proj_pred.projection_ty.item_name);
                 Some((assoc_ty, self.transpile_ty(&proj_pred.ty)))
@@ -97,9 +97,9 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     // includes associates types from trait ancestors
     fn all_assoc_tys(&self, def_id: DefId) -> Vec<String> {
         self.trait_ancestors(def_id).into_iter().flat_map(|def_id| {
-            self.tcx.trait_items(def_id).iter().filter_map(|item| match item {
-                &ty::TypeTraitItem(ref assoc_ty) =>
-                    Some(assoc_ty.name.as_str().to_string()),
+            self.tcx.associated_items(def_id).filter_map(|item| match item.kind {
+                ty::AssociatedKind::Type =>
+                    Some(item.name.as_str().to_string()),
                 _ => None,
             }).collect_vec()
         }).collect_vec()
@@ -217,8 +217,10 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 self.deps.borrow_mut().crate_deps.insert("alloc".to_string());
                 format!("(alloc.boxed.Box {})", self.transpile_ty(ty))
             }
-            ty::TypeVariants::TyClosure(def_id, ref substs) =>
-                format!("({})", (&self.name_def_id(def_id), substs.func_substs.types().map(|ty| self.transpile_ty(ty))).join(" ")),
+            ty::TypeVariants::TyClosure(def_id, ref substs) => {
+                let generics = self.tcx.item_generics(def_id);
+                format!("({})", (&self.name_def_id(def_id), substs.substs[..generics.own_count()].iter().flat_map(|k| k.as_type().map(|ty| self.transpile_ty(ty)))).join(" "))
+            }
             ty::TypeVariants::TyNever => "empty".to_string(),
             _ => match ty.ty_to_def_id() {
                 Some(did) => self.name_def_id(did),
@@ -230,17 +232,17 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     fn trait_predicates(&'a self, def_id: DefId) -> impl Iterator<Item=ty::TraitPredicate<'tcx>> {
         let predicates = if let Some(trait_def_id) = self.tcx.trait_of_item(def_id) {
             // for trait items, ignore predicates on trait except for the `Self: Trait` predicate
-            let g = self.tcx.lookup_predicates(def_id);
-            g.predicates.into_iter().chain(self.tcx.lookup_predicates(trait_def_id).predicates.into_iter().filter(|pred| match *pred {
+            let g = self.tcx.item_predicates(def_id);
+            g.predicates.into_iter().chain(self.tcx.item_predicates(trait_def_id).predicates.into_iter().filter(|pred| match *pred {
                 ty::Predicate::Trait(ref trait_pred) => trait_pred.def_id() == trait_def_id,
                 _ => false,
             })).collect_vec()
         } else {
             ::itertools::Unfold::new(Some(def_id), |opt_def_id| {
                 opt_def_id.map(|def_id| {
-                    let g = self.tcx.lookup_predicates(def_id);
+                    let g = self.tcx.item_predicates(def_id);
                     *opt_def_id = g.parent;
-                    self.tcx.lookup_predicates(def_id).predicates
+                    self.tcx.item_predicates(def_id).predicates
                 })
             }).flat_map(|ps| ps).collect()
         };
@@ -251,7 +253,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn is_marker_trait(&self, trait_def_id: DefId) -> bool {
-        self.tcx.trait_items(trait_def_id).is_empty() &&
+        self.tcx.associated_items(trait_def_id).next().is_none() &&
         self.trait_predicates(trait_def_id).all(|trait_pred| {
             trait_pred.def_id() == trait_def_id || self.is_marker_trait(trait_pred.def_id())
         })
@@ -319,7 +321,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     // `self.def_id=Iterator, name_suffix=' [class]'` ~> `'Iterator [class] (T : Type₁)'`
     fn as_generic_ty_def(&self, name_suffix: &str) -> String {
-        let generics = self.tcx.lookup_generics(self.def_id);
+        let generics = self.tcx.item_generics(self.def_id);
         (self.name() + name_suffix, generics.types.iter().map(|p| format!("({} : Type₁)", p.name))).join(" ")
     }
 
@@ -341,7 +343,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 let mut fields = variant.fields.iter().map(|f| {
                     self.transpile_ty(f.unsubst_ty())
                 });
-                let applied_ty = (self.name(), self.tcx.lookup_item_type(self.def_id).generics.types.iter().map(|p| p.name.as_str().to_string())).join(" ");
+                let applied_ty = (self.name(), self.tcx.item_generics(self.def_id).types.iter().map(|p| p.name.as_str().to_string())).join(" ");
                 format!("inductive {} :=\nmk {{}} : {} → {}",
                         self.as_generic_ty_def(suffix),
                         fields.join(" → "),
@@ -354,7 +356,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_enum(&self, name: &str, adt_def: ty::AdtDef<'tcx>) -> String {
-        let generics = adt_def.type_scheme(self.tcx).generics;
+        let generics = self.tcx.item_generics(self.def_id);
         let applied_ty = self.mk_applied_ty(name, generics);
         let mut prelude = adt_def.variants.iter().filter_map(|variant| {
             match variant.ctor_kind {
@@ -402,7 +404,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     fn transpile_static(&self) -> String {
         format!("definition {} : sem {} :=\n{}",
                 krate::name_def_id(self.tcx, self.def_id),
-                self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty),
+                self.transpile_ty(self.tcx.item_type(self.def_id)),
                 ::trans::fun::FnTranspiler::new(self, &*self.tcx.item_mir(self.def_id)).transpile_mir())
     }
 
@@ -418,24 +420,24 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
         let only_path = format!("traits.\"{}\".only", name);
         let only: Option<HashSet<_>> = self.config.config.lookup(&only_path).map(|only| ::toml_value_as_str_array(only).into_iter().collect());
-        let items = self.tcx.trait_items(self.def_id).iter().filter_map(|item| match *item {
-            ty::ImplOrTraitItem::TypeTraitItem(_) => None,
-            ty::ImplOrTraitItem::MethodTraitItem(ref method) => {
+        let items = self.tcx.associated_items(self.def_id).filter_map(|item| match item.kind {
+            ty::AssociatedKind::Type => None,
+            ty::AssociatedKind::Method => {
                 // TODO: allow overriding default methods
-                if self.tcx.provided_trait_methods(self.def_id).iter().any(|m| m.name == method.name) || only.iter().any(|only| !only.contains(&*method.name.as_str())) {
+                if self.tcx.provided_trait_methods(self.def_id).iter().any(|m| m.name == item.name) || only.iter().any(|only| !only.contains(&*item.name.as_str())) {
                     None
                 } else {
-                    let ty_params = method.generics.types.iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
+                    let ty_params = self.tcx.item_generics(item.def_id).types.iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
                     // ignore current trait as bound
-                    let trait_params = self.transpile_trait_params(method.def_id, Some(self.def_id));
+                    let trait_params = self.transpile_trait_params(item.def_id, Some(self.def_id));
                     let pi = if trait_params.is_empty() { "".to_string() } else {
                         format!("Π {}, ", ty_params.into_iter().chain(trait_params).join(" "))
                     };
-                    let ty = self.transpile_ty(self.tcx.lookup_item_type(method.def_id).ty);
-                    Some(format!("({} : {}{})", method.name, pi, ty))
+                    let ty = self.transpile_ty(self.tcx.item_type(item.def_id));
+                    Some(format!("({} : {}{})", item.name, pi, ty))
                 }
             }
-            ty::ImplOrTraitItem::ConstTraitItem(_) =>
+            ty::AssociatedKind::Const =>
                 panic!("unimplemented: const trait items"),
         }).collect_vec();
         format!("structure {} {}{} {}",
@@ -452,10 +454,10 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let mut substs = self.get_assoc_ty_substs(self.def_id);
 
         // For `type S = T`, extend `assoc_ty_substs` by `{'S': 'T'}`
-        for &item_def_id in self.tcx.impl_or_trait_items(self.def_id).iter() {
-            if let ty::ImplOrTraitItem::TypeTraitItem(ref assoc_ty) = self.tcx.impl_or_trait_item(item_def_id) {
-                let ty = self.normalize_ty(assoc_ty.ty.unwrap());
-                substs.insert(self.transpile_associated_type(trait_ref, &assoc_ty.name), self.transpile_ty(ty));
+        for item in self.tcx.associated_items(self.def_id) {
+            if item.kind == ty::AssociatedKind::Type {
+                let ty = self.normalize_ty(self.tcx.item_type(item.def_id));
+                substs.insert(self.transpile_associated_type(trait_ref, &item.name), self.transpile_ty(ty));
             }
         }
         substs
@@ -478,19 +480,19 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
         let only_path = format!("traits.\"{}\".only", &self.name_def_id(trait_ref.def_id));
         let only: Option<HashSet<_>> = self.config.config.lookup(&only_path).map(|only| ::toml_value_as_str_array(only).into_iter().collect());
-        let items = self.tcx.impl_or_trait_items(self.def_id).iter().filter_map(|&item_def_id| match self.tcx.impl_or_trait_item(item_def_id) {
-            ty::ImplOrTraitItem::TypeTraitItem(_) =>
+        let items = self.tcx.associated_items(self.def_id).filter_map(|item| match item.kind {
+            ty::AssociatedKind::Type =>
                 None,
-            ty::ImplOrTraitItem::MethodTraitItem(ref method) => {
-                if only.iter().any(|only| !only.contains(&*method.name.as_str())) {
+            ty::AssociatedKind::Method => {
+                if only.iter().any(|only| !only.contains(&*item.name.as_str())) {
                     None // method ignored in config
-                } else if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == method.name) {
-                    panic!("unimplemented: overriding default method {:?}", self.name_def_id(method.def_id))
+                } else if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
+                    panic!("unimplemented: overriding default method {:?}", self.name_def_id(item.def_id))
                 } else {
-                    Some(format!("{} := {}", method.name, self.name_def_id(method.def_id)))
+                    Some(format!("{} := {}", item.name, self.name_def_id(item.def_id)))
                 }
             }
-            ty::ImplOrTraitItem::ConstTraitItem(_) =>
+            ty::AssociatedKind::Const =>
                 panic!("unimplemented: const trait items"),
         }).collect_vec();
 
@@ -519,13 +521,13 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 Item_::ItemStatic(_, hir::Mutability::MutImmutable, _) | Item_::ItemConst(..) =>
                     self.transpile_static(),
                 Item_::ItemEnum(..) =>
-                    match self.tcx.lookup_item_type(self.def_id).ty.sty {
+                    match self.tcx.item_type(self.def_id).sty {
                         ty::TypeVariants::TyAdt(ref adt_def, _) =>
                             self.transpile_enum(&name, adt_def),
                         _ => unreachable!(),
                     },
                 Item_::ItemStruct(..) =>
-                    match self.tcx.lookup_item_type(self.def_id).ty.sty {
+                    match self.tcx.item_type(self.def_id).sty {
                         ty::TypeVariants::TyAdt(ref adt_def, _) =>
                             self.transpile_struct("", adt_def.struct_variant()),
                         _ => unreachable!(),
@@ -548,7 +550,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 Item_::ItemTy(..) =>
                     format!("definition {} := {}",
                             self.as_generic_ty_def(""),
-                            self.transpile_ty(self.tcx.lookup_item_type(self.def_id).ty)),
+                            self.transpile_ty(self.tcx.item_type(self.def_id))),
                 Item_::ItemFn(..) =>
                     self.transpile_fn(name),
                 Item_::ItemUnion(..) => panic!("unimplemented: {:?}", node),

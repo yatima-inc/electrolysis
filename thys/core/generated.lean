@@ -150,27 +150,27 @@ structure core.cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁)  extends 
 structure core.cmp.Ord [class] (Self : Type₁)  extends core.cmp.Eq Self, core.cmp.PartialOrd Self Self :=
 (cmp : Self → Self → sem ((core.cmp.Ordering)))
 
-structure core.«[T] as core.slice.SliceExt».binary_search.closure_5594 (T : Type₁) := (val : T)
+structure core.«[T] as core.slice.SliceExt».binary_search.closure_5642 (T : Type₁) := (val : T)
 
 section
 parameters {T : Type₁}
 parameters [«core.cmp.Ord T» : core.cmp.Ord T]
 section
-parameters (a1 : (core.«[T] as core.slice.SliceExt».binary_search.closure_5594 T)) (pₐ : T)
+parameters (a1 : (core.«[T] as core.slice.SliceExt».binary_search.closure_5642 T)) (pₐ : T)
 
 
 
-definition core.«[T] as core.slice.SliceExt».binary_search.closure_5594.fn : sem ((core.cmp.Ordering) × (core.«[T] as core.slice.SliceExt».binary_search.closure_5594 T)) :=
+definition core.«[T] as core.slice.SliceExt».binary_search.closure_5642.fn : sem ((core.cmp.Ordering) × (core.«[T] as core.slice.SliceExt».binary_search.closure_5642 T)) :=
 let' p ← pₐ;
 let' t4 ← p;
-let' t5 ← (core.«[T] as core.slice.SliceExt».binary_search.closure_5594.val a1);
+let' t5 ← (core.«[T] as core.slice.SliceExt».binary_search.closure_5642.val a1);
 dostep «$tmp» ← @core.cmp.Ord.cmp _ «core.cmp.Ord T» t4 t5;
 let' ret ← «$tmp»;
 return (ret, a1)
 
 end
-definition core.«[T] as core.slice.SliceExt».binary_search.closure_5594.inst [instance] : core.ops.FnMut (core.«[T] as core.slice.SliceExt».binary_search.closure_5594 T) T (core.cmp.Ordering) :=
-core.ops.FnMut.mk core.«[T] as core.slice.SliceExt».binary_search.closure_5594.fn
+definition core.«[T] as core.slice.SliceExt».binary_search.closure_5642.inst [instance] : core.ops.FnMut (core.«[T] as core.slice.SliceExt».binary_search.closure_5642 T) T (core.cmp.Ordering) :=
+core.ops.FnMut.mk core.«[T] as core.slice.SliceExt».binary_search.closure_5642.fn
 
 end
 
@@ -275,7 +275,7 @@ parameters [«core.ops.FnMut F (T)» : core.ops.FnMut F (T) (core.cmp.Ordering)]
 section
 parameters (selfₐ : (slice T)) (fₐ : F)
 
-definition core.«[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((core.result.Result usize usize))) :=
+definition core.«[T] as core.slice.SliceExt».binary_search_by.loop_3 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((core.result.Result usize usize))) :=
 match state__ with (f, base, s) :=
 let' t13 ← s;
 let' t16 ← s;
@@ -355,7 +355,7 @@ let' f ← fₐ;
 let' base ← (0 : nat);
 let' t8 ← self;
 let' s ← t8;
-loop (core.«[T] as core.slice.SliceExt».binary_search_by.loop_4) (f, base, s)
+loop (core.«[T] as core.slice.SliceExt».binary_search_by.loop_3) (f, base, s)
 end
 end
 
@@ -364,7 +364,7 @@ let' self ← selfₐ;
 let' x ← xₐ;
 let' t5 ← self;
 let' t7 ← x;
-let' t6 ← core.«[T] as core.slice.SliceExt».binary_search.closure_5594.mk t7;
+let' t6 ← core.«[T] as core.slice.SliceExt».binary_search.closure_5642.mk t7;
 dostep «$tmp» ← @core.«[T] as core.slice.SliceExt».binary_search_by _ _ _ t5 t6;
 let' ret ← «$tmp»;
 return (ret)

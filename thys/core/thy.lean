@@ -260,7 +260,7 @@ end
 section binary_search
 open «[T] as core.slice.SliceExt».binary_search_by
 open «[T] as core.slice.SliceExt».binary_search
-attribute closure_5594.inst [constructor]
+attribute closure_5642.inst [constructor]
 
 parameter {T : Type₁}
 parameter [Ord' T]
@@ -274,7 +274,7 @@ parameter needle : T
 hypothesis Hsorted : sorted le self
 hypothesis His_slice : is_slice self
 
-abbreviation f := closure_5594.mk needle
+abbreviation f := closure_5642.mk needle
 abbreviation cmp_max_cost := Ord'.cmp_max_cost needle self
 
 /- fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord
@@ -289,30 +289,30 @@ inductive binary_search_res : Result usize usize → Prop :=
 | not_found : Πi, needle ∉ self → sorted le (insert_at self i needle) →
   binary_search_res (Result.Err i)
 
-section loop_4
+section loop_3
 
 variable s : slice T
 variable base : usize
 
-private abbreviation loop_4.state := closure_5594 T × usize × slice T
+private abbreviation loop_3.state := closure_5642 T × usize × slice T
 
 include self needle base s -- HACK
-structure loop_4_invar : Prop :=
+structure loop_3_invar : Prop :=
 (s_in_self  : s ⊑ₚ (dropn base self))
 (insert_pos : sorted.insert_pos self needle ∈ '[base, base + length s])
 (needle_mem : needle ∈ self → needle ∈ s)
 omit self needle base s
 
-inductive loop_4_step : loop_4.state → Prop :=
-mk : Πbase' s', loop_4_invar s' base' → length s' ≤ length s / 2 → length s ≠ 0 →
-  loop_4_step (f, base', s')
+inductive loop_3_step : loop_3.state → Prop :=
+mk : Πbase' s', loop_3_invar s' base' → length s' ≤ length s / 2 → length s ≠ 0 →
+  loop_3_step (f, base', s')
 
-abbreviation loop_4_res := sum.rec (loop_4_step s) binary_search_res
+abbreviation loop_3_res := sum.rec (loop_3_step s) binary_search_res
 
 -- extract some more expensive parts of the proof
 section
   variables {x : T} {xs : list T}
-  variables (Hinvar : loop_4_invar s base) (Hs : dropn (length s / 2) s = x :: xs)
+  variables (Hinvar : loop_3_invar s base) (Hs : dropn (length s / 2) s = x :: xs)
 
   include Hs
   lemma aux1 : sorted.insert_pos self needle ≤
@@ -321,7 +321,7 @@ section
   let s₂ := dropn (length s / 2) s in
   have 1 ≤ length (x :: xs), from succ_le_succ !zero_le,
   calc sorted.insert_pos self needle
-    ≤ base + length s : and.right (loop_4_invar.insert_pos Hinvar)
+    ≤ base + length s : and.right (loop_3_invar.insert_pos Hinvar)
     ... = base + (length s₁ + length s₂) : by rewrite [-length_append, firstn_app_dropn_eq_self]
     ... = base + (length s₁ + (length (dropn 1 (x::xs)) + 1)) : by
       rewrite [Hs, length_dropn, nat.sub_add_cancel this]
@@ -329,16 +329,16 @@ section
 end
 
 include His_slice
-private lemma loop_4.spec (Hinvar : loop_4_invar s base) : sem.terminates_with_in
-  (loop_4_res s)
+private lemma loop_3.spec (Hinvar : loop_3_invar s base) : sem.terminates_with_in
+  (loop_3_res s)
   (cmp_max_cost + 15)
-  (loop_4 (f, base, s)) :=
+  (loop_3 (f, base, s)) :=
 have sorted_s : sorted le s, from sorted.sorted_of_prefix_of_sorted
-  (loop_4_invar.s_in_self Hinvar)
+  (loop_3_invar.s_in_self Hinvar)
   (sorted.sorted_dropn_of_sorted Hsorted _),
-generalize_with_eq (loop_4 (f, base, s)) (begin
+generalize_with_eq (loop_3 (f, base, s)) (begin
   intro res,
-  rewrite [↑loop_4,
+  rewrite [↑loop_3,
     if_pos (show 0 ≤ (1:ℤ), from dec_trivial),
     if_pos (show usize.bits > nat.of_int 1, from lt_of_lt_of_le dec_trivial usize.bits_ge_16)],
   krewrite [pow_one],
@@ -362,7 +362,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       )
     end,
     have base = sorted.insert_pos self needle, begin
-      note H := loop_4_invar.insert_pos Hinvar,
+      note H := loop_3_invar.insert_pos Hinvar,
       rewrite [Hs at H, length_nil at H, add_zero at H, Icc_self at H],
       apply (eq_of_mem_singleton H)⁻¹
     end,
@@ -372,7 +372,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     { esimp, right,
       { show needle ∉ self, from
         take Hneedle,
-        have needle ∈ s, from loop_4_invar.needle_mem Hinvar Hneedle,
+        have needle ∈ s, from loop_3_invar.needle_mem Hinvar Hneedle,
         Hs ▸ this },
       { apply sorted.sorted_insert_at_insert_pos Hsorted }
     },
@@ -391,12 +391,12 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     rewrite [▸*, ↑get_unchecked, nth_zero, ↑f],
     --obtain k `k ≤ Ord'.max_cost T` cmp_eq, from Ord'.ord_cmp_eq x needle, -- slow
     cases Ord'.ord_cmp_eq x needle with k cmp_eq,
-    rewrite [+incr_incr, ↑closure_5594.fn, cmp_eq, ↑ordering, ▸*],
+    rewrite [+incr_incr, ↑closure_5642.fn, cmp_eq, ↑ordering, ▸*],
     have nth_x : nth self (base + length s₁) = some x,
     begin
       have nth s (length s / 2) = some x, by rewrite [nth_eq_first'_dropn, Hs, ▸*, nth_zero],
       rewrite [nth_eq_first'_dropn, add.comm, -dropn_dropn, -nth_eq_first'_dropn, len_s₁],
-      apply prefixeq.nth_of_nth_prefixeq this (loop_4_invar.s_in_self Hinvar)
+      apply prefixeq.nth_of_nth_prefixeq this (loop_3_invar.s_in_self Hinvar)
     end,
     have is_usize (base + (length s₁ + 1)), from
       lt_of_le_of_lt (lt_length_of_nth nth_x) (length_is_usize_of_is_slice self),
@@ -411,13 +411,13 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       intro H, rewrite -H,
       apply sem.terminates_with_in.mk rfl,
       { esimp, split,
-        exact ⦃loop_4_invar,
+        exact ⦃loop_3_invar,
           s_in_self := begin
             rewrite [-Hs, dropn_dropn, len_s₁, add.comm at {1}, {base + _}add.comm, -{dropn _ self}dropn_dropn],
-            apply !dropn_prefixeq_dropn_of_prefixeq (loop_4_invar.s_in_self Hinvar),
+            apply !dropn_prefixeq_dropn_of_prefixeq (loop_3_invar.s_in_self Hinvar),
           end,
           insert_pos := begin
-            note H := loop_4_invar.insert_pos Hinvar,
+            note H := loop_3_invar.insert_pos Hinvar,
             split,
             { have sorted.insert_pos self needle > base + length s₁, from
                 sorted.insert_pos_gt Hsorted Hx_lt_needle nth_x,
@@ -426,7 +426,7 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
             exact aux1 s base Hinvar Hs
           end,
           needle_mem := assume Hneedle : needle ∈ self,
-            have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_4_invar.needle_mem Hinvar Hneedle,
+            have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_3_invar.needle_mem Hinvar Hneedle,
             or.rec_on (mem_or_mem_of_mem_append this)
               (suppose needle ∈ s₁,
                 have x ≥ needle, from
@@ -458,15 +458,15 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
       { have Hx_gt_needle : x > needle, from lt_of_le_of_ne (le_of_not_gt Hx_ge_needle) (ne.symm Hnot_found),
         apply sem.terminates_with_in.mk rfl,
         { split,
-          exact ⦃loop_4_invar,
-            s_in_self := prefixeq.trans !firstn_prefixeq (loop_4_invar.s_in_self Hinvar),
+          exact ⦃loop_3_invar,
+            s_in_self := prefixeq.trans !firstn_prefixeq (loop_3_invar.s_in_self Hinvar),
             insert_pos := begin
               split,
-              { apply and.left (loop_4_invar.insert_pos Hinvar) },
+              { apply and.left (loop_3_invar.insert_pos Hinvar) },
               { apply sorted.insert_pos_le Hsorted Hx_gt_needle nth_x }
             end,
             needle_mem := assume Hneedle : needle ∈ self,
-              have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_4_invar.needle_mem Hinvar Hneedle,
+              have needle ∈ s₁ ++ s₂, by rewrite [firstn_app_dropn_eq_self]; apply loop_3_invar.needle_mem Hinvar Hneedle,
               or.rec_on (mem_or_mem_of_mem_append this)
                 (suppose needle ∈ s₁, this)
                 (suppose needle ∈ s₂,
@@ -485,22 +485,22 @@ generalize_with_eq (loop_4 (f, base, s)) (begin
     }
   }
 end)
-end loop_4
+end loop_3
 end
 
 local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
 theorem binary_search_by.spec :
   ∃₀g ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
-  ∀ needle (st : closure_5594 T × usize × slice T), let self := st.2 in
-    st.1.1 = closure_5594.mk needle ∧ st.1.2 = 0 ∧ is_slice self ∧ sorted le self → sem.terminates_with_in
+  ∀ needle (st : closure_5642 T × usize × slice T), let self := st.2 in
+    st.1.1 = closure_5642.mk needle ∧ st.1.2 = 0 ∧ is_slice self ∧ sorted le self → sem.terminates_with_in
     (binary_search_res self needle)
     (g (length self, Ord'.cmp_max_cost needle self))
-    (loop loop_4 st) :=
+    (loop loop_3 st) :=
 begin
   apply loop.terminates_with_in_ub
     (λ n, log₂ (2 * n) + 1)
-    (λ needle init s, s.1.1 = f needle ∧ loop_4_invar init.2 needle s.2 s.1.2),
+    (λ needle init s, s.1.1 = f needle ∧ loop_3_invar init.2 needle s.2 s.1.2),
   { split,
     calc (λa, log₂ (2 * a) + 1)
         ≼ (λa, log₂ a + 2) : ub_of_eventually_le_at_infty 1 (
@@ -518,7 +518,7 @@ begin
     cases pre with hbase,
     rewrite hbase,
     let self := st.2,
-    show loop_4_invar self needle self 0, from ⦃loop_4_invar,
+    show loop_3_invar self needle self 0, from ⦃loop_3_invar,
       s_in_self := !prefixeq.refl,
       insert_pos := and.intro !zero_le (!zero_add⁻¹ ▸ !sorted.insert_pos_le_length),
       needle_mem := id
@@ -544,7 +544,7 @@ begin
   cases inv with Hf' Hinv,
   esimp,
   rewrite [-prod.eta, -prod.eta st₁, ▸*, Hf'],
-  apply sem.terminates_with_in.imp (!loop_4.spec Hsorted Hslice _ _ Hinv),
+  apply sem.terminates_with_in.imp (!loop_3.spec Hsorted Hslice _ _ Hinv),
   { intro x, cases x with st' r,
     esimp,
     { intro Hstep, cases Hstep with base' s' Hinvar' Hvar Hs_ne_nil,
