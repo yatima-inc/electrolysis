@@ -152,24 +152,49 @@ sem.guard (y ≠ 0) $ return (div x y)
 definition checked.rem [reducible] (bits : ℕ) (x y : nat) : sem nat :=
 sem.guard (y ≠ 0) $ return (mod x y)
 
-abbreviation binary_bitwise_op (bits : ℕ) (op : bitvec bits → bitvec bits → bitvec bits)
-  (a b : nat) : nat :=
-bitvec.to ℕ (op (bitvec.of bits a) (bitvec.of bits b))
 
-definition bitor [reducible] bits := binary_bitwise_op bits bitvec.or
-definition bitand [reducible] bits := binary_bitwise_op bits bitvec.and
-definition bitxor [reducible] bits := binary_bitwise_op bits bitvec.xor
-definition bitnot [reducible] bits (a : nat) := bitvec.to ℕ (bitvec.not (bitvec.of bits a))
--- TODO: signed
+abbreviation unary_unsigned_bitwise_op (bits : ℕ) (op : bitvec bits → bitvec bits)
+  (a : nat) : nat :=
+bitvec.toNat (op (bitvec.ofNat bits a))
+
+abbreviation binary_unsigned_bitwise_op (bits : ℕ) (op : bitvec bits → bitvec bits → bitvec bits)
+  (a b : nat) : nat :=
+bitvec.toNat (op (bitvec.ofNat bits a) (bitvec.ofNat bits b))
+
+definition bitor [reducible] bits := binary_unsigned_bitwise_op bits bitvec.or
+definition bitand [reducible] bits := binary_unsigned_bitwise_op bits bitvec.and
+definition bitxor [reducible] bits := binary_unsigned_bitwise_op bits bitvec.xor
+definition bitnot [reducible] bits := unary_unsigned_bitwise_op bits bitvec.not
+
+
+abbreviation unary_signed_bitwise_op (bits : ℕ)
+  (op : Π {bits}, bitvec (succ bits) → bitvec (succ bits)) (a : int) : int :=
+match bits with
+| 0 := 0
+| succ bits := bitvec.toInt (op (bitvec.ofInt (succ bits) a))
+end
+
+abbreviation binary_signed_bitwise_op (bits : ℕ)
+  (op : Π {bits}, bitvec (succ bits) → bitvec (succ bits) → bitvec (succ bits)) (a b : int) : int :=
+match bits with
+| 0 := 0
+| succ bits := bitvec.toInt (op (bitvec.ofInt (succ bits) a) (bitvec.ofInt (succ bits) b))
+end
+
+definition sbitor [reducible] bits := binary_signed_bitwise_op bits $ λ n, bitvec.or
+definition sbitand [reducible] bits := binary_signed_bitwise_op bits $ λ n, bitvec.and
+definition sbitxor [reducible] bits := binary_signed_bitwise_op bits $ λ n, bitvec.xor
+definition sbitnot [reducible] bits := unary_signed_bitwise_op bits $ λ n, bitvec.not
+
 
 notation a ` ||[`:65 n `] ` b:65  := bitor n a b
 notation a ` &&[`:70 n `] ` b:70  := bitand n a b
 
 definition checked.shl [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
-sem.guard (y < bits) $ return $ bitvec.to ℕ $ bitvec.shl (bitvec.of bits x) y
+sem.guard (y < bits) $ return $ unary_unsigned_bitwise_op bits (λ x, bitvec.shl x y) x
 
 definition checked.shls [reducible] (bits : ℕ) (x : nat) (y : i32) : sem nat :=
-sem.guard (0 ≤ y ∧ y < bits) $ return $ bitvec.to ℕ $ bitvec.shl (bitvec.of bits x) (nat.of_int y)
+sem.guard (0 ≤ y ∧ y < bits) $ return $ unary_unsigned_bitwise_op bits (λ x, bitvec.shl x (nat.of_int y)) x
 
 -- allows for arbitrary range of x in contrast to bitvec.ushr
 definition checked.shr [reducible] (bits : ℕ) (x : nat) (y : u32) : sem nat :=
@@ -177,6 +202,20 @@ sem.guard (y < bits) $ return (x / 2^y)
 
 definition checked.shrs [reducible] (bits : ℕ) (x : nat) (y : i32) : sem nat :=
 sem.guard (0 ≤ y) $ checked.shr bits x (nat.of_int y)
+
+
+definition checked.sshl [reducible] (bits : ℕ) (x : int) (y : u32) : sem int :=
+sem.guard (y < bits) $ return $ unary_signed_bitwise_op bits (λ n x, bitvec.shl x y) x
+
+definition checked.sshls [reducible] (bits : ℕ) (x : int) (y : i32) : sem int :=
+sem.guard (0 ≤ y ∧ y < bits) $ return $ unary_signed_bitwise_op bits (λ n x, bitvec.shl x (nat.of_int y)) x
+
+
+definition checked.sshr [reducible] (bits : ℕ) (x : int) (y : u32) : sem int :=
+sem.guard (y < bits) $ return $ unary_signed_bitwise_op bits (λ n x, bitvec.sshr x y) x
+
+definition checked.sshrs [reducible] (bits : ℕ) (x : int) (y : i32) : sem int :=
+sem.guard (0 ≤ y) $ checked.sshr bits x (nat.of_int y)
 
 
 definition check_signed [reducible] (bits : ℕ) (x : int) : sem int :=

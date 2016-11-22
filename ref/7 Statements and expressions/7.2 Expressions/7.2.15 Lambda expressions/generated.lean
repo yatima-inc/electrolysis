@@ -22,13 +22,14 @@ let' ret ← «$tmp»;
 return (ret)
 
 
-structure test.foo.closure_13 := (val : i32)
+section
+parameters 
+parameters 
+
+structure test.foo.closure_13 (U0 : Type₁) := (val : U0)
 
 section
-parameters 
-parameters 
-section
-parameters (a1 : (test.foo.closure_13)) (xₐ : i32)
+parameters (a1 : (test.foo.closure_13 i32)) (xₐ : i32)
 
 
 
@@ -42,7 +43,8 @@ let' ret ← t6.1;
 return (ret)
 
 end
-definition test.foo.closure_13.inst [instance] : core.ops.FnOnce (test.foo.closure_13) i32 i32 :=
+
+definition test.foo.closure_13.inst [instance] : core.ops.FnOnce (test.foo.closure_13 i32) i32 i32 :=
 core.ops.FnOnce.mk test.foo.closure_13.fn
 
 end

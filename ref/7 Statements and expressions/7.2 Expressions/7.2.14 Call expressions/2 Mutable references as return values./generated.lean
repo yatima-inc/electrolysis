@@ -15,9 +15,11 @@ definition test.foo (xsₐ : (slice i32)) : sem ((lens (slice i32) i32) × (slic
 let' xs ← @lens.id (slice i32);
 do «$tmp0» ← do «$tmp0» ← lens.get xs xsₐ;
 return (list.length «$tmp0»);
-let' t4 ← «$tmp0»;
-let' t5 ← (0 : nat) <ᵇ t4;
-let' t3 ← (lens.index _ (0 : nat) ∘ₗ xs);
+let' t5 ← «$tmp0»;
+let' t6 ← (0 : nat) <ᵇ t5;
+let' t4 ← (lens.index _ (0 : nat) ∘ₗ xs);
+do «$tmp» ← lens.get t4 xsₐ;
+let' t3 ← (t4);
 do «$tmp» ← lens.get t3 xsₐ;
 let' ret ← (t3);
 do «$tmp» ← lens.get ret xsₐ;

@@ -178,104 +178,108 @@ section arith
 end arith
 
 section convert
-  section
-  parameters {A : Type} [has_add A] [has_zero A] [has_one A]
-
-  protected definition of [has_div A] [has_mod A] [decidable_eq A] : Π(n : nat), A → bitvec n
+  protected definition ofNat : Π (n : ℕ), nat → bitvec n
   | 0 x := nil
-  | (succ n) x := of n (x / 2) ++ [if x % 2 = 1 then tt else ff]
+  | (succ n) x := ofNat n (x / 2) ++ [if x % 2 = 1 then tt else ff]
 
-  parameter (A)
-  definition bitsTo [reducible] (v : list bool) : A :=
+  protected definition ofInt : Π (n : ℕ), int → bitvec (succ n)
+  | n (int.of_nat m) := ff :: bitvec.ofNat n m
+  | n (int.neg_succ_of_nat m) := tt :: neg (bitvec.ofNat n m)
+
+  definition bitsToNat [reducible] (v : list bool) : nat :=
   list.foldl (λr b, r + r + cond b 1 0) 0 v
 
-  protected definition to {n : nat} (v : bitvec n) : A :=
-  bitsTo (to_list v)
-  end
+  protected definition toNat {n : nat} (v : bitvec n) : nat :=
+  bitsToNat (to_list v)
 
-  lemma of_zero : Π(n : ℕ), bitvec.of n (0:ℕ) = bitvec.zero n
-  | 0 := rfl
-  | (succ n) := by rewrite [↑bitvec.of, if_neg (show (0:ℕ) % 2 ≠ 1, from dec_trivial),
-    nat.zero_div, of_zero, replicate_succ_right]
+  protected definition toInt {n : nat} (v: bitvec (succ n)) : int :=
+  cond (head v)
+    (int.neg_succ_of_nat (bitvec.toNat (tail v)))
+    (int.of_nat (bitvec.toNat (tail v)))
 
-  lemma of_one : Π{n : ℕ}, bitvec.of (succ n) (1:ℕ) = replicate n ff ++ [tt]
+  lemma ofNat_zero : Π(n : ℕ), bitvec.ofNat n (0:ℕ) = bitvec.zero n
   | 0 := rfl
-  | (succ n) := by rewrite [↑bitvec.of, (show (1:ℕ) / 2 = 0, from dec_trivial), of_zero]
+  | (succ n) := by rewrite [↑bitvec.ofNat, if_neg (show (0:ℕ) % 2 ≠ 1, from dec_trivial),
+    nat.zero_div, ofNat_zero, replicate_succ_right]
+
+  lemma ofNat_one : Π{n : ℕ}, bitvec.ofNat (succ n) (1:ℕ) = replicate n ff ++ [tt]
+  | 0 := rfl
+  | (succ n) := by rewrite [↑bitvec.ofNat, (show (1:ℕ) / 2 = 0, from dec_trivial), ofNat_zero]
 
   open list
 
-  lemma bitsTo_aux : Π bs x,
-    foldl (λ r b, r + r + bool.cond b 1 0) x bs = x * 2^length bs + bitsTo ℕ bs :=
+  lemma bitsToNat_aux : Π bs x,
+    foldl (λ r b, r + r + bool.cond b 1 0) x bs = x * 2^length bs + bitsToNat bs :=
   begin
     intro bs, induction bs with b bs ih, all_goals intro x,
     { rewrite [↑foldl, ↑length, pow_zero], simp },
-    { rewrite [↑foldl, -mul_two, ih, nat.right_distrib, mul.assoc, -pow_succ, ↑bitsTo at {2}, ↑foldl,
+    { rewrite [↑foldl, -mul_two, ih, nat.right_distrib, mul.assoc, -pow_succ, ↑bitsToNat at {2}, ↑foldl,
         +zero_add, ih (cond b 1 0), add.assoc] }
   end
 
-  lemma bitsTo_cons (b) (bs) : bitsTo ℕ (b::bs) = cond b 1 0 * 2^length bs + bitsTo ℕ bs :=
-  by rewrite [↑bitsTo at {1}, ↑foldl, bitsTo_aux, +zero_add]
+  lemma bitsToNat_cons (b) (bs) : bitsToNat (b::bs) = cond b 1 0 * 2^length bs + bitsToNat bs :=
+  by rewrite [↑bitsToNat at {1}, ↑foldl, bitsToNat_aux, +zero_add]
 
-  lemma bitsTo_snoc (b) (bs) : bitsTo ℕ (bs++[b]) = 2 * bitsTo ℕ bs + cond b 1 0 :=
+  lemma bitsToNat_snoc (b) (bs) : bitsToNat (bs++[b]) = 2 * bitsToNat bs + cond b 1 0 :=
   begin
     induction bs with b bs ih,
     { esimp },
-    { rewrite [append_cons, +foldl_cons, bitsTo_aux, bitsTo_aux bs, ih, nat.left_distrib,
+    { rewrite [append_cons, +foldl_cons, bitsToNat_aux, bitsToNat_aux bs, ih, nat.left_distrib,
         -mul.assoc, length_append, length_cons, length_nil, +zero_add, add_one, pow_succ,
         -mul.assoc, {_*2}mul.comm, add.assoc] }
   end
 
-  lemma bitsTo_append : Π bs bs', bitsTo ℕ (bs ++ bs') = bitsTo ℕ bs * 2^length bs' + bitsTo ℕ bs'
+  lemma bitsToNat_append : Π bs bs', bitsToNat (bs ++ bs') = bitsToNat bs * 2^length bs' + bitsToNat bs'
   | [] bs' := by simp
-  | (b::bs) bs' := by rewrite [bitsTo_cons, append_cons, bitsTo_cons, bitsTo_append, nat.right_distrib,
+  | (b::bs) bs' := by rewrite [bitsToNat_cons, append_cons, bitsToNat_cons, bitsToNat_append, nat.right_distrib,
     mul.assoc, length_append, pow_add, add.assoc]
 
-  lemma bitsTo_replicate_ff : Π(n : ℕ), bitsTo ℕ (replicate n ff) = 0
+  lemma bitsToNat_replicate_ff : Π(n : ℕ), bitsToNat (replicate n ff) = 0
   | 0 := rfl
-  | (succ n) := by rewrite [↑replicate, bitsTo_cons, cond_ff, zero_mul, bitsTo_replicate_ff]
+  | (succ n) := by rewrite [↑replicate, bitsToNat_cons, cond_ff, zero_mul, bitsToNat_replicate_ff]
 
-  lemma to_of : Π {n x : ℕ} (h : x < 2^n), bitvec.to ℕ (bitvec.of n x) = x
+  lemma toNat_ofNat : Π {n x : ℕ} (h : x < 2^n), bitvec.toNat (bitvec.ofNat n x) = x
   | 0 0 h := rfl
   | 0 (succ x) h := false.elim (lt_le_antisymm h (succ_le_succ !zero_le))
   | (succ n) x h := begin
-    note ih := @to_of n (x / 2) (nat.div_lt_of_lt_mul (!mul.comm ▸ h)),
-    apply generalize_with_eq (bitvec.of n (x / 2)), intro v' v'_eq,
+    note ih := @toNat_ofNat n (x / 2) (nat.div_lt_of_lt_mul (!mul.comm ▸ h)),
+    apply generalize_with_eq (bitvec.ofNat n (x / 2)), intro v' v'_eq,
     cases v' with bs _,
-    rewrite [↑bitvec.of, ↑bitvec.to, v'_eq at *,
-      ↑bitvec.to at ih, ↑to_list at *, bitsTo_snoc, ih],
+    rewrite [↑bitvec.ofNat, ↑bitvec.toNat, v'_eq at *,
+      ↑bitvec.toNat at ih, ↑to_list at *, bitsToNat_snoc, ih],
     cases (_ : decidable (x % 2 = 1)) with hodd heven,
     { rewrite [▸*, nat.eq_div_mul_add_mod x 2 at {2}, hodd, mul.comm] },
     { rewrite [▸*, nat.eq_div_mul_add_mod x 2 at {2}, nat.mod_2_eq_0_of_ne_1 heven, mul.comm] }
   end
 
-  lemma of_to : Π {n : ℕ} (v : bitvec n), bitvec.of n (bitvec.to ℕ v) = v
+  lemma ofNat_toNat : Π {n : ℕ} (v : bitvec n), bitvec.ofNat n (bitvec.toNat v) = v
   | 0 v := by rewrite [tuple0_eq_nil, tuple0_eq_nil v]
   | (succ n) (tag v h) := begin
     apply eq_of_list_eq,
-    rewrite [↑bitvec.to],
+    rewrite [↑bitvec.toNat],
     have v ≠ nil, from ne_nil_of_length_eq_succ h,
     note bl := eq.symm (butlast_append_last `v ≠ nil`),
-    rewrite [↑bitvec.of,
+    rewrite [↑bitvec.ofNat,
       bl at {1}, if_congr (iff.of_eq (bl ▸ rfl)) rfl rfl,
-      bitsTo_snoc, add.comm, !nat.add_mul_div_self_left (show 2 > 0, from dec_trivial),
+      bitsToNat_snoc, add.comm, !nat.add_mul_div_self_left (show 2 > 0, from dec_trivial),
       add_mul_mod_self_left],
     krewrite [to_list_append],
     have cond (last v this) (1:ℕ) 0 < 2, begin
       cases last v this, all_goals (esimp; apply dec_trivial),
     end,
     krewrite [▸*, div_eq_zero_of_lt this, zero_add,
-      of_to (tag (butlast v) (succ.inj (h ▸ length_butlast_nonnil `v ≠ nil`)))],
+      ofNat_toNat (tag (butlast v) (succ.inj (h ▸ length_butlast_nonnil `v ≠ nil`)))],
     have ∀ b, ite (cond b (1:ℕ) 0 % 2 = 1) tt ff = b, begin
       intro b, cases b, all_goals esimp
     end,
     rewrite [this, ▸*, -bl]
   end
 
-  lemma to_lt : Π {n : ℕ} (v : bitvec n), bitvec.to ℕ v < 2^n
-  | 0 v := by rewrite [tuple0_eq_nil, ▸*, ↑bitvec.to, foldl_nil]; apply dec_trivial
+  lemma toNat_lt : Π {n : ℕ} (v : bitvec n), bitvec.toNat v < 2^n
+  | 0 v := by rewrite [tuple0_eq_nil, ▸*, ↑bitvec.toNat, foldl_nil]; apply dec_trivial
   | (succ n) v := begin
-    rewrite [↑bitvec.to, -eta v, to_list_cons, bitsTo_cons, pow_succ, two_mul, length_to_list],
-    apply λ h, add_lt_add_of_le_of_lt h (to_lt (tail v)),
+    rewrite [↑bitvec.toNat, -eta v, to_list_cons, bitsToNat_cons, pow_succ, two_mul, length_to_list],
+    apply λ h, add_lt_add_of_le_of_lt h (toNat_lt (tail v)),
     cases head v,
     { esimp, rewrite zero_mul, apply zero_le },
     { esimp, rewrite one_mul },

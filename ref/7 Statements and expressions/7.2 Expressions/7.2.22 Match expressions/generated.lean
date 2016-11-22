@@ -129,8 +129,8 @@ match x with
 let' t10 ← test.f5.FILE_LINE;
 let' t9 ← t10;
 mzero
- | core.option.Option.Some x_0 :=
-let' x ← x_0;
+ | core.option.Option.Some discr_0 :=
+let' x ← discr_0;
 let' t6 ← x;
 let' t5 ← t6 <ᵇ (10 : int);
 if t5 = bool.tt then
@@ -138,7 +138,7 @@ let' t7 ← x;
 let' ret ← core.option.Option.Some t7;
 return (ret)
 else
-let' x ← x_0;
+let' x ← discr_0;
 let' ret ← core.option.Option.None;
 return (ret)
 end

@@ -35,17 +35,18 @@ end
 end
 
 
-structure test.foo.closure_13 := (val : i32)
-
 section
 parameters 
 parameters 
+
+structure test.foo.closure_13 (U0 : Type₁) := (val : U0)
+
 section
-parameters (a1 : (test.foo.closure_13)) (xₐ : i32)
+parameters (a1 : (test.foo.closure_13 i32)) (xₐ : i32)
 
 
 
-definition test.foo.closure_13.fn : sem (i32 × (test.foo.closure_13)) :=
+definition test.foo.closure_13.fn : sem (i32 × (test.foo.closure_13 i32)) :=
 let' x ← xₐ;
 do «$tmp0» ← sem.map (λx, (x, tt)) (checked.sadd i32.bits (test.foo.closure_13.val a1) (1 : int));
 let' t4 ← «$tmp0»;
@@ -58,7 +59,8 @@ let' ret ← t7.1;
 return (ret, a1)
 
 end
-definition test.foo.closure_13.inst [instance] : core.ops.FnMut (test.foo.closure_13) i32 i32 :=
+
+definition test.foo.closure_13.inst [instance] : core.ops.FnMut (test.foo.closure_13 i32) i32 i32 :=
 core.ops.FnMut.mk test.foo.closure_13.fn
 
 end

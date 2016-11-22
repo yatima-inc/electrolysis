@@ -37,6 +37,32 @@ let' ret ← ⋆;
 return (ret)
 
 
+definition test.signed (xₐ : i32) (yₐ : i32) : sem (unit) :=
+let' x ← xₐ;
+let' y ← yₐ;
+let' t6 ← x;
+let' t7 ← y;
+let' t5 ← sbitand i32.bits t6 t7;
+let' t9 ← x;
+let' t10 ← y;
+let' t8 ← sbitor i32.bits t9 t10;
+let' t12 ← x;
+let' t13 ← y;
+let' t11 ← sbitxor i32.bits t12 t13;
+let' t15 ← x;
+let' t16 ← y;
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.sshls i32.bits t15 t16);
+let' t17 ← «$tmp0»;
+let' t14 ← t17.1;
+let' t19 ← x;
+let' t20 ← y;
+do «$tmp0» ← sem.map (λx, (x, tt)) (checked.sshrs i32.bits t19 t20);
+let' t21 ← «$tmp0»;
+let' t18 ← t21.1;
+let' ret ← ⋆;
+return (ret)
+
+
 definition test.bool (xₐ : bool) (yₐ : bool) : sem (unit) :=
 let' x ← xₐ;
 let' y ← yₐ;

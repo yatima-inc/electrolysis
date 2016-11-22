@@ -269,6 +269,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     // construct a full tree of impls)
     pub fn infer_trait_impl<'b, 'c>(&self, trait_ref: ty::TraitRef<'tcx>, infcx: &'b ::rustc::infer::InferCtxt<'b, 'tcx, 'c>) -> TransResult<TraitImplLookup<'tcx>> {
         let span = ::syntax::codemap::DUMMY_SP;
+        let trait_ref = self.normalize_trait_ref(trait_ref);
         let pred: ty::PolyTraitPredicate<'tcx> = ty::Binder(trait_ref).to_poly_trait_predicate();
 
         let mut selcx = SelectionContext::new(infcx);
@@ -464,7 +465,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_trait_impl(&self) -> String {
-        let trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
+        let mut trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
+        trait_ref.substs = self.tcx.erase_regions(&trait_ref.substs);
         let assoc_ty_substs = self.trait_impl_substs(trait_ref);
 
         // `Self : Iterator<Item=T>` ~> `'[Iterator T]'`

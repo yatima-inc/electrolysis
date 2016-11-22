@@ -81,8 +81,8 @@ match t9 with
 | core.option.Option.None :=
 let' ret ← ff;
 return (ret)
- | core.option.Option.Some t9_0 :=
-let' b ← t9_0;
+ | core.option.Option.Some discr_0 :=
+let' b ← discr_0;
 let' t16 ← b;
 let' t18 ← i;
 do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shl u32.bits (1 : nat) t18);

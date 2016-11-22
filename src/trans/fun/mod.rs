@@ -216,12 +216,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             // a `match`, so just use the variable introduced in the `match`
             Lvalue::Projection(box Projection {
                 elem: ProjectionElem::Field(ref field, _),
-                base: Lvalue::Projection(box Projection {
-                    base: Lvalue::Local(base),
-                    elem: ProjectionElem::Downcast(..),
-                }),
+                base: Lvalue::Projection(box Projection { elem: ProjectionElem::Downcast(..), .. }),
             }) =>
-                MaybeValue::total(format!("{}_{}", self.local_name(base), field.index())),
+                MaybeValue::total(format!("discr_{}", field.index())),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
                 self.get_lvalue(base).and_then(0, |base| self.get_operand(idx).and_then(1, |idx| {
                     MaybeValue::partial(format!("core.«[T] as core.slice.SliceExt».get_unchecked {} {}", base, idx))
@@ -368,9 +365,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             Rvalue::UnaryOp(op, ref operand) => {
                 let toperand = operand.ty(self.mir, self.tcx);
                 self.get_operand(operand).and_then(0, |soperand| MaybeValue::total(format!("{} {}", match op {
-                    UnOp::Not if toperand.is_bool() => "bool.bnot",
-                    UnOp::Not if !toperand.is_signed() => "bitnot",
-                    UnOp::Not => panic!("unimplemented: signed bitwise negation"),
+                    UnOp::Not if toperand.is_bool() => "bool.bnot".to_string(),
+                    UnOp::Not => format!("{}bitnot {}.bits",
+                                         if toperand.is_signed() {"s"} else {""},
+                                         self.transpile_ty(toperand)),
                     UnOp::Neg =>
                         return MaybeValue::partial(format!("checked.neg {}.bits {}",
                                                            self.transpile_ty(toperand),
@@ -392,14 +390,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         let name = if to2.is_signed() { name + "s" } else { name.to_string() };
                         MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
                     };
-                    let bitop = |name, bool_name| {
+                    let bitop = |name: &str, bool_name| {
                         assert!(to1 == to2);
-                        if to1.is_signed() {
-                            panic!("unimplemented: signed bitwise operator")
-                        }
                         if to1.is_bool() {
                             MaybeValue::total(format!("{} {} {}", bool_name, so1, so2))
                         } else {
+                            let name = if to1.is_signed() { format!("s{}", name) } else { name.to_string() };
                             MaybeValue::total(format!("{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
                         }
                     };
@@ -527,11 +523,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     ProjectionElem::Field(field, _) => {
                         let ty = unwrap_refs(self.lvalue_ty(base));
                         match ty.sty {
-                            ty::TypeVariants::TyAdt(ref adt_def, _) => {
-                                let field_name = adt_def.struct_variant().fields[field.index()].name;
-                                lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return {setter})",
-                                                    ty=self.name_def_id(adt_def.did), field=field_name,
-                                                    setter=self.update_struct(adt_def, field, "o", "i")))
+                            ty::TypeVariants::TyAdt(ref adt_def, _) => match adt_def.adt_kind() {
+                                ty::AdtKind::Struct => {
+                                    let field_name = adt_def.struct_variant().fields[field.index()].name;
+                                    lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return {setter})",
+                                                        ty=self.name_def_id(adt_def.did), field=field_name,
+                                                        setter=self.update_struct(adt_def, field, "o", "i")))
+                                },
+                                _ => panic!("unimplemented: lens on field of {:?}", adt_def.adt_kind()),
                             },
                             ref ty => panic!("unimplemented: lens on field of {:?}", ty),
                         }
@@ -641,11 +640,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     let substs = substs.rebase_onto(tcx, trait_def_id, impl_substs);
                     let substs = traits::translate_substs(&infcx, impl_def_id,
                                                         substs, node_item.node);
-                    tcx.lift(&substs).unwrap_or_else(|| {
-                        bug!("trans::meth::get_impl_method: translate_substs \
-                            returned {:?} which contains inference types/regions",
-                            substs);
-                    })
+                    tcx.lift(&substs)
+                }).unwrap_or_else(|| {
+                    bug!("trans::meth::get_impl_method: translate_substs \
+                          returned {:?} which contains inference types/regions",
+                         substs);
                 });
                 (node_item.item.def_id, substs.clone())
             }
@@ -800,13 +799,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 Call { destination: None, .. } | Unreachable =>
                     "mzero\n".to_string(),
                 Switch { ref discr, ref adt_def, ref targets } => {
-                    let value = self.local_name(discr.as_local().unwrap());
-                    let mut arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
+                    let arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
                         // binding names used by `get_lvalue`
-                        let vars = (0..var.fields.len()).into_iter().map(|i| format!("{}_{}", value, i));
+                        let vars = (0..var.fields.len()).into_iter().map(|i| format!("discr_{}", i));
                         format!("| {} :=\n{}", (self.name_def_id(var.did), vars).join(" "), rec!(target))
-                    });
-                    format!("match {} with\n{}end\n", value, arms.join(" "))
+                    }).join(" ");
+                    self.get_lvalue(discr).map(0, |discr| {
+                        format!("match {} with\n{}end\n", discr, arms)
+                    })
                 },
                 SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
                     self.get_lvalue(discr).map(0, |discr| {
@@ -885,14 +885,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let upvar_tys = match closure_ty.sty {
                 ty::TypeVariants::TyClosure(_, ref substs) => substs.upvar_tys(self.def_id, self.tcx),
                 _ => unreachable!(),
-            }.map(|ty| self.transpile_ty(ty)).join(" × ");
-            let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("({} : Type₁)", p.name)).collect_vec();
-            let closure_def = format!("structure {} := (val : {})\n\n", (&name, &ty_params).join(" "), upvar_tys);
+            }.map(|ty| self.transpile_ty(ty)).collect_vec();
+            let ty_params = (0..upvar_tys.len()).map(|i| format!("(U{} : Type₁)", i)).collect_vec();
+            let upvar_vars = (0..upvar_tys.len()).map(|i| format!("U{}", i)).collect_vec();
+            let closure_def = format!("\nstructure {} := (val : {})\n\n", (&name, &ty_params).join(" "),
+                                      upvar_vars.join(" × "));
             let closure_kind = self.tcx.closure_kind(self.def_id);
-            let closure_impl = format!("definition {clo}.inst [instance] : {fn_type} ({}) {} {} :=
+            let closure_impl = format!("\ndefinition {clo}.inst [instance] : {fn_type} ({}) {} {} :=
 {fn_type}.mk {clo}.fn\n\n",
-                                       (&name, self.full_generics(fn_def_id).iter().map(|p| format!("{}", p.name))).join(" "),
-                                       upvar_tys, self.transpile_ty(self.mir.return_ty),
+                                       (&name, &upvar_tys).join(" "),
+                                       upvar_tys.join(" × "), self.transpile_ty(self.mir.return_ty),
                                        clo=name,
                                        fn_type=self.name_def_id(closure_kind.trait_did(self.tcx)));
             (closure_def, closure_impl)
@@ -912,9 +914,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
                     self.ret_ty(), body)
         } else {
-            format!("{}section
+            format!("section
 {}
-section
+{}section
 parameters {}
 
 {}
@@ -922,10 +924,10 @@ parameters {}
 definition {} : sem {} :=\n{}
 end
 {}end",
-                    closure_def,
                     vec![ty_params, trait_params].into_iter().map(|p| {
                         format!("parameters {}", p.into_iter().join(" "))
                     }).join("\n"),
+                    closure_def,
                     params.into_iter().join(" "),
                     self.prelude.iter().join("\n\n"),
                     name, self.ret_ty(), body, closure_impl)
