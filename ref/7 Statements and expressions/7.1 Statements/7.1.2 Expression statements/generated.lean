@@ -14,6 +14,6 @@ open [notation] unit
 definition test.foo : sem (unit) :=
 let' t1 ← (1 : int);
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

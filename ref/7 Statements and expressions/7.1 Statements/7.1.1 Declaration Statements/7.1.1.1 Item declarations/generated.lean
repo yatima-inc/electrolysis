@@ -13,12 +13,12 @@ open [notation] unit
 
 definition test.foo.bar : sem (unit) :=
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.foo : sem (unit) :=
 dostep «$tmp» ← @test.foo.bar;
 let' ret ← «$tmp»;
-return (ret)
+return (⋆)
 
 

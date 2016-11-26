@@ -17,7 +17,7 @@ let' y ← yₐ;
 let' t5 ← y;
 do xₐ ← lens.set x xₐ t5;
 let' ret ← ⋆;
-return (ret, xₐ)
+return (⋆, xₐ)
 
 
 definition test.foo : sem (i32) :=

@@ -12,10 +12,9 @@ open [notation] prod.ops
 open [notation] unit
 
 section
-parameters 
-parameters 
 section
 parameters (xₐ : i32)
+
 
 definition test.foo.loop_1 (state__ : i32) : sem (sum (i32) (unit)) :=
 let' x ← state__;
@@ -32,7 +31,7 @@ let' t12 ← x;
 let' t11 ← t12 =ᵇ (2 : int);
 if t11 = bool.tt then
 do tmp__ ← let' ret ← ⋆;
-return (ret)
+return (⋆)
 ;
 return (sum.inr tmp__)else
 let' t10 ← ⋆;
@@ -40,7 +39,7 @@ let' t17 ← x;
 let' t16 ← t17 =ᵇ (3 : int);
 if t16 = bool.tt then
 do tmp__ ← let' ret ← ⋆;
-return (ret)
+return (⋆)
 ;
 return (sum.inr tmp__)else
 let' t15 ← ⋆;
@@ -51,7 +50,7 @@ let' t5 ← ⋆;
 return (sum.inl (x))
 else
 do tmp__ ← let' ret ← ⋆;
-return (ret)
+return (⋆)
 ;
 return (sum.inr tmp__)
 

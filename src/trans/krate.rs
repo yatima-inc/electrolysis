@@ -27,7 +27,7 @@ pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
             .trim_left_matches("_").to_string();
         match part.as_ref() {
             "{{constructor}}" => "mk".to_string(),
-            "at" | "by" | "end" => format!("«{}»", part),
+            "at" | "by" | "end" | "from" => format!("«{}»", part),
             _ if LEAN_ID.is_match(&part) => part.to_string(),
             _ => format!("«{}»", part),
         }
@@ -146,10 +146,10 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
         //self.deps.borrow().graph.neighbors_directed(idx, ::petgraph::EdgeDirection::Incoming).any(|idx2| idx2 == idx)
     }
 
-    pub fn transpile(&mut self, def_id: DefId, catch_panics: bool) {
+    pub fn transpile(&mut self, def_id: DefId, filter: &HashSet<DefId>, catch_panics: bool) {
         let name = name_def_id(self.tcx, def_id);
 
-        if self.trans_results.contains_key(&def_id) {
+        if self.trans_results.contains_key(&def_id) || !filter.contains(&def_id) {
             return
         }
 
@@ -168,6 +168,7 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
                     ItemTranspiler { sup: self, def_id: def_id }.transpile_def_id()
                 })).map_err(|err| {
                     match err.downcast_ref::<String>() {
+                        Some(msg) if msg.contains("crash") => panic!("{}", msg),
                         Some(msg) => msg.clone(),
                         None => match err.downcast_ref::<&'static str>() {
                             Some(msg) => msg,
@@ -182,7 +183,7 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
         self.trans_results.insert(def_id, res);
         let new_deps = self.deps.borrow_mut().drain_new_deps();
         for dep in new_deps {
-            self.transpile(dep, catch_panics)
+            self.transpile(dep, filter, catch_panics)
         }
     }
 }

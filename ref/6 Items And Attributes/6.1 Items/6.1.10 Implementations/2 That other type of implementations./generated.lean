@@ -18,7 +18,7 @@ structure test.Point := mk {} ::
 definition test.Point.log (selfₐ : (test.Point)) : sem (unit) :=
 let' self ← selfₐ;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.main : sem (unit) :=
@@ -27,6 +27,6 @@ let' t3 ← my_point;
 dostep «$tmp» ← @test.Point.log t3;
 let' t2 ← «$tmp»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

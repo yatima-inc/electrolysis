@@ -20,6 +20,6 @@ let' p ← test.Point.mk (10 : int) (11 : int);
 let' t3 ← (test.Point.x p);
 let' px ← t3;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

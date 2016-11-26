@@ -23,14 +23,14 @@ let' sh ← shₐ;
 let' t6 ← sh;
 let' t9 ← surface;
 let' t8 ← t9;
-dostep «$tmp» ← @test.Shape.draw _ «test.Shape T» t6 t8;
+dostep «$tmp» ← @test.Shape.draw _ (_ : test.Shape T) t6 t8;
 let' t5 ← «$tmp»;
 let' t11 ← sh;
 let' t13 ← surface;
 let' t12 ← t13;
-dostep «$tmp» ← @test.Shape.draw _ «test.Shape T» t11 t12;
+dostep «$tmp» ← @test.Shape.draw _ (_ : test.Shape T) t11 t12;
 let' t10 ← «$tmp»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

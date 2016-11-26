@@ -21,6 +21,6 @@ let' t7 ← (4 : int);
 let' t6 ← core.ops.RangeTo.mk t7;
 let' t8 ← core.ops.RangeFull.mk;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

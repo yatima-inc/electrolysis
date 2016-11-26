@@ -24,6 +24,6 @@ definition test.main : sem (unit) :=
 let' a ← test.Animal.Dog;
 let' a ← test.Animal.Cat;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

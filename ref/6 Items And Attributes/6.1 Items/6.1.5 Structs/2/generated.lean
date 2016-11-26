@@ -20,6 +20,6 @@ let' x ← match p with test.Point.mk x0 x1 := x0 end;
 let' t4 ← x;
 let' px ← t4;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

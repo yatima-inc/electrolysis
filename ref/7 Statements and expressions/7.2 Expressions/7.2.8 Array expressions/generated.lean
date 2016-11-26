@@ -17,6 +17,6 @@ let' t2 ← ["a", "b", "c", "d"];
 let' t3 ← list.replicate 128 (0 : int);
 let' t4 ← [(0 : nat), (0 : nat), (0 : nat), (0 : nat)];
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

@@ -13,6 +13,6 @@ open [notation] unit
 
 definition test.not_test : sem (unit) :=
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

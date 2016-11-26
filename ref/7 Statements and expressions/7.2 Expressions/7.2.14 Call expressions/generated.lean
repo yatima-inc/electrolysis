@@ -22,6 +22,6 @@ definition test.main : sem (unit) :=
 dostep «$tmp» ← @test.add (1 : int) (2 : int);
 let' x ← «$tmp»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

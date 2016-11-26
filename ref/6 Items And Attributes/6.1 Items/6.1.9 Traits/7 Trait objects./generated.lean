@@ -16,7 +16,7 @@ structure test.Shape [class] (Self : Type₁)
 definition test.Shape.draw {Self : Type₁} [«test.Shape Self» : test.Shape Self] (selfₐ : Self) : sem (unit) :=
 let' self ← selfₐ;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.«i32 as test.Shape» [instance] := ⦃

@@ -17,9 +17,9 @@ structure test.Foo [class] (Self : Type₁)  :=
 definition test.Foo.baz {Self : Type₁} [«test.Foo Self» : test.Foo Self] (selfₐ : Self) : sem (unit) :=
 let' self ← selfₐ;
 let' t3 ← self;
-dostep «$tmp» ← @test.Foo.bar _ «test.Foo Self» t3;
+dostep «$tmp» ← @test.Foo.bar _ (_ : test.Foo Self) t3;
 let' ret ← «$tmp»;
-return (ret)
+return (⋆)
 
 
 structure test.Bar := mk {} ::
@@ -34,9 +34,9 @@ definition test.«test.Bar as test.Foo» [instance] := ⦃
 definition test.«test.Bar as test.Foo».bar (selfₐ : (test.Bar)) : sem (unit) :=
 let' self ← selfₐ;
 let' t3 ← self;
-dostep «$tmp» ← @test.Foo.baz _ (test.«test.Bar as test.Foo» ) t3;
+dostep «$tmp» ← @test.Foo.baz _ (@test.«test.Bar as test.Foo» ) t3;
 let' ret ← «$tmp»;
-return (ret)
+return (⋆)
 
 
 -/

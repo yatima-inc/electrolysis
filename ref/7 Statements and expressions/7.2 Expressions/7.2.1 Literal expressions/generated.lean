@@ -16,6 +16,6 @@ let' t1 ← ⋆;
 let' t2 ← "hello";
 let' t3 ← (5 : int);
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

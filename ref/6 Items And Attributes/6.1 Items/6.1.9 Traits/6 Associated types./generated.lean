@@ -12,9 +12,9 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-structure test.Container [class] (Self : Type₁) (E : Type₁) :=
+structure test.Container [class] (Self : Type₁) («<Self as Container>.E» : Type₁) :=
 (empty : sem (Self))
-(insert : Self → E → sem (unit × Self))
+(insert : Self → «<Self as Container>.E» → sem (unit × Self))
 
 definition test.«collections.vec.Vec<T> as test.Container».empty {T : Type₁} : sem ((collections.vec.Vec T)) :=
 dostep «$tmp» ← @collections.vec.«Vec<T>».new _;
@@ -33,7 +33,7 @@ dostep «$tmp» ← @collections.vec.«Vec<T>».push _ «$tmp0» t8;
 match «$tmp» with (t5, «t6$») :=
 do selfₐ ← lens.set t6 selfₐ «t6$»;
 let' ret ← ⋆;
-return (ret, selfₐ)
+return (⋆, selfₐ)
 end
 
 

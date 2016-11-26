@@ -40,7 +40,7 @@ let' t24 ← t23 =ᵇ (0 : nat);
 do «$tmp0» ← checked.rem u32.bits t22 t23;
 let' t21 ← «$tmp0»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.signed (xₐ : i32) (yₐ : i32) : sem (unit) :=
@@ -78,6 +78,6 @@ let' t30 ← band t28 t29;
 do «$tmp0» ← checked.srem i32.bits t25 t26;
 let' t24 ← «$tmp0»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

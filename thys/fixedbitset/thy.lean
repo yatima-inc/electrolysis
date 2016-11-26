@@ -37,7 +37,7 @@ obtain v k Hfrom_elem Hv, from
   sem.terminates_with_eq (from_elem_Copy_eq (0 : nat) (nat.div_ceil bits 32)),
 begin
   rewrite [↑nat.div_ceil at Hfrom_elem],
-  rewrite [↑with_capacity, ↑BITS, div_rem_32, ↑bool_to_usize],
+  rewrite [↑with_capacity, ↑BITS, div_rem_32, ↑bool_to_unsigned],
   krewrite [if_congr (bool.of_Prop_eq_tt_iff (0 < bits % 32)) rfl rfl],
   have is_usize (bits / 32 + ite (0 < bits % 32) 1 0), from is_bounded_nat_of_le_max $
     have bits / 32 ≤ usize.max - 1, from

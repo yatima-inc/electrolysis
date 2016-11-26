@@ -109,21 +109,6 @@ abbreviation usize.max : ℕ := unsigned.max usize.bits
 definition signed.min (bits : ℕ) : ℤ := -2^(bits-1)
 definition signed.max (bits : ℕ) : ℤ := 2^(bits-1) - 1
 
-definition isize_to_usize (x : isize) : sem usize :=
-if x ≥ 0 then return (nat.of_int x)
-else mzero
-
-definition bool_to_usize (x : bool) : sem usize :=
-return (if x = tt then 1 else 0)
-
-definition isize_to_u32 (x : isize) :=
-do x ← isize_to_usize x;
-if x ≤ u32.max then return x
-else mzero
-
-definition i32_to_i64 (x : i32) :=
-return x
-
 definition is_bounded_nat [class] [reducible] (bits x : ℕ) :=
 x < 2^bits
 definition is_bounded_int [class] [reducible] (bits : ℕ) (x : int) :=
@@ -238,6 +223,23 @@ sem.guard (y ≠ 0) $ check_signed bits (mod x y)
 
 definition checked.neg [reducible] (bits : ℕ) (x : int) : sem int :=
 check_signed bits (-x)
+
+
+definition unsigned_to_unsigned (bits : ℕ) (x : nat) : sem nat :=
+check_unsigned bits x
+
+definition signed_to_unsigned (bits : ℕ) (x : int) : sem nat :=
+sem.guard (x ≥ 0) $ check_unsigned bits (nat.of_int x)
+
+definition unsigned_to_signed (bits : ℕ) (x : nat) : sem int :=
+check_signed bits x
+
+definition signed_to_signed (bits : ℕ) (x : int) : sem int :=
+check_signed bits x
+
+definition bool_to_unsigned (bits : ℕ) (x : bool) : sem nat :=
+return (if x = tt then 1 else 0)
+
 
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)

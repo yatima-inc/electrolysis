@@ -36,13 +36,12 @@ end
 
 
 section
-parameters 
-parameters 
 
 structure test.foo.closure_13 (U0 : Type₁) := (val : U0)
 
 section
 parameters (a1 : (test.foo.closure_13 i32)) (xₐ : i32)
+
 
 
 

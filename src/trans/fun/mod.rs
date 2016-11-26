@@ -431,15 +431,20 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             Rvalue::Cast(CastKind::Misc, ref op, ref dest_ty) => {
                 let op_ty = op.ty(self.mir, self.tcx);
+                let trans_ty = |ty: ty::Ty<'tcx>| match ty.sty {
+                    ty::TypeVariants::TyInt(_) => "signed".to_string(),
+                    ty::TypeVariants::TyUint(_) => "unsigned".to_string(),
+                    _ => self.transpile_ty(ty)
+
+                };
                 self.get_operand(op).and_then(0, |operand| MaybeValue::partial(
                     if op_ty.is_integral() || op_ty.is_bool() {
-                        format!("({}_to_{} {})",
-                                self.transpile_ty(op_ty),
-                                self.transpile_ty(dest_ty),
+                        format!("({}_to_{} {}.bits {})",
+                                trans_ty(op_ty), trans_ty(dest_ty), self.transpile_ty(dest_ty),
                                 operand)
                     } else if let ty::TypeVariants::TyAdt(..) = op_ty.sty {
-                        format!("(isize_to_{} ({}.discr {}))",
-                                self.transpile_ty(dest_ty),
+                        format!("(signed_to_{} {}.bits ({}.discr {}))",
+                                trans_ty(dest_ty), self.transpile_ty(dest_ty),
                                 self.name_def_id(op_ty.ty_to_def_id().unwrap()),
                                 operand)
                     } else {
@@ -669,6 +674,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn get_call_target(&self, func: &Operand<'tcx>) -> String {
         match *func {
             Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
+                for ty in substs.types() {
+                    if krate::try_unwrap_mut_ref(ty).is_some() {
+                        panic!("unimplemented: instantiating type parameter of {} with {:?}",
+                               self.tcx.item_path_str(def_id), ty);
+                    }
+                }
                 let substs = substs.clone();
                 self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| -> TransResult {
                     let (def_id, substs) = match self.tcx.trait_of_item(def_id) {
@@ -690,12 +701,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     // TODO: should probably substitute and make explicit
                     let ty_params = self.full_generics(def_id).iter().map(|_| "_".to_string()).collect_vec();
                     // analogous to `ItemTranspiler::transpile_trait_params` - see there for examples
-                    let assoc_ty_substs = self.get_assoc_ty_substs(def_id);
+                    let assoc_ty_substs = self.get_assoc_ty_substs(def_id, substs);
                     let trait_params = try_iter!(self.trait_predicates_without_markers(def_id).map(|trait_pred| -> TransResult<_> {
-                        let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs).1;
+                        let trait_ref = trait_pred.trait_ref.subst(self.tcx, &substs);
+                        let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs).1;
                         let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
-                        let trait_ref: ty::TraitRef<'tcx> = trait_pred.trait_ref;
-                        let trait_param = self.infer_trait_impl(trait_ref.subst(self.tcx, &substs), &infcx)?.to_string(self);
+                        let trait_param = self.infer_trait_impl(trait_ref, &infcx)?.to_string(self);
                         Ok(free_assoc_tys.chain(iter::once(trait_param)))
                     })).flat_map(|x| x);
                     Ok((format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" "))
@@ -710,7 +721,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let mut_args = self.mir.args_iter().filter_map(|arg| {
             krate::try_unwrap_mut_ref(self.mir.local_decls[arg].ty).map(|_| self.local_name(arg))
         });
-        format!("return ({})\n", ("ret", mut_args).join(", "))
+        // MIR sometimes doesn't assign unit return values?
+        let ret = if self.mir.return_ty.is_nil() {"⋆"} else {"ret"};
+        format!("return ({})\n", (ret, mut_args).join(", "))
     }
 
     fn transpile_basic_block(&mut self, bb: BasicBlock, comp: &Component) -> String {
@@ -858,7 +871,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
     fn is_closure(&self) -> bool {
         match self.tcx.map.get(self.node_id()) {
-            hir::map::NodeExpr(_) => true,
+            hir::map::NodeExpr(&hir::Expr { node: hir::ExprClosure(..), .. }) => true,
             _ => false,
         }
     }
@@ -880,6 +893,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
         let trait_params = self.transpile_trait_params(fn_def_id, None);
+        let includes = self.trait_predicates_without_markers(fn_def_id)
+            .map(|trait_pred| {
+                self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref))
+            }).collect_vec();
         let (closure_def, closure_impl) = if self.is_closure() {
             let closure_ty = unwrap_refs(krate::unwrap_mut_ref(&self.mir.local_decls[Local::new(1)].ty));
             let upvar_tys = match closure_ty.sty {
@@ -914,21 +931,27 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
                     self.ret_ty(), body)
         } else {
+            fn format_params(params: &[String]) -> String {
+                if params.is_empty() {"".to_string()} else {
+                    format!("parameters {}\n", params.iter().join(" "))
+                }
+            }
             format!("section
+{}{}{}{}section
 {}
-{}section
-parameters {}
 
 {}
 
 definition {} : sem {} :=\n{}
 end
 {}end",
-                    vec![ty_params, trait_params].into_iter().map(|p| {
-                        format!("parameters {}", p.into_iter().join(" "))
-                    }).join("\n"),
+                    format_params(&ty_params),
                     closure_def,
-                    params.into_iter().join(" "),
+                    format_params(&trait_params),
+                    if includes.is_empty() {"".to_string()} else {
+                        format!("include {}\n", includes.iter().join(" "))
+                    },
+                    format_params(&params),
                     self.prelude.iter().join("\n\n"),
                     name, self.ret_ty(), body, closure_impl)
         }

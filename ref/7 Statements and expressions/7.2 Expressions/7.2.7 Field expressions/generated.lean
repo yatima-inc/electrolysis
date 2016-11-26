@@ -26,6 +26,6 @@ let' t6 ← test.main.TuplePoint.mk (10 : int) (20 : int);
 let' t5 ← match t6 with test.main.TuplePoint.mk x0 x1 := x0 end;
 let' t4 ← t5;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

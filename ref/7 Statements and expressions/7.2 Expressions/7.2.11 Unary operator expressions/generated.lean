@@ -29,6 +29,6 @@ let' t16 ← x;
 let' t17 ← @lens.id i32;
 do «$tmp» ← lens.get t17 x;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

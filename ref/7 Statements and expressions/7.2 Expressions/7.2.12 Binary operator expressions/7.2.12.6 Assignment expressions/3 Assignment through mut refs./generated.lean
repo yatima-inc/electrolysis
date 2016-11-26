@@ -22,6 +22,6 @@ let' p ← (lens.index _ (0 : nat) ∘ₗ lens.mk (return ∘ test.S.x) (λ (o :
 do «$tmp» ← lens.get p s;
 do s ← lens.set p s (2 : int);
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

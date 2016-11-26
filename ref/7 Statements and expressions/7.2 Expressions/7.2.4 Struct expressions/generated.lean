@@ -31,7 +31,7 @@ structure test.main.Cookie := mk {} ::
 definition test.main.some_fn {T : Type₁} (tₐ : T) : sem (unit) :=
 let' t ← tₐ;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.main : sem (unit) :=
@@ -45,6 +45,6 @@ let' t8 ← test.main.Cookie.mk;
 dostep «$tmp» ← @test.main.some_fn _ t8;
 let' t7 ← «$tmp»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

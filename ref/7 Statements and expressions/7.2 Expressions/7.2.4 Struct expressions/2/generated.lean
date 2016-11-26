@@ -20,6 +20,6 @@ definition test.main : sem (unit) :=
 let' base ← test.main.Point3d.mk (1 : int) (2 : int) (3 : int);
 let' t2 ← test.main.Point3d.mk (test.main.Point3d.x base) (0 : int) (10 : int);
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

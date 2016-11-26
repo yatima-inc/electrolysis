@@ -23,50 +23,50 @@ let' t9 ← x;
 if t9 = bool.tt then
 let' t8 ← tt;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t10 ← y;
 if t10 = bool.tt then
 let' t8 ← tt;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t8 ← ff;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t5 ← ff;
 let' t9 ← x;
 if t9 = bool.tt then
 let' t8 ← tt;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t10 ← y;
 if t10 = bool.tt then
 let' t8 ← tt;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t8 ← ff;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t5 ← ff;
 let' t9 ← x;
 if t9 = bool.tt then
 let' t8 ← tt;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t10 ← y;
 if t10 = bool.tt then
 let' t8 ← tt;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' t8 ← ff;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

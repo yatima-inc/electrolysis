@@ -20,9 +20,9 @@ end
 
 definition test.main : sem (unit) :=
 let' t2 ← test.Foo.Bar;
-do «$tmp0» ← (isize_to_u32 (test.Foo.discr t2));
+do «$tmp0» ← (signed_to_unsigned u32.bits (test.Foo.discr t2));
 let' x ← «$tmp0»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

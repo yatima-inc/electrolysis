@@ -15,6 +15,6 @@ definition test.main : sem (unit) :=
 let' t1 ← ((0 : int));
 let' t2 ← (0 : int);
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

@@ -19,8 +19,8 @@ structure core.marker.Copy [class] (Self : Type₁)  extends core.clone.Clone Se
 
 structure core.marker.PhantomData (T : Type₁) := mk {} ::
 
-structure core.ops.BitAnd [class] (Self : Type₁) (RHS : Type₁) (Output : Type₁) :=
-(bitand : Self → RHS → sem (Output))
+structure core.ops.BitAnd [class] (Self : Type₁) (RHS : Type₁) («<Self as ops.BitAnd<RHS>>.Output» : Type₁) :=
+(bitand : Self → RHS → sem («<Self as ops.BitAnd<RHS>>.Output»))
 
 definition core.«u32 as core.ops.BitAnd».bitand (selfₐ : u32) (rhsₐ : u32) : sem (u32) :=
 let' self ← selfₐ;
@@ -103,8 +103,8 @@ inductive core.option.Option (T : Type₁) :=
 | None {} : core.option.Option T
 | Some {} : T → core.option.Option T
 
-structure core.iter.iterator.Iterator [class] (Self : Type₁) (Item : Type₁) :=
-(next : Self → sem ((core.option.Option Item) × Self))
+structure core.iter.iterator.Iterator [class] (Self : Type₁) («<Self as iter.iterator.Iterator>.Item» : Type₁) :=
+(next : Self → sem ((core.option.Option «<Self as iter.iterator.Iterator>.Item») × Self))
 
 definition core.«[T] as core.slice.SliceExt».get {T : Type₁} (selfₐ : (slice T)) (indexₐ : usize) : sem ((core.option.Option T)) :=
 let' self ← selfₐ;
@@ -152,12 +152,14 @@ structure core.cmp.Ord [class] (Self : Type₁)  extends core.cmp.Eq Self, core.
 
 section
 parameters {T : Type₁}
-parameters [«core.cmp.Ord T» : core.cmp.Ord T]
 
 structure core.«[T] as core.slice.SliceExt».binary_search.closure_5642 (U0 : Type₁) := (val : U0)
 
+parameters [«core.cmp.Ord T» : core.cmp.Ord T]
+include «core.cmp.Ord T»
 section
 parameters (a1 : (core.«[T] as core.slice.SliceExt».binary_search.closure_5642 T)) (pₐ : T)
+
 
 
 
@@ -165,7 +167,7 @@ definition core.«[T] as core.slice.SliceExt».binary_search.closure_5642.fn : s
 let' p ← pₐ;
 let' t4 ← p;
 let' t5 ← (core.«[T] as core.slice.SliceExt».binary_search.closure_5642.val a1);
-dostep «$tmp» ← @core.cmp.Ord.cmp _ «core.cmp.Ord T» t4 t5;
+dostep «$tmp» ← @core.cmp.Ord.cmp _ (_ : core.cmp.Ord T) t4 t5;
 let' ret ← «$tmp»;
 return (ret, a1)
 
@@ -254,7 +256,7 @@ let' ret ← (t5, t12);
 return (ret)
 
 
-structure core.slice.SliceExt [class] (Self : Type₁) (Item : Type₁) :=
+structure core.slice.SliceExt [class] (Self : Type₁) («<Self as slice.SliceExt>.Item» : Type₁) :=
 (len : Self → sem (usize))
 
 definition core.«[T] as core.slice.SliceExt» [instance] (T : Type₁) := ⦃
@@ -262,7 +264,7 @@ definition core.«[T] as core.slice.SliceExt» [instance] (T : Type₁) := ⦃
   len := core.«[T] as core.slice.SliceExt».len
 ⦄
 
-definition core.slice.SliceExt.is_empty {Self : Type₁} (Item : Type₁) [«core.slice.SliceExt Self» : core.slice.SliceExt Self Item] (selfₐ : Self) : sem (bool) :=
+definition core.slice.SliceExt.is_empty {Self : Type₁} («<Self as slice.SliceExt>.Item» : Type₁) [«core.slice.SliceExt Self» : core.slice.SliceExt Self «<Self as slice.SliceExt>.Item»] (selfₐ : Self) : sem (bool) :=
 let' self ← selfₐ;
 let' t4 ← self;
 dostep «$tmp» ← @core.slice.SliceExt.len _ _ «core.slice.SliceExt Self» t4;
@@ -274,8 +276,10 @@ return (ret)
 section
 parameters {F : Type₁} {T : Type₁}
 parameters [«core.ops.FnMut F (T)» : core.ops.FnMut F (T) (core.cmp.Ordering)]
+include «core.ops.FnMut F (T)»
 section
 parameters (selfₐ : (slice T)) (fₐ : F)
+
 
 definition core.«[T] as core.slice.SliceExt».binary_search_by.loop_4 (state__ : F × usize × (slice T)) : sem (sum (F × usize × (slice T)) ((core.result.Result usize usize))) :=
 match state__ with (f, base, s) :=
@@ -291,7 +295,7 @@ let' t12 ← «$tmp»;
 let' head ← t12.1;
 let' tail ← t12.2;
 let' t20 ← tail;
-dostep «$tmp» ← @core.slice.SliceExt.is_empty _ _ (core.«[T] as core.slice.SliceExt» T) t20;
+dostep «$tmp» ← @core.slice.SliceExt.is_empty _ _ (@core.«[T] as core.slice.SliceExt» T) t20;
 let' t19 ← «$tmp»;
 if t19 = bool.tt then
 do tmp__ ← let' t22 ← base;

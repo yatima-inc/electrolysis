@@ -17,7 +17,7 @@ structure test.Num [class] (Self : Type₁)  :=
 definition test.«i64 as test.Num».from_i32 (nₐ : i32) : sem (i64) :=
 let' n ← nₐ;
 let' t3 ← n;
-do «$tmp0» ← (i32_to_i64 t3);
+do «$tmp0» ← (signed_to_signed i64.bits t3);
 let' ret ← «$tmp0»;
 return (ret)
 
@@ -31,6 +31,6 @@ definition test.main : sem (unit) :=
 dostep «$tmp» ← @test.«i64 as test.Num».from_i32 (42 : int);
 let' x ← «$tmp»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

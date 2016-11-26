@@ -48,13 +48,13 @@ let' blocks ← t5.1;
 let' rem ← t5.2;
 let' t9 ← rem;
 let' t8 ← t9 >ᵇ (0 : nat);
-do «$tmp0» ← (bool_to_usize t8);
+do «$tmp0» ← (bool_to_unsigned usize.bits t8);
 let' t7 ← «$tmp0»;
 do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits blocks t7);
 let' t10 ← «$tmp0»;
 let' blocks ← t10.1;
 let' t12 ← blocks;
-dostep «$tmp» ← @collections.vec.from_elem _ (core.«u32 as core.clone.Clone» ) (0 : nat) t12;
+dostep «$tmp» ← @collections.vec.from_elem _ (@core.«u32 as core.clone.Clone» ) (0 : nat) t12;
 let' t11 ← «$tmp»;
 let' t14 ← bits;
 let' ret ← fixedbitset.FixedBitSet.mk t11 t14;
@@ -144,7 +144,7 @@ do «$tmp0» ← do «$tmp0» ← lens.get t20 selfₐ;
 return (bitor u32.bits «$tmp0» t17);
 do selfₐ ← lens.set t20 selfₐ «$tmp0»;
 let' ret ← ⋆;
-return (ret, selfₐ)
+return (⋆, selfₐ)
 end
 end
 

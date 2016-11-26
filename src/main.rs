@@ -144,7 +144,7 @@ fn get_rust_src_path() -> Option<path::PathBuf> {
 /// Collects all node IDs of a crate
 struct IdCollector<'a, 'tcx : 'a> {
     tcx: ty::TyCtxt<'a, 'tcx, 'tcx>,
-    ids: Vec<NodeId>
+    ids: Vec<hir::def_id::DefId>
 }
 
 impl<'a, 'tcx> IdCollector<'a, 'tcx> {
@@ -158,6 +158,12 @@ impl<'a, 'tcx> IdCollector<'a, 'tcx> {
             _ => false,
         })
     }
+
+    fn insert(&mut self, id: NodeId) {
+        if let Some(def_id) = self.tcx.map.opt_local_def_id(id) {
+            self.ids.push(def_id);
+        }
+    }
 }
 
 impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
@@ -170,13 +176,20 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
             return // default impls don't seem to be part of the HIR map
         }
 
-        self.ids.push(item.id);
+        self.insert(item.id);
         intravisit::walk_item(self, item);
     }
 
     fn visit_nested_item(&mut self, id: hir::ItemId) {
         let tcx = self.tcx;
         self.visit_item(tcx.map.expect_item(id.id))
+    }
+
+    fn visit_expr(&mut self, ex: &'a hir::Expr) {
+        if let hir::ExprClosure(..) = ex.node {
+            self.insert(ex.id);
+        }
+        intravisit::walk_expr(self, ex);
     }
 
     fn visit_nested_impl_item(&mut self, id: hir::ImplItemId) {
@@ -188,14 +201,16 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
         if self.skip(&ii.attrs) {
             return
         }
-        self.ids.push(ii.id);
+        self.insert(ii.id);
+        intravisit::walk_impl_item(self, ii);
     }
 
     fn visit_trait_item(&mut self, trait_item: &'a hir::TraitItem) {
         if self.skip(&trait_item.attrs) {
             return
         }
-        self.ids.push(trait_item.id);
+        self.insert(trait_item.id);
+        intravisit::walk_trait_item(self, trait_item);
     }
 }
 
@@ -217,11 +232,11 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
     // find targets' DefIds and transpile them
     let mut id_collector = IdCollector { tcx: tcx, ids: vec![] };
     intravisit::walk_crate(&mut id_collector, state.hir_crate.unwrap());
-    for id in id_collector.ids {
-        let def_id = tcx.map.local_def_id(id);
+    let id_set = id_collector.ids.iter().cloned().collect::<HashSet<_>>();
+    for def_id in id_collector.ids {
         let name = name_def_id(tcx, def_id);
         if targets.iter().all(|targets| targets.is_match(&*name)) {
-            trans.transpile(def_id, targets.is_none());
+            trans.transpile(def_id, &id_set, targets.is_none());
         }
     }
 
@@ -274,15 +289,15 @@ open [notation] unit
                 // don't even bother writing out code that will fail because of missing dependencies
                 let failed_deps = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).filter(|idx| failed.contains(idx)).collect_vec();
                 if failed_deps.is_empty() {
-                    match trans_results[&def_id] {
-                        Ok(Some(ref trans)) => {
+                    match trans_results.get(&def_id) {
+                        Some(&Ok(Some(ref trans))) => {
                             try!(write!(f, "{}\n\n", trans));
                         }
-                        Ok(None) => {}
-                        Err(ref err) => {
+                        Some(&Err(ref err)) => {
                             failed.insert(idx);
                             try!(write!(f, "/- {}: {} -/\n\n", name, err.replace("/-", "/ -")))
                         }
+                        _ => {}
                     }
                 } else {
                     failed.insert(idx);

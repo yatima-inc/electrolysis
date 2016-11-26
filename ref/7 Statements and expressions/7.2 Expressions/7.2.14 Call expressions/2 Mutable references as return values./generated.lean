@@ -37,7 +37,7 @@ do xsₐ ← lens.set t4 xsₐ «t4$»;
 let' t3 ← («t3$» ∘ₗ t4);
 do xsₐ ← lens.set t3 xsₐ (2 : int);
 let' ret ← ⋆;
-return (ret, xsₐ)
+return (⋆, xsₐ)
 end
 
 

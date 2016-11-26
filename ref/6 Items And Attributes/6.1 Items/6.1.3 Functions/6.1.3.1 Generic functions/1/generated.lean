@@ -15,6 +15,6 @@ definition test.foo {A : Type₁} {B : Type₁} (xₐ : A) (yₐ : B) : sem (uni
 let' x ← xₐ;
 let' y ← yₐ;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

@@ -62,11 +62,11 @@ match x with
 | 0 :=
 let' z ← "zero";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 | _ :=
 let' z ← "some";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 end
 | _ :=
@@ -75,11 +75,11 @@ match x with
 | 0 :=
 let' z ← "zero";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 | _ :=
 let' z ← "some";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 end
 
@@ -92,11 +92,11 @@ match x with
 | 0 :=
 let' message ← "not many";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 | 1 :=
 let' message ← "not many";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 | _ :=
 let' t4 ← (2 : int) ≤ᵇ x;
 if t4 = bool.tt then
@@ -104,15 +104,15 @@ let' t5 ← x ≤ᵇ (9 : int);
 if t5 = bool.tt then
 let' message ← "a few";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' message ← "lots";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 else
 let' message ← "lots";
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 end
 

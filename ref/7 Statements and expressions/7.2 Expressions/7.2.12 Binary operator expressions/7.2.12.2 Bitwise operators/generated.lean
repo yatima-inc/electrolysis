@@ -34,7 +34,7 @@ do «$tmp0» ← sem.map (λx, (x, tt)) (checked.shr u32.bits t19 t20);
 let' t21 ← «$tmp0»;
 let' t18 ← t21.1;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.signed (xₐ : i32) (yₐ : i32) : sem (unit) :=
@@ -60,7 +60,7 @@ do «$tmp0» ← sem.map (λx, (x, tt)) (checked.sshrs i32.bits t19 t20);
 let' t21 ← «$tmp0»;
 let' t18 ← t21.1;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
 definition test.bool (xₐ : bool) (yₐ : bool) : sem (unit) :=
@@ -76,6 +76,6 @@ let' t12 ← x;
 let' t13 ← y;
 let' t11 ← bxor t12 t13;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 

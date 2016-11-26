@@ -38,7 +38,7 @@ definition test.«test.Foo as test.Shape» [instance] := ⦃
 
 definition test.«test.Foo as test.Circle» [instance] := ⦃
   test.Circle (test.Foo),
-  (test.«test.Foo as test.Shape» ),
+  (@test.«test.Foo as test.Shape» ),
   radius := test.«test.Foo as test.Circle».radius
 ⦄
 
@@ -48,6 +48,6 @@ let' t3 ← c;
 dostep «$tmp» ← @test.«test.Foo as test.Circle».radius t3;
 let' t2 ← «$tmp»;
 let' ret ← ⋆;
-return (ret)
+return (⋆)
 
 
