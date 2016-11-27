@@ -19,6 +19,8 @@ definition sem.incr [unfold 3] {a : Type₁} (n : ℕ) : sem a → sem a
 definition sem.terminates_with [unfold 3] {a : Type₁} (H : a → Prop) (s : sem a) : Prop :=
 option.any (λ p, H p.1) s
 
+abbreviation sem.returns [unfold 3] {a : Type₁} (x : a) := sem.terminates_with (λ a, a = x)
+
 definition sem.terminates [unfold 2] {a : Type₁} (s : sem a) : Prop :=
 sem.terminates_with (λ a, true) s
 
@@ -28,6 +30,19 @@ begin
   cases s with x,
   { contradiction },
   { cases x, apply h }
+end
+
+lemma sem.returns_iff_of_returns {a : Type₁} {x₁ x₂ : a} {s : sem a}
+  (h : sem.returns x₁ s) : sem.returns x₂ s ↔ x₁ = x₂ :=
+begin
+  split,
+  { intro h₂, cases s with x,
+    { contradiction },
+    { cases x, esimp at *, rewrite [-h, h₂] }
+  },
+  { intro eq,
+    rewrite -eq,
+    apply h }
 end
 
 inductive sem.terminates_with_in {a : Type₁} (H : a → Prop) (max_cost : ℕ) : sem a → Prop :=

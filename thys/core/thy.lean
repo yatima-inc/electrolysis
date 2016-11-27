@@ -490,7 +490,7 @@ end
 
 local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
-theorem loop_4.spec :
+theorem loop_loop_4.spec :
   ∃₀g ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
   ∀ needle (st : closure_5642 T × usize × slice T), let self := st.2 in
     st.1.1 = closure_5642.mk needle ∧ st.1.2 = 0 ∧ is_slice self ∧ sorted le self → sem.terminates_with_in
@@ -570,7 +570,7 @@ theorem binary_search.spec :
     (f (length self, Ord'.cmp_max_cost needle self))
     (binary_search self needle) :=
 begin
-  cases loop_4.spec with g spec,
+  cases loop_loop_4.spec with g spec,
   cases spec with hg spec,
   existsi λ p, g p + 1 * 1,
   split,

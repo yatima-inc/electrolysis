@@ -2,6 +2,7 @@ import core.generated
 
 open function
 open list
+open nat
 open option
 
 open core.clone
@@ -16,7 +17,7 @@ structure Vec (T : Type₁) := mk {} ::
 
 definition from_elem {T : Type₁} [clone : Clone T] (elem : T) (n : usize) : sem (Vec T) :=
 dostep c ← @Clone.clone T clone elem;
-sem.return_incr (Vec.mk (replicate n c)) n
+sem.incr n $ return (Vec.mk (replicate n c))
 
 namespace «Vec<T>»
 
@@ -25,7 +26,7 @@ return (Vec.mk [])
 
 -- TODO: amortized complexity
 definition push {T : Type₁} (self : Vec T) (value : T) : sem (unit × Vec T) :=
-sem.return_incr (unit.star, Vec.mk (Vec.buf self ++ [value])) (list.length (Vec.buf self))
+sem.incr (list.length (Vec.buf self)) $ return (unit.star, Vec.mk (Vec.buf self ++ [value]))
 
 definition pop {T : Type₁} (self : Vec T) : sem (Vec T × Option T) :=
 match reverse (Vec.buf self) with
@@ -56,6 +57,6 @@ return (⦃lens, get := return ∘ Vec.buf, set := λ old, return ∘ Vec.mk⦄,
 
 definition «[T]».get_unchecked_mut {T : Type₁} (self : slice T) (index : usize) :
   sem (lens (slice T) T × slice T) :=
-return (lens.index _ index, self)
+sem.guard (index < length self) $ return (lens.index _ index, self)
 
 end collections

@@ -26,6 +26,9 @@ attribute sem [reducible]
 structure FixedBitSet' [class] (self : FixedBitSet) : Prop :=
 (length_eq : nat.div_ceil (length self) 32 = list.length (Vec.buf (data self)))
 
+definition to_set (s : FixedBitSet) : set usize :=
+{bit | bit < length s ∧ sem.returns bool.tt (contains s bit)}
+
 lemma div_rem_32 (n : usize) : div_rem n 32 = some (n / 32, n % 32, 0) := rfl
 
 attribute core.u32_as_Copy' [constructor]
@@ -107,23 +110,17 @@ begin
   rewrite [▸*, ↑«&'a u32 as core.ops.BitAnd<u32>».bitand, ↑«u32 as core.ops.BitAnd».bitand],
 end
 
-section
-  omit Hbit_lt
-  definition to_set : set usize :=
-  {bit | ∃ (h : bit < length s), sem.unwrap (contains.spec s bit h) = bool.tt}
-end
-
 lemma insert.spec :
   sem.terminates_with (λ ret,
     let s' := ret.2 in
-    ∃ (h : FixedBitSet' s'), to_set s' = to_set s ∪ '{bit})
+    FixedBitSet' s' ∧ to_set s' = to_set s ∪ '{bit})
   (insert s bit) :=
 have is_bounded_nat 32 (2^(bit % 32)), from
   strictly_increasing_pow dec_trivial (!mod_lt dec_trivial),
 begin
   intro, rewrite [↑insert],
   have bool.bnot (bit <ᵇ FixedBitSet.length s) = bool.tt ↔ ¬(bit < length s),
-  by rewrite [!bool.bnot_of_Prop, bool.of_Prop_eq_tt_iff],
+    by rewrite [!bool.bnot_of_Prop, bool.of_Prop_eq_tt_iff],
   rewrite [if_congr this rfl rfl, if_neg (not_not_intro `bit < length s`), ▸*],
   have 32 ≠ (0 : nat), from !nat.succ_ne_zero,
   rewrite [↑div_rem, ↑BITS, +if_pos' this],
@@ -131,7 +128,8 @@ begin
   rewrite [checked.shl_1 (show bit % 32 < u32.bits, from !nat.mod_lt dec_trivial)],
   note bit_valid := bit_div_32_lt_data_length s bit Hbit_lt,
   cases list.nth_eq_some bit_valid with b b_eq,
-  rewrite [b_eq, ▸*],
+  rewrite [if_pos bit_valid, ▸*, b_eq, ▸*],
+  repeat apply sem.terminates_with_incr,
   cases list.update_eq_some _ bit_valid with l' l'_eq,
   let s' := FixedBitSet.mk (Vec.mk l') (FixedBitSet.length s),
   rewrite [l'_eq, ▸*],
@@ -142,24 +140,24 @@ begin
   existsi this,
   rewrite [↑to_set],
   apply set.ext, intro bit',
-  rewrite [▸*, set.mem_union_eq],
+  rewrite [▸*, set.mem_union_eq, +set.mem_set_of_iff, set.mem_singleton_iff],
   cases decidable_lt bit' (length s) with bit'_lt bit'_ge,
-  { rewrite [+set.mem_set_of_iff, set.mem_singleton_iff, +exists_true_Prop_iff `bit' < length s`],
+  { rewrite [+and_iff_right bit'_lt],
 
-    note H := sem.sem_unwrap (contains.spec s' bit' bit'_lt),
+    note H := contains.spec s' bit' bit'_lt,
     esimp at H,
     note Hbit'_valid := bit_div_32_lt_data_length s bit' bit'_lt,
     cases list.nth_eq_some ((list.length_update l'_eq)⁻¹ ▸ Hbit'_valid) with b' b'_eq,
-    rewrite [b'_eq at H{2}, ▸* at H, H],
+    rewrite [b'_eq at H, ▸* at H, sem.returns_iff_of_returns H],
     clear H,
 
-    note H := sem.sem_unwrap (contains.spec s bit' bit'_lt),
+    note H := contains.spec s bit' bit'_lt,
     cases list.nth_eq_some Hbit'_valid with b'' b''_eq,
-    rewrite [b''_eq at H{2}, ▸* at H, H],
+    rewrite [b''_eq at H, ▸* at H, sem.returns_iff_of_returns H],
     clear H,
 
     note H := list.nth_update (bit' / 32) l'_eq,
-    rewrite [b''_eq at H, b'_eq at H],
+    rewrite [b''_eq at H, b'_eq at H, +bool.of_Prop_eq_tt_iff],
     clear b'_eq,
 
     cases (_ : decidable (bit / 32 = bit' / 32)) with same_blk dif_blk,
@@ -170,7 +168,7 @@ begin
         option.no_confusion this id,
       rewrite [this, H],
       cases (_ : decidable (bit' = bit)),
-      { rewrite [`bit' = bit`, +bool.of_Prop_eq_tt_iff, eq_self_iff_true, or_true,
+      { rewrite [`bit' = bit`, eq_self_iff_true, or_true,
           iff_true],
         rewrite [bitand_bitor_cancel],
         apply not_imp_not_of_imp eq_zero_of_pow_eq_zero,
@@ -180,7 +178,7 @@ begin
           revert a, apply not_imp_not_of_imp, intro h,
           rewrite [eq_div_mul_add_mod bit 32, eq_div_mul_add_mod bit' 32, h, same_blk],
         end,
-        rewrite [iff_false_intro `bit' ≠ bit`, +bool.of_Prop_eq_tt_iff, bitand_bitor_distrib_right,
+        rewrite [iff_false_intro `bit' ≠ bit`, bitand_bitor_distrib_right,
           !bitand_disj_pow this, bitor_zero],
         apply iff.symm !or_false
       }
@@ -191,8 +189,7 @@ begin
       have bit' ≠ bit, by intro contr; rewrite [contr at dif_blk]; apply dif_blk rfl,
       rewrite [iff_false_intro this, or_false] }
   },
-  { rewrite [+set.mem_set_of_iff, set.mem_singleton_iff,
-      +iff_false_intro (not_exists_of_not _ bit'_ge), false_iff, false_or],
+  { rewrite [+iff_false_intro (not_and_of_not_left _ bit'_ge), false_iff, false_or],
     show bit' ≠ bit, from take contr, bit'_ge (contr⁻¹ ▸ Hbit_lt) }
 end
 
