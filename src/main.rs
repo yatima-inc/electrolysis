@@ -26,9 +26,9 @@ macro_rules! throw { ($($arg: tt)*) => { return Err(format!($($arg)*)) } }
 macro_rules! try_iter { ($arg: expr) => { $arg.collect::<Result<Vec<_>, _>>()?.into_iter() } }
 
 mod item_path;
-mod joins;
 mod mir_graph;
 mod trans;
+mod util;
 
 use std::collections::HashSet;
 use std::io;
@@ -236,7 +236,7 @@ fn transpile_crate(state: &driver::CompileState, config: &toml::Value, base: &pa
     for def_id in id_collector.ids {
         let name = name_def_id(tcx, def_id);
         if targets.iter().all(|targets| targets.is_match(&*name)) {
-            trans.transpile(def_id, &id_set, targets.is_none());
+            trans.transpile(def_id, &id_set);
         }
     }
 

@@ -18,7 +18,7 @@ use rustc_data_structures::indexed_vec::Idx;
 use syntax::ast;
 
 use self::component::Component;
-use joins::*;
+use util::*;
 use trans::item;
 use trans::krate;
 use trans::TransResult;
@@ -104,31 +104,40 @@ impl MaybeValue {
         self.val
     }
 
-    fn and_then<F: FnOnce(String) -> MaybeValue>(self, depth: u32, f: F) -> MaybeValue {
+    fn try_and_then<F: FnOnce(String) -> TransResult<MaybeValue>>(self, depth: u32, f: F) -> TransResult<MaybeValue> {
         if self.total {
             f(self.val)
         } else {
             let tmp = format!("«$tmp{}»", depth);
-            let new = f(tmp.clone());
-            MaybeValue::partial(format!(
-                "do {} ← {};\n{}", tmp, self.val, new.to_partial()))
+            let new = f(tmp.clone())?;
+            Ok(MaybeValue::partial(format!(
+                "do {} ← {};\n{}", tmp, self.val, new.to_partial())))
         }
     }
-    fn map<F: FnOnce(String) -> String>(self, depth: u32, f: F) -> String {
-        self.and_then(depth, |var| MaybeValue::partial(f(var))).val
+
+    fn and_then<F: FnOnce(String) -> MaybeValue>(self, depth: u32, f: F) -> MaybeValue {
+        self.try_and_then(depth, |var| Ok(f(var))).unwrap()
     }
 
-    fn and_then_multi<It, F>(depth: u32, vals: It, f: F) -> MaybeValue
+    fn try_map<F: FnOnce(String) -> TransResult>(self, depth: u32, f: F) -> TransResult {
+        Ok(self.try_and_then(depth, |var| Ok(MaybeValue::partial(f(var)?)))?.val)
+    }
+
+    fn map<F: FnOnce(String) -> String>(self, depth: u32, f: F) -> String {
+        self.try_map(depth, |var| Ok(f(var))).unwrap()
+    }
+
+    fn try_and_then_multi<It, F>(depth: u32, vals: It, f: F) -> TransResult<MaybeValue>
         where It: Iterator<Item=MaybeValue>,
-              F: FnOnce(Vec<String>) -> MaybeValue,
+              F: FnOnce(Vec<String>) -> TransResult<MaybeValue>,
     {
-        fn rec<It, F>(depth: u32, mut vals: It, mut vars: Vec<String>, f: F) -> MaybeValue
+        fn rec<It, F>(depth: u32, mut vals: It, mut vars: Vec<String>, f: F) -> TransResult<MaybeValue>
             where It: Iterator<Item=MaybeValue>,
-            F: FnOnce(Vec<String>) -> MaybeValue,
+            F: FnOnce(Vec<String>) -> TransResult<MaybeValue>,
         {
             match vals.next() {
                 None => f(vars),
-                Some(val) => val.and_then(depth, |var| {
+                Some(val) => val.try_and_then(depth, |var| {
                     vars.push(var);
                     rec(depth + 1, vals, vars, f)
                 })
@@ -136,11 +145,19 @@ impl MaybeValue {
         }
         rec(depth, vals, Vec::new(), f)
     }
-    fn map_multi<It, F>(depth: u32, vals: It, f: F) -> String
+
+    fn and_then_multi<It, F>(depth: u32, vals: It, f: F) -> MaybeValue
         where It: Iterator<Item=MaybeValue>,
-              F: FnOnce(Vec<String>) -> String,
+              F: FnOnce(Vec<String>) -> MaybeValue
     {
-        MaybeValue::and_then_multi(depth, vals, |vars| MaybeValue::partial(f(vars))).val
+        MaybeValue::try_and_then_multi(depth, vals, |var| Ok(f(var))).unwrap()
+    }
+
+    fn try_map_multi<It, F>(depth: u32, vals: It, f: F) -> TransResult
+        where It: Iterator<Item=MaybeValue>,
+              F: FnOnce(Vec<String>) -> TransResult,
+    {
+        Ok(MaybeValue::try_and_then_multi(depth, vals, |vars| Ok(MaybeValue::partial(f(vars)?)))?.val)
     }
 }
 
@@ -196,18 +213,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         lv.as_local().and_then(|local| self.refs.get(&local).cloned())
     }
 
-    fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> MaybeValue {
+    fn get_lvalue(&self, lv: &Lvalue<'tcx>) -> TransResult<MaybeValue> {
         if let Some(name) = self.lvalue_name(lv) {
-            return MaybeValue::total(name)
+            return Ok(MaybeValue::total(name))
         }
 
         match *lv {
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Deref }) => {
                 if let Some(ref src) = self.deref_mut(base) {
                     // read through a &mut
-                    self.get_lvalue(base).and_then(0, |base| self.get_lvalue(src).and_then(1, |src| {
+                    self.get_lvalue(base)?.try_and_then(0, |base| Ok(self.get_lvalue(src)?.and_then(1, |src| {
                         MaybeValue::partial(format!("lens.get {} {}", base, src))
-                    }))
+                    })))
                 } else {
                     self.get_lvalue(base)
                 }
@@ -218,14 +235,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 elem: ProjectionElem::Field(ref field, _),
                 base: Lvalue::Projection(box Projection { elem: ProjectionElem::Downcast(..), .. }),
             }) =>
-                MaybeValue::total(format!("discr_{}", field.index())),
+                Ok(MaybeValue::total(format!("discr_{}", field.index()))),
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
-                self.get_lvalue(base).and_then(0, |base| self.get_operand(idx).and_then(1, |idx| {
+                self.get_lvalue(base)?.try_and_then(0, |base| Ok(self.get_operand(idx)?.and_then(1, |idx| {
                     MaybeValue::partial(format!("core.«[T] as core.slice.SliceExt».get_unchecked {} {}", base, idx))
-                })),
+                }))),
             // `x.0`, `x.f`
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Field(ref field, _) }) =>
-                self.get_lvalue(base).and_then(0, |sbase| MaybeValue::total(match unwrap_refs(self.lvalue_ty(base)).sty {
+                self.get_lvalue(base)?.try_and_then(0, |sbase| Ok(MaybeValue::total(match unwrap_refs(self.lvalue_ty(base)).sty {
                     ty::TypeVariants::TyTuple(ref tys) =>
                         get_tuple_elem(sbase, field.index(), tys.len()),
                     ty::TypeVariants::TyAdt(ref adt_def, _) => {
@@ -246,9 +263,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
                         get_tuple_elem(sbase, field.index(), substs.upvar_tys(def_id, self.tcx).count())
                     }
-                    ref ty => panic!("unimplemented: accessing field of {:?}", ty),
-                })),
-            _ => panic!("unimplemented: loading {:?}", lv),
+                    ref ty => throw!("unimplemented: accessing field of {:?}", ty),
+                }))),
+            _ => throw!("unimplemented: loading {:?}", lv),
         }
     }
 
@@ -267,24 +284,24 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 rest)
     }
 
-    fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> String {
+    fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
         if let Some(name) = self.lvalue_name(lv) {
-            if name == val { // no-op
-                return "".to_string()
+            return Ok(if name == val { // no-op
+                "".to_string()
             } else {
-                return format!("let' {} ← {};\n", name, val)
-            }
+                format!("let' {} ← {};\n", name, val)
+            })
         }
         match *lv {
             Lvalue::Projection(box Projection { ref base, ref elem }) =>
-                self.get_lvalue(base).map(0, |sbase| match *elem {
+                self.get_lvalue(base)?.try_map(0, |sbase| match *elem {
                     ProjectionElem::Deref => {
                         if let Some(ref src) = self.deref_mut(base) {
-                            self.get_lvalue(src).map(1, |src| {
+                            Ok(self.get_lvalue(src)?.map(1, |src| {
                                 // writing through a &mut
                                 format!("do {src} ← lens.set {lens} {src} {val};\n",
                                         src=src, lens=sbase, val=val)
-                            })
+                            }))
                         } else {
                             self.set_lvalue(base, val)
                         }
@@ -299,24 +316,24 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     "{}.mk {}", self.name_def_id(def_id),
                                     set_tuple_elem(sbase, val.to_string(), field.index(), substs.upvar_tys(def_id, self.tcx).count())))
                             }
-                            ref ty => panic!("unimplemented: setting field of {:?}", ty),
+                            ref ty => throw!("unimplemented: setting field of {:?}", ty),
                         }
                     }
                     ProjectionElem::Index(ref index) => {
-                        self.get_operand(index).map(1, |index| {
-                            MaybeValue::partial(format!("sem.lift_opt (list.update {} {} {})", sbase, index, val)).map(2, |new| {
+                        self.get_operand(index)?.try_map(1, |index| {
+                            MaybeValue::partial(format!("sem.lift_opt (list.update {} {} {})", sbase, index, val)).try_map(2, |new| {
                                 self.set_lvalue(base, &new)
                             })
                         })
                     }
-                    _ => panic!("unimplemented: setting lvalue {:?}", lv),
+                    _ => throw!("unimplemented: setting lvalue {:?}", lv),
                 }),
-            _ => panic!("unimplemented: setting lvalue {:?}", lv),
+            _ => throw!("unimplemented: setting lvalue {:?}", lv),
         }
     }
 
-    fn transpile_constval(&self, val: &ConstVal) -> String {
-        match *val {
+    fn transpile_constval(&self, val: &ConstVal) -> TransResult {
+        Ok(match *val {
             ConstVal::Bool(b) => (if b {"tt"} else {"ff"}).to_string(),
             ConstVal::Integral(i) => match i.int_type().unwrap() {
                 ::syntax::attr::IntType::SignedInt(_) =>
@@ -325,81 +342,81 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     format!("({} : nat)", i.to_u64_unchecked()),
             },
             ConstVal::Str(ref s) => format!("\"{}\"", s),
-            _ => panic!("unimplemented: literal {:?}", val),
-        }
+            _ => throw!("unimplemented: literal {:?}", val),
+        })
     }
 
-    fn get_constant(&self, c: &Constant) -> MaybeValue {
-        match c.literal {
-            Literal::Value { ref value } => MaybeValue::total(self.transpile_constval(value)),
+    fn get_constant(&self, c: &Constant) -> TransResult<MaybeValue> {
+        Ok(match c.literal {
+            Literal::Value { ref value } => MaybeValue::total(self.transpile_constval(value)?),
             Literal::Promoted { index }  => MaybeValue::total(format!("promoted_{}", index.index())),
             Literal::Item { def_id, .. } => {
                 use rustc::hir::*;
                 if let hir::map::Node::NodeItem(item) = self.tcx.map.get_if_local(def_id).unwrap() {
                     match item.node {
                         Item_::ItemStatic(..) | Item_::ItemConst(..) =>
-                            return MaybeValue::partial(self.name_def_id(def_id)),
+                            return Ok(MaybeValue::partial(self.name_def_id(def_id))),
                         _ => {}
                     }
                 }
                 MaybeValue::total(self.name_def_id(def_id))
             }
-        }
+        })
     }
 
-    fn get_operand(&self, op: &Operand<'tcx>) -> MaybeValue {
+    fn get_operand(&self, op: &Operand<'tcx>) -> TransResult<MaybeValue> {
         match *op {
             Operand::Consume(ref lv) => {
                 if self.deref_mut(lv).is_some() {
-                    panic!("unimplemented: arbitrary move of &mut {:?}", lv)
+                    throw!("unimplemented: arbitrary move of &mut {:?}", lv)
                 }
                 self.get_lvalue(lv)
             }
-            Operand::Constant(ref c) => self.get_constant(c),
+            Operand::Constant(ref c) => Ok(self.get_constant(c)?),
         }
     }
 
-    fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> MaybeValue {
+    fn get_rvalue(&mut self, rv: &Rvalue<'tcx>) -> TransResult<MaybeValue> {
         match *rv {
             Rvalue::Use(ref op) => self.get_operand(op),
             Rvalue::UnaryOp(op, ref operand) => {
                 let toperand = operand.ty(self.mir, self.tcx);
-                self.get_operand(operand).and_then(0, |soperand| MaybeValue::total(format!("{} {}", match op {
+                self.get_operand(operand)?.try_and_then(0, |soperand| Ok(MaybeValue::total(format!("{} {}", match op {
                     UnOp::Not if toperand.is_bool() => "bool.bnot".to_string(),
                     UnOp::Not => format!("{}bitnot {}.bits",
                                          if toperand.is_signed() {"s"} else {""},
-                                         self.transpile_ty(toperand)),
+                                         self.transpile_ty(toperand)?),
                     UnOp::Neg =>
-                        return MaybeValue::partial(format!("checked.neg {}.bits {}",
-                                                           self.transpile_ty(toperand),
-                                                           soperand)),
+                        return Ok(MaybeValue::partial(format!("checked.neg {}.bits {}",
+                                                              self.transpile_ty(toperand)?,
+                                                              soperand))),
                     }
-                , soperand)))
+                , soperand))))
             }
             Rvalue::BinaryOp(op, ref o1, ref o2) => {
-                self.get_operand(o1).and_then(0, |so1| self.get_operand(o2).and_then(1, |so2| {
+                self.get_operand(o1)?.try_and_then(0, |so1| self.get_operand(o2)?.try_and_then(1, |so2| {
                     let to1 = o1.ty(self.mir, self.tcx);
                     let to2 = o2.ty(self.mir, self.tcx);
                     let checked_homogenous_binop = |name: &'static str| {
                         assert!(to1 == to2);
                         let name = if to1.is_signed() { format!("s{}", name) } else { name.to_string() };
-                        MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
+                        Ok(MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1)?, so1, so2)))
                     };
                     let checked_shift = |name: &'static str| {
                         let name = if to1.is_signed() { format!("s{}", name) } else { name.to_string() };
                         let name = if to2.is_signed() { name + "s" } else { name.to_string() };
-                        MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
+                        Ok(MaybeValue::partial(format!("checked.{} {}.bits {} {}", name, self.transpile_ty(to1)?, so1, so2)))
                     };
                     let bitop = |name: &str, bool_name| {
                         assert!(to1 == to2);
-                        if to1.is_bool() {
+                        Ok(if to1.is_bool() {
                             MaybeValue::total(format!("{} {} {}", bool_name, so1, so2))
                         } else {
                             let name = if to1.is_signed() { format!("s{}", name) } else { name.to_string() };
-                            MaybeValue::total(format!("{} {}.bits {} {}", name, self.transpile_ty(to1), so1, so2))
-                        }
+                            MaybeValue::total(format!("{} {}.bits {} {}", name, self.transpile_ty(to1)?, so1, so2))
+                        })
                     };
-                    let infix_binop = |name| MaybeValue::total(format!("{} {} {}", so1, name, so2));
+                    let infix_binop = |name| Ok(MaybeValue::total(format!("{} {} {}", so1, name, so2)));
                     match op {
                         BinOp::Add => checked_homogenous_binop("add"),
                         BinOp::Sub => checked_homogenous_binop("sub"),
@@ -422,58 +439,57 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             }
             // checked operators used in `Assert`... but we've already checked
             Rvalue::CheckedBinaryOp(op, ref o1, ref o2) => {
-                let MaybeValue { val, total } = self.get_rvalue(&Rvalue::BinaryOp(op, o1.clone(), o2.clone()));
-                if total {
+                let MaybeValue { val, total } = self.get_rvalue(&Rvalue::BinaryOp(op, o1.clone(), o2.clone()))?;
+                Ok(if total {
                     MaybeValue::total(format!("({}, tt)", val))
                 } else {
                     MaybeValue::partial(format!("sem.map (λx, (x, tt)) ({})", val))
-                }
+                })
             }
             Rvalue::Cast(CastKind::Misc, ref op, ref dest_ty) => {
                 let op_ty = op.ty(self.mir, self.tcx);
                 let trans_ty = |ty: ty::Ty<'tcx>| match ty.sty {
-                    ty::TypeVariants::TyInt(_) => "signed".to_string(),
-                    ty::TypeVariants::TyUint(_) => "unsigned".to_string(),
-                    _ => self.transpile_ty(ty)
-
+                    ty::TypeVariants::TyInt(_) => Ok("signed".to_string()),
+                    ty::TypeVariants::TyUint(_) => Ok("unsigned".to_string()),
+                    _ => self.transpile_ty(ty),
                 };
-                self.get_operand(op).and_then(0, |operand| MaybeValue::partial(
+                self.get_operand(op)?.try_and_then(0, |operand| Ok(MaybeValue::partial(
                     if op_ty.is_integral() || op_ty.is_bool() {
                         format!("({}_to_{} {}.bits {})",
-                                trans_ty(op_ty), trans_ty(dest_ty), self.transpile_ty(dest_ty),
+                                trans_ty(op_ty)?, trans_ty(dest_ty)?, self.transpile_ty(dest_ty)?,
                                 operand)
                     } else if let ty::TypeVariants::TyAdt(..) = op_ty.sty {
                         format!("(signed_to_{} {}.bits ({}.discr {}))",
-                                trans_ty(dest_ty), self.transpile_ty(dest_ty),
+                                trans_ty(dest_ty)?, self.transpile_ty(dest_ty)?,
                                 self.name_def_id(op_ty.ty_to_def_id().unwrap()),
                                 operand)
                     } else {
-                        panic!("unimplemented: cast from {:?} to {:?}", op_ty, dest_ty)
-                    }))
+                        throw!("unimplemented: cast from {:?} to {:?}", op_ty, dest_ty)
+                    })))
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
             //Rvalue::Cast(CastKind::ReifyFnPointer, ref op, _) => self.get_operand(op),
             Rvalue::Ref(_, BorrowKind::Shared, ref lv) =>
                 self.get_lvalue(lv),
             Rvalue::Aggregate(AggregateKind::Tuple, ref ops) => {
-                if ops.len() == 0 {
+                Ok(if ops.len() == 0 {
                     MaybeValue::total("⋆")
                 } else {
-                    MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
+                    MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)).try()?, |ops| {
                         MaybeValue::total(format!("({})", ops.join(", ")))
                     })
-                }
+                })
             }
             Rvalue::Aggregate(AggregateKind::Array, ref ops) => {
-                MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
+                Ok(MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)).try()?, |ops| {
                     MaybeValue::total(format!("[{}]", ops.join(", ")))
-                })
+                }))
             }
             Rvalue::Aggregate(AggregateKind::Adt(ref adt_def, variant_idx, _, _), ref ops) => {
                 self.add_dep(adt_def.did);
 
                 let variant = &adt_def.variants[variant_idx];
-                MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)), |ops| {
+                Ok(MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)).try()?, |ops| {
                     let mut val = self.name_def_id(variant.did);
                     if variant.ctor_kind == CtorKind::Fictive {
                         match adt_def.adt_kind() {
@@ -486,19 +502,19 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         }
                     }
                     MaybeValue::total((val, ops).join(" "))
-                })
+                }))
             }
             Rvalue::Aggregate(AggregateKind::Closure(def_id, _), ref ops) => {
                 let upvars = ops.iter().map(lvalue_of_operand).collect_vec();
-                MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)), |upvars| {
+                Ok(MaybeValue::and_then_multi(0, upvars.iter().map(|lv| self.get_lvalue(lv)).try()?, |upvars| {
                     MaybeValue::total(format!("{}.mk {}", self.name_def_id(def_id),
                                               mk_tuple(upvars.into_iter())))
-                })
+                }))
             }
-            Rvalue::Len(ref lv) => self.get_lvalue(lv).and_then(0, |lv| {
+            Rvalue::Len(ref lv) => Ok(self.get_lvalue(lv)?.and_then(0, |lv| {
                 MaybeValue::total(format!("list.length {}", lv))
-            }),
-            Rvalue::Repeat(ref op, ref times) => self.get_operand(op).and_then(0, |op| {
+            })),
+            Rvalue::Repeat(ref op, ref times) => Ok(self.get_operand(op)?.and_then(0, |op| {
                 use rustc_const_math::ConstUsize::*;
                 let times = match times.value {
                     Us16(t) => t as u64,
@@ -507,15 +523,15 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 };
                 // multiplying `op` is okay because it's known to implement `Copy`
                 MaybeValue::total(format!("list.replicate {} {}", times, op))
-            }),
-            _ => panic!("unimplemented: rvalue {:?}", rv),
+            })),
+            _ => throw!("unimplemented: rvalue {:?}", rv),
         }
     }
 
     /// Makes path of lenses and return eventual target
-    fn mk_lenses(&self, lv: &'a Lvalue<'tcx>, lenses: &mut Vec<String>) -> &'a Lvalue<'tcx> {
+    fn mk_lenses(&self, lv: &'a Lvalue<'tcx>, lenses: &mut Vec<String>) -> TransResult<&'a Lvalue<'tcx>> {
         if lv.as_local().is_some() {
-            return lv
+            return Ok(lv)
         }
 
         match *lv {
@@ -523,7 +539,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 match *elem {
                     ProjectionElem::Deref =>
                         if self.deref_mut(base).is_some() {
-                            return base
+                            return Ok(base)
                         },
                     ProjectionElem::Field(field, _) => {
                         let ty = unwrap_refs(self.lvalue_ty(base));
@@ -535,30 +551,30 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                                         ty=self.name_def_id(adt_def.did), field=field_name,
                                                         setter=self.update_struct(adt_def, field, "o", "i")))
                                 },
-                                _ => panic!("unimplemented: lens on field of {:?}", adt_def.adt_kind()),
+                                _ => throw!("unimplemented: lens on field of {:?}", adt_def.adt_kind()),
                             },
-                            ref ty => panic!("unimplemented: lens on field of {:?}", ty),
+                            ref ty => throw!("unimplemented: lens on field of {:?}", ty),
                         }
                     }
                     ProjectionElem::Index(ref index) =>
-                        lenses.push(format!("lens.index _ {}", self.get_operand(index).to_total())),
-                    _ => panic!("unimplemented: lens on lvalue {:?}", lv),
+                        lenses.push(format!("lens.index _ {}", self.get_operand(index)?.to_total())),
+                    _ => throw!("unimplemented: lens on lvalue {:?}", lv),
                 }
                 self.mk_lenses(base, lenses)
             }
-            _ => panic!("unimplemented: lens on lvalue {:?}", lv),
+            _ => throw!("unimplemented: lens on lvalue {:?}", lv),
         }
     }
 
     /// Set dest to the combined lens on `&mut source` in val
-    fn set_mut_ref(&mut self, dest: &Lvalue<'tcx>, mut lenses: Vec<String>, source: &Lvalue<'tcx>) -> String {
-        let dest_local = dest.as_local().unwrap_or_else(|| {
-            panic!("unimplemented: storing &mut in {:?}", dest)
-        });
+    fn set_mut_ref(&mut self, dest: &Lvalue<'tcx>, mut lenses: Vec<String>, source: &Lvalue<'tcx>) -> TransResult {
+        let dest_local = dest.as_local().ok_or_else(|| {
+            format!("unimplemented: storing &mut in {:?}", dest)
+        })?;
         let source = match self.deref_mut(source) {
             Some(ult_source) => {
                 // reborrow ~> combine lenses
-                lenses.push(self.get_lvalue(source).to_total());
+                lenses.push(self.get_lvalue(source)?.to_total());
                 ult_source.clone()
             }
             _ => source.clone()
@@ -566,51 +582,51 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         if *dest == Lvalue::Local(RETURN_POINTER) &&
             krate::try_unwrap_mut_ref(self.mir.return_ty).is_some() &&
             source != Lvalue::Local(Local::new(1)) {
-            panic!("unimplemented: returning mutable reference to argument other than the first")
+            throw!("unimplemented: returning mutable reference to argument other than the first")
         }
         self.refs.insert(dest_local, source);
         let val = if lenses.is_empty() {
-            format!("@lens.id {}", self.transpile_ty(krate::try_unwrap_mut_ref(self.lvalue_ty(dest)).unwrap()))
+            format!("@lens.id {}", self.transpile_ty(krate::try_unwrap_mut_ref(self.lvalue_ty(dest)).unwrap())?)
         }
         else { format!("({})", lenses.into_iter().join(" ∘ₗ ")) };
         self.set_lvalue(dest, &val)
     }
 
-    fn transpile_statement(&mut self, kind: &StatementKind<'tcx>) -> String {
+    fn transpile_statement(&mut self, kind: &StatementKind<'tcx>) -> TransResult {
         match *kind {
             StatementKind::Assign(ref lv, ref rv) => {
                 match *rv {
                     Rvalue::Ref(_, BorrowKind::Mut, ref source) => {
                         let mut lenses = vec![];
-                        let source = self.mk_lenses(source, &mut lenses);
-                        let set = self.set_mut_ref(lv, lenses, source);
+                        let source = self.mk_lenses(source, &mut lenses)?;
+                        let set = self.set_mut_ref(lv, lenses, source)?;
                         // probe lens to eagerly propagate out-of-bounds panics
-                        format!("{}do «$tmp» ← {};\n", set, self.get_lvalue(&lv.clone().deref()).to_partial())
+                        Ok(format!("{}do «$tmp» ← {};\n", set, self.get_lvalue(&lv.clone().deref())?.to_partial()))
                     }
                     // move &mut
                     Rvalue::Use(Operand::Consume(Lvalue::Local(source)))
                         if krate::try_unwrap_mut_ref(self.mir.local_decls[source].ty).is_some() =>
                         self.set_mut_ref(lv, vec![], &Lvalue::Local(source)),
-                    _ => self.get_rvalue(rv).map(0, |rv| self.set_lvalue(lv, &rv)),
+                    _ => self.get_rvalue(rv)?.try_map(0, |rv| self.set_lvalue(lv, &rv)),
                 }
             }
             StatementKind::SetDiscriminant { .. } =>
-                panic!("unimplemented: statement kind {:?}", kind),
+                throw!("unimplemented: statement kind {:?}", kind),
             StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop =>
-                "".to_string(),
+                Ok("".to_string()),
         }
     }
 
-    fn transpile_basic_block_rec(&mut self, bb: BasicBlock, comp: &Component) -> String {
-        if comp.header == Some(bb) {
+    fn transpile_basic_block_rec(&mut self, bb: BasicBlock, comp: &Component) -> TransResult {
+        Ok(if comp.header == Some(bb) {
             // pass state to next iteration
             format!("return (sum.inl {})\n", comp.state_val)
         } else if !comp.blocks.contains(&bb) {
             // leaving a loop
-            format!("do tmp__ ← {};\nreturn (sum.inr tmp__)", self.transpile_basic_block(bb, &comp.outer.unwrap()))
+            format!("do tmp__ ← {};\nreturn (sum.inr tmp__)", self.transpile_basic_block(bb, &comp.outer.unwrap())?)
         } else {
-            self.transpile_basic_block(bb, comp)
-        }
+            self.transpile_basic_block(bb, comp)?
+        })
     }
 
     /// return value + mutable input references
@@ -671,12 +687,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     /// Desparately tries to figure out a call target, including implicit (type) parameters
-    fn get_call_target(&self, func: &Operand<'tcx>) -> String {
+    fn get_call_target(&self, func: &Operand<'tcx>) -> TransResult {
         match *func {
             Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
                 for ty in substs.types() {
                     if krate::try_unwrap_mut_ref(ty).is_some() {
-                        panic!("unimplemented: instantiating type parameter of {} with {:?}",
+                        throw!("unimplemented: instantiating type parameter of {} with {:?}",
                                self.tcx.item_path_str(def_id), ty);
                     }
                 }
@@ -701,19 +717,19 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     // TODO: should probably substitute and make explicit
                     let ty_params = self.full_generics(def_id).iter().map(|_| "_".to_string()).collect_vec();
                     // analogous to `ItemTranspiler::transpile_trait_params` - see there for examples
-                    let assoc_ty_substs = self.get_assoc_ty_substs(def_id, substs);
-                    let trait_params = try_iter!(self.trait_predicates_without_markers(def_id).map(|trait_pred| -> TransResult<_> {
+                    let assoc_ty_substs = self.get_assoc_ty_substs(def_id, substs)?;
+                    let trait_params = self.trait_predicates_without_markers(def_id).try_flat_map(|trait_pred| -> TransResult<_> {
                         let trait_ref = trait_pred.trait_ref.subst(self.tcx, &substs);
-                        let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs).1;
+                        let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs)?.1;
                         let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
-                        let trait_param = self.infer_trait_impl(trait_ref, &infcx)?.to_string(self);
+                        let trait_param = self.infer_trait_impl(trait_ref, &infcx)?.to_string(self)?;
                         Ok(free_assoc_tys.chain(iter::once(trait_param)))
-                    })).flat_map(|x| x);
+                    })?;
                     Ok((format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" "))
-                }).unwrap()
+                })
             }
             Operand::Constant(_) => unreachable!(),
-            Operand::Consume(ref lv) => self.get_lvalue(lv).to_total(),
+            Operand::Consume(ref lv) => Ok(self.get_lvalue(lv)?.to_total()),
         }
     }
 
@@ -726,7 +742,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         format!("return ({})\n", (ret, mut_args).join(", "))
     }
 
-    fn transpile_basic_block(&mut self, bb: BasicBlock, comp: &Component) -> String {
+    fn transpile_basic_block(&mut self, bb: BasicBlock, comp: &Component) -> TransResult {
         macro_rules! rec { ($bb:expr) => { self.transpile_basic_block_rec($bb, comp) } }
         use rustc::mir::TerminatorKind::*;
 
@@ -739,39 +755,39 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let nonlocal_uses = self.mir.local_decls.indices().map(|v| self.local_name(v))
                 .filter(|v| l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
             // vars that are redefined by l ~> loop state
-            let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.mir.local_decls.indices().filter_map(|v| {
+            let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.mir.local_decls.indices().try_filter_map(|v| -> TransResult<_> {
                 let name = self.local_name(v);
-                if defs.contains(&name) && l_defs.contains(&name) {
-                    let ty = self.transpile_ty(self.lvalue_ty(&Lvalue::Local(v)));
+                Ok(if defs.contains(&name) && l_defs.contains(&name) {
+                    let ty = self.transpile_ty(self.lvalue_ty(&Lvalue::Local(v)))?;
                     Some((ty, name))
-                } else { None }
-            }).unzip();
+                } else { None })
+            })?.unzip();
             let state_ty = state_var_tys.join(" × ");
             l_comp.state_val = format!("({})", state_vars.iter().join(", "));
             let name = format!("{}.loop_{}", self.name(), bb.index());
             let app = (name, nonlocal_uses).join(" ");
-            let ret_ty = format!("sem (sum ({}) {})", state_ty, self.ret_ty());
-            let body = self.transpile_basic_block(bb, &l_comp);
+            let ret_ty = format!("sem (sum ({}) {})", state_ty, self.ret_ty()?);
+            let body = self.transpile_basic_block(bb, &l_comp)?;
             self.prelude.push(format!("definition {} (state__ : {}) : {} :=\n{}", app,
                                       state_ty, ret_ty, detuplize("state__", &state_vars, &body)));
-            return format!("loop ({}) {}", app, l_comp.state_val);
+            return Ok(format!("loop ({}) {}", app, l_comp.state_val))
         }
 
         let data = &self.mir[bb];
-        let stmts = data.statements.iter().map(|s| self.transpile_statement(&s.kind)).collect_vec();
+        let stmts = data.statements.iter().map(|s| self.transpile_statement(&s.kind)).try()?;
         let terminator = match data.terminator {
             Some(ref terminator) => Some(match terminator.kind {
                 Goto { target } =>
-                    rec!(target),
+                    rec!(target)?,
                 If { ref cond, targets: (bb_if, bb_else) } =>
                     // TODO: this duplicates all code after the if
-                    self.get_operand(cond).map(0, |cond| format!(
+                    self.get_operand(cond)?.try_map(0, |cond| Ok(format!(
                         "if {} = bool.tt then\n{}else\n{}", cond,
-                        rec!(bb_if),
-                        rec!(bb_else))),
+                        rec!(bb_if)?,
+                        rec!(bb_else)?)))?,
                 Return => self.return_expr(),
                 Call { ref func, ref args, destination: Some((_, target)), ..  } => {
-                    MaybeValue::map_multi(0, args.iter().map(|op| {
+                    MaybeValue::try_map_multi(0, args.iter().map(|op| {
                         if let Operand::Consume(ref lv) = *op {
                             if krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some() {
                                 // dereference &mut arguments
@@ -779,50 +795,50 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                             }
                         }
                         self.get_operand(op)
-                    }).collect_vec().into_iter(), |sargs| {
-                        let call_target = self.get_call_target(func);
+                    }).try()?, |sargs| {
+                        let call_target = self.get_call_target(func)?;
                         let call = (call_target, sargs).join(" ");
 
-                        let (direct_dests, indirect_dests): (Vec<_>, Vec<_>) = self.call_return_dests(&terminator.kind).into_iter().enumerate().map(|(i, lv)| {
+                        let (direct_dests, indirect_dests): (Vec<_>, Vec<_>) = self.call_return_dests(&terminator.kind).into_iter().enumerate().map(|(i, lv)| -> TransResult<_> {
                             let tmp = format!("«{}$»", self.local_name(lv.as_local().unwrap()));
-                            if krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some() {
+                            Ok(if krate::try_unwrap_mut_ref(self.lvalue_ty(lv)).is_some() {
                                 if i == 0 {
                                     let source = lvalue_of_operand(&args[0]);
                                     // reborrow source into lv, using lens tmp
-                                    (tmp.clone(), Some(self.set_mut_ref(lv, vec![tmp], source.deref())))
+                                    (tmp.clone(), Some(self.set_mut_ref(lv, vec![tmp], source.deref())?))
                                 } else {
                                     // write back through &mut
-                                    (tmp.clone(), Some(self.set_lvalue(&lv.clone().deref(), &tmp)))
+                                    (tmp.clone(), Some(self.set_lvalue(&lv.clone().deref(), &tmp)?))
                                 }
                             } else {
                                 if let Some(name) = self.lvalue_name(lv) {
                                     (name, None)
                                 } else {
-                                    (tmp.clone(), Some(self.set_lvalue(lv, &tmp)))
+                                    (tmp.clone(), Some(self.set_lvalue(lv, &tmp)?))
                                 }
-                            }
-                        }).unzip();
+                            })
+                        }).try()?.unzip();
                         let indirect_dests = indirect_dests.into_iter().filter_map(|x| x).rev().join("");
-                        let rec = rec!(target);
-                        format!("dostep «$tmp» ← {};\n{}", call,
-                                detuplize("«$tmp»", &direct_dests[..], &(indirect_dests + &rec)))
-                    })
+                        let rec = rec!(target)?;
+                        Ok(format!("dostep «$tmp» ← {};\n{}", call,
+                                   detuplize("«$tmp»", &direct_dests[..], &(indirect_dests + &rec))))
+                    })?
                 }
                 // diverging call
                 Call { destination: None, .. } | Unreachable =>
                     "mzero\n".to_string(),
                 Switch { ref discr, ref adt_def, ref targets } => {
-                    let arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| {
+                    let arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| -> TransResult<_> {
                         // binding names used by `get_lvalue`
                         let vars = (0..var.fields.len()).into_iter().map(|i| format!("discr_{}", i));
-                        format!("| {} :=\n{}", (self.name_def_id(var.did), vars).join(" "), rec!(target))
-                    }).join(" ");
-                    self.get_lvalue(discr).map(0, |discr| {
+                        Ok(format!("| {} :=\n{}", (self.name_def_id(var.did), vars).join(" "), rec!(target)?))
+                    }).try()?.join(" ");
+                    self.get_lvalue(discr)?.map(0, |discr| {
                         format!("match {} with\n{}end\n", discr, arms)
                     })
                 },
                 SwitchInt { ref discr, switch_ty: _, ref values, ref targets } => {
-                    self.get_lvalue(discr).map(0, |discr| {
+                    self.get_lvalue(discr)?.try_map(0, |discr| {
                         let arms = values.iter().zip(targets).map(|(val, &target)| {
                             let val = match *val {
                                 ConstVal::Integral(i) => match i.int_type().unwrap() {
@@ -833,38 +849,38 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                 },
                                 _ => unreachable!(),
                             };
-                            format!("| {} :=\n{}", val, rec!(target))
-                        }).collect_vec();
-                        let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap()));
-                        format!("match {} with\n{}\nend\n", discr,
-                                arms.into_iter().chain(iter::once(fallback)).join(""))
-                    })
+                            Ok(format!("| {} :=\n{}", val, rec!(target)?))
+                        }).try()?;
+                        let fallback = format!("| _ :=\n{}", rec!(*targets.last().unwrap())?);
+                        Ok(format!("match {} with\n{}\nend\n", discr,
+                                   arms.into_iter().chain(iter::once(fallback)).join("")))
+                    })?
                 },
                 // out-of-bounds/overflow checks - already part of core/pre.lean
-                Assert { target, /*ref cond, expected,*/ .. } => rec!(target), /*self.get_operand(cond).map(0, |cond| {
+                Assert { target, /*ref cond, expected,*/ .. } => rec!(target)?, /*self.get_operand(cond).map(0, |cond| {
                     format!("cond {} mzero ({})", if expected {cond} else {
                         format!("(bnot {})", cond)
                     }, rec!(target))
                 }),*/
-                Drop { target, .. } => rec!(target),
+                Drop { target, .. } => rec!(target)?,
                 DropAndReplace { ref location, ref value, target, .. } => {
-                    self.transpile_statement(&StatementKind::Assign(location.clone(), Rvalue::Use(value.clone()))) +
-                    &rec!(target)
+                    self.transpile_statement(&StatementKind::Assign(location.clone(), Rvalue::Use(value.clone())))? +
+                       &rec!(target)?
                 }
                 Resume => String::new(),
             }),
             None => None,
         };
-        stmts.into_iter().chain(terminator).join("")
+        Ok(stmts.chain(terminator).join(""))
     }
 
-    pub fn transpile_mir(&mut self) -> String {
+    pub fn transpile_mir(&mut self) -> TransResult {
         let blocks = self.mir.basic_blocks().indices().collect_vec();
         let mut comp = Component::new(&self, START_BLOCK, &blocks[..], None);
         self.transpile_basic_block(START_BLOCK, &mut comp)
     }
 
-    fn ret_ty(&self) -> String {
+    fn ret_ty(&self) -> TransResult {
         self.sup.ret_ty(&self.mir.args_iter().map(|arg| self.mir.local_decls[arg].ty).collect_vec(),
                         self.mir.return_ty)
     }
@@ -876,33 +892,33 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
     }
 
-    pub fn transpile_fn(mut self, mut name: String) -> String {
+    pub fn transpile_fn(mut self, mut name: String) -> TransResult {
         let params = self.mir.args_iter().map(|arg| {
-            format!("({} : {})", self.local_name(arg), self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty)))
-        }).collect_vec();
+            Ok(format!("({} : {})", self.local_name(arg), self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty))?))
+        }).try()?;
 
         let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {
-            let body = FnTranspiler { mir: mir, ..self.clone() }.transpile_mir();
-            format!("do promoted_{} ←\n{};", idx.index(), body)
-        }).collect_vec();
+            let body = FnTranspiler { mir: mir, ..self.clone() }.transpile_mir()?;
+            Ok(format!("do promoted_{} ←\n{};", idx.index(), body))
+        }).try()?;
 
-        let body = (promoted, self.transpile_mir()).join("\n");
+        let body = (promoted, self.transpile_mir()?).join("\n");
 
         // for closures, lookup generics in surrounding fn
         let fn_def_id = if self.is_closure() { self.tcx.parent_def_id(self.def_id).unwrap() } else { self.def_id };
 
         let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
-        let trait_params = self.transpile_trait_params(fn_def_id, None);
+        let trait_params = self.transpile_trait_params(fn_def_id, None)?;
         let includes = self.trait_predicates_without_markers(fn_def_id)
             .map(|trait_pred| {
-                self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref))
-            }).collect_vec();
+                Ok(self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)?))
+            }).try()?.collect_vec();
         let (closure_def, closure_impl) = if self.is_closure() {
             let closure_ty = unwrap_refs(krate::unwrap_mut_ref(&self.mir.local_decls[Local::new(1)].ty));
             let upvar_tys = match closure_ty.sty {
                 ty::TypeVariants::TyClosure(_, ref substs) => substs.upvar_tys(self.def_id, self.tcx),
                 _ => unreachable!(),
-            }.map(|ty| self.transpile_ty(ty)).collect_vec();
+            }.map(|ty| self.transpile_ty(ty)).try()?.collect_vec();
             let ty_params = (0..upvar_tys.len()).map(|i| format!("(U{} : Type₁)", i)).collect_vec();
             let upvar_vars = (0..upvar_tys.len()).map(|i| format!("U{}", i)).collect_vec();
             let closure_def = format!("\nstructure {} := (val : {})\n\n", (&name, &ty_params).join(" "),
@@ -911,7 +927,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let closure_impl = format!("\ndefinition {clo}.inst [instance] : {fn_type} ({}) {} {} :=
 {fn_type}.mk {clo}.fn\n\n",
                                        (&name, &upvar_tys).join(" "),
-                                       upvar_tys.join(" × "), self.transpile_ty(self.mir.return_ty),
+                                       upvar_tys.iter().join(" × "), self.transpile_ty(self.mir.return_ty)?,
                                        clo=name,
                                        fn_type=self.name_def_id(closure_kind.trait_did(self.tcx)));
             (closure_def, closure_impl)
@@ -926,10 +942,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             // FIXME: not actually implemented yet
             format!("fix_opt (λ{}, {})", name, body)
         } else { body };
-        if self.prelude.is_empty() && !self.is_closure() {
+        Ok(if self.prelude.is_empty() && !self.is_closure() {
             format!("definition {} : sem {} :=\n{}",
                     (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
-                    self.ret_ty(), body)
+                    self.ret_ty()?, body)
         } else {
             fn format_params(params: &[String]) -> String {
                 if params.is_empty() {"".to_string()} else {
@@ -947,13 +963,13 @@ end
 {}end",
                     format_params(&ty_params),
                     closure_def,
-                    format_params(&trait_params),
+                    format_params(&trait_params.collect_vec()),
                     if includes.is_empty() {"".to_string()} else {
                         format!("include {}\n", includes.iter().join(" "))
                     },
-                    format_params(&params),
+                    format_params(&params.collect_vec()),
                     self.prelude.iter().join("\n\n"),
-                    name, self.ret_ty(), body, closure_impl)
-        }
+                    name, self.ret_ty()?, body, closure_impl)
+        })
     }
 }

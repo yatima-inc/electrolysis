@@ -23,5 +23,5 @@ definition test.«i32 as test.Shape» [instance] := ⦃
   test.Shape i32
 ⦄
 
-/- test.main: called `Result::unwrap()` on an `Err` value: "unimplemented: vtable VtableObject(upcast=Binder(<Shape as Shape>), vtable_base=0, nested=[])" -/
+/- test.main: unimplemented: vtable VtableObject(upcast=Binder(<Shape as Shape>), vtable_base=0, nested=[]) -/
 
