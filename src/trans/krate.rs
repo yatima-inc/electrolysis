@@ -55,7 +55,7 @@ pub fn name_def_id(tcx: TyCtxt, def_id: DefId) -> String {
 }
 
 pub struct Config<'a> {
-    pub ignored: HashSet<String>, // cache at least this one
+    pub ignored: Regex, // cache at least this one
     pub config: &'a toml::Value,
 }
 
@@ -63,8 +63,8 @@ impl<'a> Config<'a> {
     fn new(config: &'a toml::Value) -> Config {
         Config {
             ignored: match config.lookup("ignore") {
-                Some(ignored) => ::toml_value_as_str_array(ignored).into_iter().map(str::to_string).collect(),
-                None => HashSet::new(),
+                Some(ignored) => Regex::new(&format!("^({})$", ::toml_value_as_str_array(ignored).into_iter().join("|"))).unwrap(),
+                None => Regex::new("^NOPE$").unwrap(),
             },
             config: config,
         }
@@ -153,7 +153,7 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
             return
         }
 
-        if self.config.ignored.contains(&name) {
+        if self.config.ignored.is_match(&name) {
             self.trans_results.insert(def_id, Ok(None));
             return
         }
@@ -165,6 +165,8 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
             ItemTranspiler { sup: self, def_id: def_id }.transpile_def_id()
         });
         self.trans_results.insert(def_id, res);
+        println!("{} / {}", self.trans_results.iter().filter(|r| r.1.is_ok()).count(),
+                 self.trans_results.iter().filter(|r| r.1.is_err()).count());
         let new_deps = self.deps.borrow_mut().drain_new_deps();
         for dep in new_deps {
             self.transpile(dep, filter)

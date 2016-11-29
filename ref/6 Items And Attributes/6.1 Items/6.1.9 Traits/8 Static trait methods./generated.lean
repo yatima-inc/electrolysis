@@ -24,7 +24,7 @@ return (ret)
 
 definition test.«i64 as test.Num» [instance] := ⦃
   test.Num i64,
-  from_i32 := test.«i64 as test.Num».from_i32
+  from_i32 := @test.«i64 as test.Num».from_i32
 ⦄
 
 definition test.main : sem (unit) :=

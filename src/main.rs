@@ -1,6 +1,7 @@
 // we require access to many rustc internals
 #![feature(rustc_private)]
 #![feature(box_patterns, slice_patterns, advanced_slice_patterns)]
+#![feature(field_init_shorthand)]
 #![feature(conservative_impl_trait)]
 
 extern crate itertools;

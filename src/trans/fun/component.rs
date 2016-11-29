@@ -77,7 +77,7 @@ impl<'a> Component<'a> {
             }
             if let Some(ref term) = trans.mir[bb].terminator {
                 match term.kind {
-                    TerminatorKind::Call { ref func, ref args, .. } => {
+                    TerminatorKind::Call { ref func, ref args, destination: Some(_), .. } => {
                         operand(func, &mut uses);
                         for arg in args {
                             operand(arg, &mut uses);

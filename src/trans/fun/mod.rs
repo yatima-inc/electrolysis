@@ -13,13 +13,13 @@ use rustc::mir::*;
 use rustc::middle::const_val::ConstVal;
 use rustc::traits;
 use rustc::ty::{self, Ty};
-use rustc::ty::subst::{Subst, Substs};
+use rustc::ty::subst::Substs;
 use rustc_data_structures::indexed_vec::Idx;
 use syntax::ast;
 
 use self::component::Component;
 use util::*;
-use trans::item;
+use trans::item::{self, LeanTyParam};
 use trans::krate;
 use trans::TransResult;
 
@@ -676,56 +676,43 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     // All type generics including from parent items
-    fn full_generics(&self, def_id: DefId) -> Vec<&'tcx ty::TypeParameterDef<'tcx>> {
-        ::itertools::Unfold::new(Some(def_id), |opt_def_id| {
-            opt_def_id.map(|def_id| {
-                let g = self.tcx.item_generics(def_id);
-                *opt_def_id = g.parent;
-                g.types.iter()
-            })
-        }).flat_map(|t| t).collect()
-    }
-
     /// Desparately tries to figure out a call target, including implicit (type) parameters
     fn get_call_target(&self, func: &Operand<'tcx>) -> TransResult {
         match *func {
-            Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
+            Operand::Constant(Constant { literal: Literal::Item { mut def_id, substs, .. }, .. }) => {
                 for ty in substs.types() {
                     if krate::try_unwrap_mut_ref(ty).is_some() {
                         throw!("unimplemented: instantiating type parameter of {} with {:?}",
                                self.tcx.item_path_str(def_id), ty);
                     }
                 }
-                let substs = substs.clone();
+                let mut substs = substs.clone();
                 self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| -> TransResult {
-                    let (def_id, substs) = match self.tcx.trait_of_item(def_id) {
-                        Some(trait_def_id) => {
+                    match self.tcx.trait_of_item(def_id) {
+                        Some (trait_def_id) => {
                             // from trans::meth::trans_method_callee
                             let trait_ref = ty::TraitRef::from_method(self.tcx, trait_def_id, &substs);
 
-                            match self.infer_trait_impl(trait_ref, &infcx)? {
+                            let trait_impl = self.infer_trait_impl(trait_ref, &infcx)?;
+                            match trait_impl {
                                 item::TraitImplLookup::Static { impl_def_id, substs: impl_substs, .. }  => {
-                                    FnTranspiler::get_impl_method(self.tcx, &substs, impl_def_id, &impl_substs, self.tcx.item_name(def_id))
+                                    let meth = FnTranspiler::get_impl_method(self.tcx, &substs, impl_def_id, &impl_substs, self.tcx.item_name(def_id));
+                                    def_id = meth.0;
+                                    substs = meth.1;
                                 }
-                                item::TraitImplLookup::Dynamic { .. } =>
-                                    (def_id, substs)
+                                item::TraitImplLookup::Dynamic { .. } => {}
                             }
                         }
-                        _ => (def_id, substs)
+                        None => {}
                     };
 
-                    // TODO: should probably substitute and make explicit
-                    let ty_params = self.full_generics(def_id).iter().map(|_| "_".to_string()).collect_vec();
-                    // analogous to `ItemTranspiler::transpile_trait_params` - see there for examples
-                    let assoc_ty_substs = self.get_assoc_ty_substs(def_id, substs)?;
-                    let trait_params = self.trait_predicates_without_markers(def_id).try_flat_map(|trait_pred| -> TransResult<_> {
-                        let trait_ref = trait_pred.trait_ref.subst(self.tcx, &substs);
-                        let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs)?.1;
-                        let free_assoc_tys = free_assoc_tys.into_iter().map(|_| "_".to_string());
-                        let trait_param = self.infer_trait_impl(trait_ref, &infcx)?.to_string(self)?;
-                        Ok(free_assoc_tys.chain(iter::once(trait_param)))
-                    })?;
-                    Ok((format!("@{}", self.name_def_id(def_id)), ty_params.into_iter().chain(trait_params)).join(" "))
+                    let ty_params = self.transpile_ty_params_with_substs(def_id, substs, false)?.iter().map(|p| Ok(match *p {
+                        // TODO: should probably substitute and make explicit
+                        LeanTyParam::RustTyParam(_) | LeanTyParam::AssocTy(_) => "_".to_string(),
+                        LeanTyParam::TraitRef(_, _, trait_ref) =>
+                            self.infer_trait_impl(trait_ref, &infcx)?.to_string(self)?,
+                    })).try()?;
+                    Ok(format!("@{}", (self.name_def_id(def_id), ty_params).join(" ")))
                 })
             }
             Operand::Constant(_) => unreachable!(),
@@ -905,14 +892,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let body = (promoted, self.transpile_mir()?).join("\n");
 
         // for closures, lookup generics in surrounding fn
-        let fn_def_id = if self.is_closure() { self.tcx.parent_def_id(self.def_id).unwrap() } else { self.def_id };
+        let mut fn_def_id = self.def_id;
+        while let hir::map::NodeExpr(&hir::Expr { node: hir::ExprClosure(..), .. }) = self.tcx.map.get(self.tcx.map.as_local_node_id(fn_def_id).unwrap()) {
+            fn_def_id = self.tcx.parent_def_id(fn_def_id).unwrap();
+        }
 
-        let ty_params = self.full_generics(fn_def_id).iter().map(|p| format!("{{{} : Type₁}}", p.name)).collect_vec();
-        let trait_params = self.transpile_trait_params(fn_def_id, None)?;
-        let includes = self.trait_predicates_without_markers(fn_def_id)
-            .map(|trait_pred| {
-                Ok(self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)?))
-            }).try()?.collect_vec();
+        let ty_params = self.transpile_ty_params(fn_def_id)?;
+        let includes = ty_params.iter().filter_map(|p| match *p {
+            LeanTyParam::TraitRef(ref name, _, _) => Some(name),
+            _ => None,
+        }).collect_vec();
         let (closure_def, closure_impl) = if self.is_closure() {
             let closure_ty = unwrap_refs(krate::unwrap_mut_ref(&self.mir.local_decls[Local::new(1)].ty));
             let upvar_tys = match closure_ty.sty {
@@ -944,16 +933,17 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         } else { body };
         Ok(if self.prelude.is_empty() && !self.is_closure() {
             format!("definition {} : sem {} :=\n{}",
-                    (name, ty_params.into_iter().chain(trait_params).chain(params)).join(" "),
+                    (name, ty_params.iter().map(|p| p.to_string()).chain(params)).join(" "),
                     self.ret_ty()?, body)
         } else {
-            fn format_params(params: &[String]) -> String {
+            fn format_params<It: IntoIterator<Item=String>>(params: It) -> String {
+                let params = params.into_iter().collect_vec();
                 if params.is_empty() {"".to_string()} else {
                     format!("parameters {}\n", params.iter().join(" "))
                 }
             }
             format!("section
-{}{}{}{}section
+{}{}{}section
 {}
 
 {}
@@ -961,13 +951,12 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 definition {} : sem {} :=\n{}
 end
 {}end",
-                    format_params(&ty_params),
+                    format_params(ty_params.iter().map(|p| p.to_string())),
                     closure_def,
-                    format_params(&trait_params.collect_vec()),
                     if includes.is_empty() {"".to_string()} else {
                         format!("include {}\n", includes.iter().join(" "))
                     },
-                    format_params(&params.collect_vec()),
+                    format_params(params),
                     self.prelude.iter().join("\n\n"),
                     name, self.ret_ty()?, body, closure_impl)
         })

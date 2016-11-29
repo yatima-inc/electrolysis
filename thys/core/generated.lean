@@ -43,7 +43,7 @@ return (ret)
 
 definition core.«&'a u32 as core.ops.BitAnd<u32>» [instance] := ⦃
   core.ops.BitAnd u32 u32 u32,
-  bitand := core.«&'a u32 as core.ops.BitAnd<u32>».bitand
+  bitand := @core.«&'a u32 as core.ops.BitAnd<u32>».bitand
 ⦄
 
 structure core.ops.RangeFull := mk {} ::
@@ -83,7 +83,7 @@ return (ret)
 
 definition core.«u32 as core.clone.Clone» [instance] := ⦃
   core.clone.Clone u32,
-  clone := core.«u32 as core.clone.Clone».clone
+  clone := @core.«u32 as core.clone.Clone».clone
 ⦄
 
 structure core.default.Default [class] (Self : Type₁)  :=
@@ -96,7 +96,7 @@ return (ret)
 
 definition core.«i32 as core.default.Default» [instance] := ⦃
   core.default.Default i32,
-  default := core.«i32 as core.default.Default».default
+  default := @core.«i32 as core.default.Default».default
 ⦄
 
 inductive core.option.Option (T : Type₁) :=
@@ -151,11 +151,10 @@ structure core.cmp.Ord [class] (Self : Type₁)  extends core.cmp.Eq Self, core.
 (cmp : Self → Self → sem ((core.cmp.Ordering)))
 
 section
-parameters {T : Type₁}
+parameters {T : Type₁} [«core.cmp.Ord T» : core.cmp.Ord T]
 
 structure core.«[T] as core.slice.SliceExt».binary_search.closure_5642 (U0 : Type₁) := (val : U0)
 
-parameters [«core.cmp.Ord T» : core.cmp.Ord T]
 include «core.cmp.Ord T»
 section
 parameters (a1 : (core.«[T] as core.slice.SliceExt».binary_search.closure_5642 T)) (pₐ : T)
@@ -259,9 +258,9 @@ return (ret)
 structure core.slice.SliceExt [class] (Self : Type₁) («<Self as slice.SliceExt>.Item» : Type₁) :=
 (len : Self → sem (usize))
 
-definition core.«[T] as core.slice.SliceExt» [instance] (T : Type₁) := ⦃
+definition core.«[T] as core.slice.SliceExt» [instance] {T : Type₁} := ⦃
   core.slice.SliceExt (slice T) T,
-  len := core.«[T] as core.slice.SliceExt».len
+  len := @core.«[T] as core.slice.SliceExt».len T
 ⦄
 
 definition core.slice.SliceExt.is_empty {Self : Type₁} («<Self as slice.SliceExt>.Item» : Type₁) [«core.slice.SliceExt Self» : core.slice.SliceExt Self «<Self as slice.SliceExt>.Item»] (selfₐ : Self) : sem (bool) :=
@@ -274,8 +273,7 @@ return (ret)
 
 
 section
-parameters {F : Type₁} {T : Type₁}
-parameters [«core.ops.FnMut F (T)» : core.ops.FnMut F (T) (core.cmp.Ordering)]
+parameters {T : Type₁} {F : Type₁} [«core.ops.FnMut F (T)» : core.ops.FnMut F (T) (core.cmp.Ordering)]
 include «core.ops.FnMut F (T)»
 section
 parameters (selfₐ : (slice T)) (fₐ : F)

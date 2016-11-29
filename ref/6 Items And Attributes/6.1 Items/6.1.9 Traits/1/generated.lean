@@ -33,13 +33,13 @@ structure test.Circle [class] (Self : Type₁)  extends test.Shape Self :=
 
 definition test.«test.Foo as test.Shape» [instance] := ⦃
   test.Shape (test.Foo),
-  area := test.«test.Foo as test.Shape».area
+  area := @test.«test.Foo as test.Shape».area
 ⦄
 
 definition test.«test.Foo as test.Circle» [instance] := ⦃
   test.Circle (test.Foo),
   (@test.«test.Foo as test.Shape» ),
-  radius := test.«test.Foo as test.Circle».radius
+  radius := @test.«test.Foo as test.Circle».radius
 ⦄
 
 definition test.main : sem (unit) :=

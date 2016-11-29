@@ -28,7 +28,7 @@ structure test.Bar := mk {} ::
 
 definition test.«test.Bar as test.Foo» [instance] := ⦃
   test.Foo (test.Bar),
-  bar := test.«test.Bar as test.Foo».bar
+  bar := @test.«test.Bar as test.Foo».bar
 ⦄
 
 definition test.«test.Bar as test.Foo».bar (selfₐ : (test.Bar)) : sem (unit) :=

@@ -37,9 +37,9 @@ return (⋆, selfₐ)
 end
 
 
-definition test.«collections.vec.Vec<T> as test.Container» [instance] (T : Type₁) := ⦃
+definition test.«collections.vec.Vec<T> as test.Container» [instance] {T : Type₁} := ⦃
   test.Container (collections.vec.Vec T) T,
-  empty := test.«collections.vec.Vec<T> as test.Container».empty,
-  insert := test.«collections.vec.Vec<T> as test.Container».insert
+  empty := @test.«collections.vec.Vec<T> as test.Container».empty T,
+  insert := @test.«collections.vec.Vec<T> as test.Container».insert T
 ⦄
 

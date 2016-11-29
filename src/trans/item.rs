@@ -33,6 +33,30 @@ impl<'tcx> TraitImplLookup<'tcx> {
     }
 }
 
+pub enum LeanTyParam<'tcx> {
+    RustTyParam(String),
+    AssocTy(String),
+    TraitRef(String, String, ty::TraitRef<'tcx>),
+}
+
+impl<'tcx> LeanTyParam<'tcx> {
+    pub fn to_string(&self) -> String {
+        match *self {
+            LeanTyParam::RustTyParam(ref name) => format!("{{{} : Type₁}}", name),
+            LeanTyParam::AssocTy(ref name) => format!("({} : Type₁)", name),
+            LeanTyParam::TraitRef(ref name, ref ty, _) => format!("[{} : {}]", name, ty),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match *self {
+            LeanTyParam::RustTyParam(ref name) => name,
+            LeanTyParam::AssocTy(ref name) => name,
+            LeanTyParam::TraitRef(ref name, _, _) => name,
+        }
+    }
+}
+
 pub struct ItemTranspiler<'a, 'tcx: 'a> {
     pub sup: &'a CrateTranspiler<'a, 'tcx>,
     pub def_id: DefId,
@@ -138,19 +162,54 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         ty::ParameterEnvironment::for_item(self.tcx, self.tcx.map.as_local_node_id(def_id).unwrap()).free_substs
     }
 
-    /// `where T : Iterator` ~> `['(Item : Type)', '[Iterator : Iterator T Item]']`
-    pub fn transpile_trait_params(&self, def_id: DefId, ignore: Option<DefId>) -> TransResult<impl Iterator<Item=String>> {
-        let assoc_ty_substs = self.get_assoc_ty_substs(def_id, self.free_substs_for_item(def_id))?;
-        self.trait_predicates_without_markers(def_id)
-            .filter(|trait_pred| ignore != Some(trait_pred.def_id()))
-            .try_flat_map(|trait_pred| {
-                let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_pred.trait_ref, &assoc_ty_substs)?.1;
-                let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| format!("({} : Type₁)", ty));
-                let trait_param = format!("[{} : {}]",
-                                          self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_pred.trait_ref)?),
-                                          self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs)?);
-                Ok(free_assoc_tys.chain(iter::once(trait_param)))
+    /// `T : Iterator` ~> `[(T : Type), (Item : Type), [Iterator : Iterator T Item]]`
+    pub fn transpile_ty_params_with_substs(&self, def_id: DefId, substs: &Substs<'tcx>, is_trait: bool) -> TransResult<Vec<LeanTyParam<'tcx>>> {
+        if self.tcx.def_key(def_id).disambiguated_data.data == hir::map::definitions::DefPathData::ClosureExpr {
+            // closure shares params with outer scope
+            return self.transpile_ty_params(self.tcx.parent_def_id(def_id).unwrap())
+        }
+        let mut parent_params = vec![];
+        if let Some(trait_def_id) = self.tcx.trait_of_item(def_id) {
+            // typeclass fields already derive the parent params
+            if trait_def_id != self.def_id {
+                parent_params = self.transpile_ty_params_with_substs(trait_def_id, substs, true)?
+            }
+        } else if let Some(impl_def_id) = self.tcx.impl_of_method(def_id) {
+            parent_params = self.transpile_ty_params_with_substs(impl_def_id, substs, false)?
+        };
+
+        let ty_params = self.tcx.item_generics(def_id).types.iter().map(|p| LeanTyParam::RustTyParam(p.name.as_str().to_string()));
+        let assoc_ty_substs = self.get_assoc_ty_substs(def_id, substs)?;
+
+        let predicates = if is_trait {
+            // for trait items, ignore predicates on trait except for the `Self: Trait` predicate
+            self.tcx.item_predicates(def_id).predicates.into_iter().filter(|pred| match *pred {
+                ty::Predicate::Trait(ref trait_pred) => trait_pred.def_id() == def_id,
+                _ => false,
+            }).collect_vec()
+        } else {
+                self.tcx.item_predicates(def_id).predicates
+        };
+        let trait_params = predicates.into_iter()
+            .filter_map(|trait_pred| match trait_pred {
+                ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.def_id()) => Some(trait_pred.clone().0),
+                _ => None,
             })
+            .try_flat_map(|trait_pred| {
+                let trait_ref = trait_pred.trait_ref.subst(self.tcx, substs);
+                let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs)?.1;
+                let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| LeanTyParam::AssocTy(ty));
+                let trait_param = LeanTyParam::TraitRef(
+                    self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref)?),
+                    self.transpile_trait_ref(trait_ref, &assoc_ty_substs)?,
+                    trait_ref);
+                Ok(free_assoc_tys.chain(iter::once(trait_param)))
+            })?;
+        Ok(parent_params.into_iter().chain(ty_params).chain(trait_params).collect_vec())
+    }
+
+    pub fn transpile_ty_params(&self, def_id: DefId) -> TransResult<Vec<LeanTyParam<'tcx>>> {
+        self.transpile_ty_params_with_substs(def_id, self.free_substs_for_item(def_id), false)
     }
 
     /// `Fn(&mut T) -> R` ~> `(R × T)`
@@ -171,18 +230,30 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     pub fn normalize_ty(&self, value: Ty<'tcx>) -> Ty<'tcx> {
         self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
             let mut selcx = SelectionContext::new(&infcx);
-            normalize(&mut selcx, ObligationCause::dummy(), &value).value
+            let normalized = normalize(&mut selcx, ObligationCause::dummy(), &value);
+            let mut fulfill_cx = FulfillmentContext::new();
+            for obl in normalized.obligations {
+                fulfill_cx.register_predicate_obligation(&infcx, obl);
+            }
+            let span = ::syntax::codemap::DUMMY_SP;
+            infcx.drain_fulfillment_cx_or_panic(span, &mut fulfill_cx, &normalized.value)
                 .lift_to_tcx(self.tcx)
-                .unwrap_or(value)
+                .unwrap()
         })
     }
 
-    fn normalize_trait_ref(&self, value: ty::TraitRef<'tcx>) -> ty::TraitRef<'tcx> {
+    pub fn normalize_trait_ref(&self, value: ty::TraitRef<'tcx>) -> ty::TraitRef<'tcx> {
         self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
             let mut selcx = SelectionContext::new(&infcx);
-            normalize(&mut selcx, ObligationCause::dummy(), &value).value
+            let normalized = normalize(&mut selcx, ObligationCause::dummy(), &value);
+            let mut fulfill_cx = FulfillmentContext::new();
+            for obl in normalized.obligations {
+                fulfill_cx.register_predicate_obligation(&infcx, obl);
+            }
+            let span = ::syntax::codemap::DUMMY_SP;
+            infcx.drain_fulfillment_cx_or_panic(span, &mut fulfill_cx, &normalized.value)
                 .lift_to_tcx(self.tcx)
-                .unwrap_or(value)
+                .unwrap()
         })
     }
 
@@ -341,6 +412,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_struct(&self, suffix: &str, variant: ty::VariantDef<'tcx>) -> TransResult {
+        if self.transpile_ty_params(self.def_id)?.iter().any(|p| match *p {
+            LeanTyParam::AssocTy(_) => true,
+            _ => false,
+        }) {
+            throw!("unimplemented: struct with associated type dependency")
+        }
         Ok(match variant.ctor_kind {
             CtorKind::Fictive => { // actual (non-fictive) struct
                 let mut fields = variant.fields.iter().map(|f| -> TransResult {
@@ -435,12 +512,9 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 if self.tcx.provided_trait_methods(self.def_id).iter().any(|m| m.name == item.name) || only.iter().any(|only| !only.contains(&*item.name.as_str())) {
                     None
                 } else {
-                    let ty_params = self.tcx.item_generics(item.def_id).types.iter().map(|p| format!("{{{} : Type₁}}", p.name));
-                    // ignore current trait as bound
-                    let trait_params = self.transpile_trait_params(item.def_id, Some(self.def_id))?;
-                    let params = ty_params.chain(trait_params).collect_vec();
-                    let pi = if params.is_empty() { "".to_string() } else {
-                        format!("Π {}, ", params.into_iter().join(" "))
+                    let ty_params = self.transpile_ty_params(item.def_id)?;
+                    let pi = if ty_params.is_empty() { "".to_string() } else {
+                        format!("Π {}, ", ty_params.iter().map(LeanTyParam::to_string).join(" "))
                     };
                     let ty = self.transpile_ty(self.tcx.item_type(item.def_id))?;
                     Some(format!("({} : {}{})", item.name, pi, ty))
@@ -478,10 +552,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         trait_ref.substs = self.tcx.erase_regions(&trait_ref.substs);
         let assoc_ty_substs = self.trait_impl_substs(trait_ref)?;
 
-        // `Self : Iterator<Item=T>` ~> `'[Iterator T]'`
-        let mut trait_params = self.trait_predicates_without_markers(self.def_id).map(|trait_pred| -> TransResult {
-            Ok(format!(" [{}]", self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs)?))
-        }).try()?;
+        let ty_params = self.transpile_ty_params(self.def_id)?;
         let supertrait_impls = self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
             self.trait_predicates_without_markers(trait_ref.def_id).map(|p| p.subst(self.tcx, trait_ref.substs))
                 .filter(|trait_pred| trait_pred.def_id() != trait_ref.def_id)
@@ -500,16 +571,15 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 } else if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
                     throw!("unimplemented: overriding default method {:?}", self.name_def_id(item.def_id))
                 } else {
-                    Some(format!("{} := {}", item.name, self.name_def_id(item.def_id)))
+                    Some(format!("{} := @{}", item.name, (self.name_def_id(item.def_id), ty_params.iter().map(|p| p.name())).join(" ")))
                 }
             }
             ty::AssociatedKind::Const =>
                 throw!("unimplemented: const trait items"),
         }))?.collect_vec();
 
-        Ok(format!("definition {}{} := ⦃\n  {}\n⦄",
-                   self.as_generic_ty_def(" [instance]"),
-                   trait_params.join(""),
+        Ok(format!("definition {} := ⦃\n  {}\n⦄",
+                   (self.name() + " [instance]", ty_params.iter().map(LeanTyParam::to_string)).join(" "),
                    (self.transpile_trait_ref(trait_ref, &assoc_ty_substs)?, supertrait_impls.into_iter().chain(items)).join(",\n  ")))
     }
 

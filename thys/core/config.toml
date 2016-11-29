@@ -17,9 +17,12 @@ ignore = [
   "core.ops.FnOnce", "core.ops.FnMut", "core.ops.Fn",
   # unsafe
   "core.mem.swap",
-  "core.«[T] as core.slice.SliceExt».len",
+  'core.«\[T\] as core.slice.SliceExt».len',
   # big caches, won't work anyway without floats
   "core.num.flt2dec.strategy.grisu.CACHED_POW10", "core.num.dec2flt.table.POWERS",
+  # way too big with naive if compilation
+  'core.«\(A, B, C, D, E.*',
+  'core.«\(A,\) as.*',
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline

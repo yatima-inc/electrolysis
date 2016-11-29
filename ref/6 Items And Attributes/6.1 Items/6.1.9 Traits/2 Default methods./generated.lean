@@ -32,6 +32,6 @@ return (⋆)
 
 definition test.«test.Bar as test.Foo» [instance] := ⦃
   test.Foo (test.Bar),
-  bar := test.«test.Bar as test.Foo».bar
+  bar := @test.«test.Bar as test.Foo».bar
 ⦄
 

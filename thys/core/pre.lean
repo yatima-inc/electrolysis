@@ -269,6 +269,12 @@ namespace core
   /- This trait has way too many freaky dependencies -/
   structure fmt.Debug [class] (Self : Type₁) := mk ::
 
+  -- architecture dependent
+  definition isize.min_value := return $ signed.min isize.bits
+  definition isize.max_value := return $ signed.max isize.bits
+  definition usize.min_value := return (0 : nat)
+  definition usize.max_value := return $ unsigned.max usize.bits
+
   namespace ops
     structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
     (call_once : Self → Args → sem Output)
