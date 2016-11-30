@@ -27,7 +27,7 @@ pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
             .trim_left_matches("_").to_string();
         match part.as_ref() {
             "{{constructor}}" => "mk".to_string(),
-            "at" | "by" | "end" | "from" => format!("«{}»", part),
+            "at" | "by" | "end" | "from" | "private" => format!("«{}»", part),
             _ if LEAN_ID.is_match(&part) => part.to_string(),
             _ => format!("«{}»", part),
         }

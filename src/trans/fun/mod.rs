@@ -283,13 +283,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn update_struct(&self, ty: ty::Ty<'tcx>, field: Field, base: &str, val: &str) -> TransResult {
         let adt_def = ty.ty_adt_def().unwrap();
         let field_name = self.mk_lean_name(&*adt_def.struct_variant().fields[field.index()].name.as_str());
-        let rest = if adt_def.struct_variant().fields.len() > 1 {
-            format!(", {}", base)
-        } else { "".to_string() };
-        Ok(format!("⦃ {}, {} := {}{} ⦄",
-                   self.transpile_ty(ty)?,
-                   field_name, val,
-                   rest))
+        Ok(if adt_def.struct_variant().fields.len() > 1 {
+            format!("(let' («$tmp» : {ty}) ← {}; ⦃ {ty}, {} := {}, «$tmp» ⦄)",
+                    base, field_name, val, ty=self.transpile_ty(ty)?)
+        } else {
+            format!("⦃ {}, {} := {} ⦄",
+                   self.transpile_ty(ty)?, field_name, val)
+        })
     }
 
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
@@ -842,7 +842,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         // binding names used by `get_lvalue`
                         let mut vars = (0..var.fields.len()).into_iter().map(|i| format!("discr_{}", i)).collect_vec();
                         if var.ctor_kind == CtorKind::Fictive {
-                            vars = vec![(self.name_def_id(var.did) + ".struct.mk", vars).join(" ")]
+                            vars = vec![format!("({})", (self.name_def_id(var.did) + ".struct.mk", vars).join(" "))]
                         }
                         Ok(format!("| {} :=\n{}", (self.name_def_id(var.did), vars).join(" "), rec!(target)?))
                     }).try()?.join(" ");

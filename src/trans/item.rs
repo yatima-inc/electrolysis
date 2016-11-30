@@ -463,17 +463,17 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         })})?;
         let mut variants = adt_def.variants.iter().map(|variant| -> TransResult<_> {Ok(match variant.ctor_kind {
             CtorKind::Const => // unit variant
-                format!("| {} {{}} : {}", variant.name, applied_ty),
+                format!("| {} {{}} : {}", self.mk_lean_name(variant.name), applied_ty),
             CtorKind::Fn => { // tuple variant
                 let fields = variant.fields.iter().map(|f| {
                     self.transpile_ty(f.unsubst_ty())
                 }).try()?;
                 let ty = fields.chain(iter::once(applied_ty.clone())).join(" → ");
-                format!("| {} {{}} : {}", variant.name, ty)
+                format!("| {} {{}} : {}", self.mk_lean_name(variant.name), ty)
             }
             CtorKind::Fictive => { // struct variant
                 format!("| {} {{}} : {} → {}",
-                        variant.name,
+                        self.mk_lean_name(variant.name),
                         self.mk_applied_ty(&format!("{}.{}.struct", name, variant.name), generics),
                         applied_ty)
             }
@@ -481,7 +481,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         // if no variants have data attached, add a function to extract the discriminant
         let discr = if !adt_def.variants.is_empty() && adt_def.variants.iter().all(|variant| variant.ctor_kind == CtorKind::Const) {
             let discrs = adt_def.variants.iter().map(|variant| {
-                format!("| {}.{} := {}", name, variant.name,
+                format!("| {} := {}", krate::mk_lean_name_from_parts(&[name, &*variant.name.as_str()]),
                         variant.disr_val.to_u64_unchecked() as i64)
             }).join("\n");
             format!("\n\ndefinition {}.discr {} : isize := match self with\n{}\nend",
