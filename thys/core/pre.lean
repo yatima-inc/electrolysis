@@ -299,64 +299,20 @@ namespace core
 
   -- architecture dependent
   definition isize.min_value := return $ signed.min isize.bits
-  definition isize.max_value := return $ signed.max isize.bits
   definition usize.min_value := return (0 : nat)
-  definition usize.max_value := return $ unsigned.max usize.bits
 
   definition num.wrapping.shift_max.platform.isize := return isize.bits
   definition num.wrapping.shift_max.platform.usize := return usize.bits
 
-  definition usize.overflowing_add := intrinsics.add_with_overflow usize.bits
-  definition usize.overflowing_sub := intrinsics.sub_with_overflow usize.bits
-  definition usize.overflowing_mul := intrinsics.mul_with_overflow usize.bits
-  definition usize.overflowing_div (a b : nat) := sem.guard (b ≠ 0) $ return (a / b, ff)
-  definition usize.overflowing_rem (a b : nat) := sem.guard (b ≠ 0) $ return (a % b, ff)
-  definition usize.overflowing_neg (a : nat) :=
-  return ((2^usize.bits - a) % 2^usize.bits, a ≠ᵇ 0)
   definition usize.overflowing_shl (a b : nat) :=
   return (unary_unsigned_bitwise_op usize.bits (λ a, bitvec.shl a b) (a % usize.bits), a ≥ᵇ usize.bits)
   definition usize.overflowing_shr (a b : nat) :=
   return (unary_unsigned_bitwise_op usize.bits (λ a, bitvec.ushr a b) (a % usize.bits), a ≥ᵇ usize.bits)
 
-  definition usize.wrapping_add (a b : nat) := sem.map prod.pr1 (usize.overflowing_add a b)
-  definition usize.wrapping_sub (a b : nat) := sem.map prod.pr1 (usize.overflowing_sub a b)
-  definition usize.wrapping_mul (a b : nat) := sem.map prod.pr1 (usize.overflowing_mul a b)
-  definition usize.wrapping_div (a b : nat) := sem.map prod.pr1 (usize.overflowing_div a b)
-  definition usize.wrapping_rem (a b : nat) := sem.map prod.pr1 (usize.overflowing_rem a b)
-  definition usize.wrapping_neg (a : nat) := sem.map prod.pr1 (usize.overflowing_neg a)
-  definition usize.wrapping_shl (a b : nat) := sem.map prod.pr1 (usize.overflowing_shl a b)
-  definition usize.wrapping_shr (a b : nat) := sem.map prod.pr1 (usize.overflowing_shr a b)
-
-  definition usize.checked_add (a b : nat) := sem.map (λ p, if p.2 = tt then
-    option.Option.None else option.Option.Some p.1) (usize.overflowing_add a b)
-
-  definition isize.overflowing_add := overflowing_signed add isize.bits
-  definition isize.overflowing_sub := overflowing_signed sub isize.bits
-  definition isize.overflowing_mul := overflowing_signed mul isize.bits
-  definition isize.overflowing_div := overflowing_signed div isize.bits
-  definition isize.overflowing_rem := overflowing_signed mod isize.bits
-  definition isize.overflowing_neg (a : int) :=
-  return (wrap_signed isize.bits (-a), is_bounded_int isize.bits (-a))
   definition isize.overflowing_shl (a : int) (b : nat) :=
   return (unary_signed_bitwise_op isize.bits (λ n a, bitvec.shl a b) (a % isize.bits), a ≥ᵇ isize.bits)
   definition isize.overflowing_shr (a : int) (b : nat) :=
   return (unary_signed_bitwise_op isize.bits (λ n a, bitvec.sshr a b) (a % isize.bits), a ≥ᵇ isize.bits)
-
-  definition isize.wrapping_add (a b : int) := sem.map prod.pr1 (isize.overflowing_add a b)
-  definition isize.wrapping_sub (a b : int) := sem.map prod.pr1 (isize.overflowing_sub a b)
-  definition isize.wrapping_mul (a b : int) := sem.map prod.pr1 (isize.overflowing_mul a b)
-  definition isize.wrapping_div (a b : int) := sem.map prod.pr1 (isize.overflowing_div a b)
-  definition isize.wrapping_rem (a b : int) := sem.map prod.pr1 (isize.overflowing_rem a b)
-  definition isize.wrapping_neg (a : int) := sem.map prod.pr1 (isize.overflowing_neg a)
-  definition isize.wrapping_shl a b := sem.map prod.pr1 (isize.overflowing_shl a b)
-  definition isize.wrapping_shr a b := sem.map prod.pr1 (isize.overflowing_shr a b)
-
-  definition isize.checked_add (a b : int) := sem.map (λ p, if p.2 = tt then
-    option.Option.None else option.Option.Some p.1) (isize.overflowing_add a b)
-  definition isize.checked_sub (a b : int) := sem.map (λ p, if p.2 = tt then
-    option.Option.None else option.Option.Some p.1) (isize.overflowing_sub a b)
-  definition isize.checked_mul (a b : int) := sem.map (λ p, if p.2 = tt then
-    option.Option.None else option.Option.Some p.1) (isize.overflowing_mul a b)
 
   namespace ops
     structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=

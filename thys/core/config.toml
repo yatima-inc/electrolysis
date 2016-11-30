@@ -1,16 +1,5 @@
 rustc_args = "$RUST_SRC_PATH/libcore/lib.rs"
 
-targets = [
-  'core.«\[T\] as core.slice.SliceExt».(binary_search|get)',
-  #fixedbitset
-  "core.marker.PhantomData", "core.marker.Copy", "core.iter.iterator.Iterator",
-  "core.«&'a u32 as core.ops.BitAnd<u32>»",
-  "core.«u32 as core.clone.Clone»",
-  #ref
-  "core.«i32 as core.default.Default»",
-  'core.ops.Range\w*',
-]
-
 # items axiomatized in pre.lean
 ignore = [
   # items axiomatized in pre.lean
@@ -19,6 +8,8 @@ ignore = [
   'core.intrinsics.(.*_with_overflow|overflowing_.*)',
   "core.mem.swap",
   'core.«\[T\] as core.slice.SliceExt».len',
+  '[iu]size.(min_value|overflowing_sh.)',
+  'num.wrapping.shift_max.platform.[iu]size',
   # introduces looping identity class instances
   'core.«\(A,\) as.*',
 ]

@@ -42,7 +42,7 @@ use itertools::Itertools;
 use petgraph::algo::*;
 use regex::Regex;
 
-use syntax::ast::{self, NodeId};
+use syntax::ast::NodeId;
 use rustc::hir::{self, intravisit};
 use rustc::ty;
 
@@ -149,17 +149,6 @@ struct IdCollector<'a, 'tcx : 'a> {
 }
 
 impl<'a, 'tcx> IdCollector<'a, 'tcx> {
-    fn skip(&self, attrs: &[ast::Attribute]) -> bool {
-        // skip config-dependent definitions except for `#[cfg(not(test))]`
-        attrs.iter().any(|attr| attr.check_name("cfg") && !match *attr.meta().meta_item_list().unwrap() {
-            [ref arg] => arg.check_name("not") && match *arg.meta_item_list().unwrap() {
-                [ref argarg] => argarg.word().map_or(false, |word| word.check_name("test")),
-                _ => false,
-            },
-            _ => false,
-        })
-    }
-
     fn insert(&mut self, id: NodeId) {
         if let Some(def_id) = self.tcx.map.opt_local_def_id(id) {
             self.ids.push(def_id);
@@ -169,10 +158,6 @@ impl<'a, 'tcx> IdCollector<'a, 'tcx> {
 
 impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
     fn visit_item(&mut self, item: &'a hir::Item) {
-        if self.skip(&item.attrs) {
-            return
-        }
-
         if let hir::Item_::ItemDefaultImpl(_, _) = item.node {
             return // default impls don't seem to be part of the HIR map
         }
@@ -199,17 +184,11 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
     }
 
     fn visit_impl_item(&mut self, ii: &'a hir::ImplItem) {
-        if self.skip(&ii.attrs) {
-            return
-        }
         self.insert(ii.id);
         intravisit::walk_impl_item(self, ii);
     }
 
     fn visit_trait_item(&mut self, trait_item: &'a hir::TraitItem) {
-        if self.skip(&trait_item.attrs) {
-            return
-        }
         self.insert(trait_item.id);
         intravisit::walk_trait_item(self, trait_item);
     }

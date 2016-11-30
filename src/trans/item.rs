@@ -205,6 +205,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             })
             .try_flat_map(|trait_pred| {
                 let trait_ref = trait_pred.trait_ref.subst(self.tcx, substs);
+                self.add_dep(trait_ref.def_id);
                 let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs)?.1;
                 let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| LeanTyParam::AssocTy(ty));
                 let trait_param = LeanTyParam::TraitRef(
