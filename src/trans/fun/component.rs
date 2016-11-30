@@ -29,15 +29,40 @@ impl<'a> Component<'a> {
         }
     }
 
-    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &FnTranspiler) -> (HashSet<String>, HashSet<String>) {
-        fn operand<'a, 'tcx>(op: &'a Operand<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
+    pub fn defs_uses<'b, It: Iterator<Item=&'b BasicBlock>>(blocks: It, trans: &FnTranspiler) -> (HashSet<Local>, HashSet<Local>) {
+        // fill `uses` and return root local
+        fn lvalue(lv: &Lvalue, uses: &mut HashSet<Local>) -> Option<Local> {
+            match *lv {
+                Lvalue::Local(l) => Some(l),
+                Lvalue::Static(_) => None,
+                Lvalue::Projection(box Projection { ref base, ref elem }) => {
+                    if let ProjectionElem::Index(ref idx) = *elem {
+                        operand(idx, uses)
+                    }
+                    let lbase = lvalue(base, uses);
+                    if let Some(lbase) = lbase {
+                        uses.insert(lbase);
+                    }
+                    lbase
+                }
+            }
+        }
+
+        // fill `uses` and insert root local
+        fn use_lvalue(lv: &Lvalue, uses: &mut HashSet<Local>) {
+            if let Some(llv) = lvalue(lv, uses) {
+                uses.insert(llv);
+            }
+        }
+
+        fn operand(op: &Operand, uses: &mut HashSet<Local>) {
             match *op {
-                Operand::Consume(ref lv) => uses.push(lv),
+                Operand::Consume(ref lv) => use_lvalue(lv, uses),
                 Operand::Constant(_) => {}
             }
         }
 
-        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut Vec<&'a Lvalue<'tcx>>) {
+        fn rvalue<'a, 'tcx>(rv: &'a Rvalue<'tcx>, uses: &mut HashSet<Local>) {
             match *rv {
                 Rvalue::Use(ref op) => operand(op, uses),
                 Rvalue::UnaryOp(_, ref op) => operand(op, uses),
@@ -45,7 +70,7 @@ impl<'a> Component<'a> {
                     operand(o1, uses);
                     operand(o2, uses);
                 }
-                Rvalue::Ref(_, _, ref lv) => uses.push(lv),
+                Rvalue::Ref(_, _, ref lv) => use_lvalue(lv, uses),
                 Rvalue::Aggregate(_, ref ops) => {
                     for op in ops {
                         operand(op, uses);
@@ -53,23 +78,29 @@ impl<'a> Component<'a> {
                 }
                 Rvalue::Cast(_, ref op, _) => operand(op, uses),
                 Rvalue::Repeat(ref op, _) => operand(op, uses),
-                Rvalue::Len(ref lv) => uses.push(lv),
+                Rvalue::Len(ref lv) => use_lvalue(lv, uses),
                 Rvalue::Box(_) | Rvalue::InlineAsm { .. } => {}
             }
         }
 
-        let mut defs = Vec::new();
-        let mut uses = Vec::new();
+        let mut defs = HashSet::new();
+        let mut uses = HashSet::new();
 
         for &bb in blocks {
             for stmt in &trans.mir[bb].statements {
                 match stmt.kind {
-                    StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref ldest)) => {
-                        defs.push(lv);
-                        defs.push(ldest);
+                    StatementKind::Assign(ref lv, Rvalue::Ref(_, BorrowKind::Mut, ref dest)) => {
+                        if let Some(llv) = lvalue(lv, &mut uses) {
+                            defs.insert(llv);
+                        }
+                        if let Some(ldest) = lvalue(dest, &mut uses) {
+                            defs.insert(ldest);
+                        }
                     }
                     StatementKind::Assign(ref lv, ref rv) => {
-                        defs.push(lv);
+                        if let Some(llv) = lvalue(lv, &mut uses) {
+                            defs.insert(llv);
+                        }
                         rvalue(rv, &mut uses);
                     }
                     _ => {}
@@ -82,14 +113,23 @@ impl<'a> Component<'a> {
                         for arg in args {
                             operand(arg, &mut uses);
                         }
-                        defs.extend(trans.call_return_dests(&term.kind));
+                        for dest in trans.call_return_dests(&term.kind) {
+                            if let Some(ldest) = lvalue(dest, &mut uses) {
+                                defs.insert(ldest);
+                            }
+                        }
+                    }
+                    TerminatorKind::DropAndReplace { ref location, ref value, .. } => {
+                        if let Some(llocation) = lvalue(location, &mut uses) {
+                            defs.insert(llocation);
+                        }
+                        operand(value, &mut uses);
                     }
                     _ => {}
                 }
             }
         }
 
-        (defs.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect(),
-         uses.into_iter().filter_map(|lv| trans.lvalue_name(lv)).collect())
+        (defs, uses)
     }
 }

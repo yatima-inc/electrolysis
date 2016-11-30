@@ -5,6 +5,7 @@ use std::iter;
 use std::ops::Deref;
 
 use itertools::Itertools;
+use regex::Regex;
 
 use rustc::hir;
 use rustc::hir::def::CtorKind;
@@ -23,11 +24,17 @@ use trans::item::{self, LeanTyParam};
 use trans::krate;
 use trans::TransResult;
 
+lazy_static! {
+    // intrinsics that break parametricity and have to be invoked with bit count and signedness
+    static ref NUM_INTRINSICS: Regex =
+        Regex::new(r"^core.intrinsics.(overflowing_.*|.*_with_overflow)$").unwrap();
+}
+
 /// `mk_tuple("x", "y")` ~> `"(x, y)"`
-fn mk_tuple<It: Iterator<Item=String>>(it: It) -> String {
-    match it.collect_vec()[..] {
+fn mk_tuple<It: IntoIterator<Item=T>, T: ::std::fmt::Display>(it: It) -> String {
+    match it.into_iter().collect_vec()[..] {
         [] => "⋆".to_string(),
-        [ref x] => x.clone(),
+        [ref x] => x.to_string(),
         ref xs => format!("({})", xs.into_iter().join(", "))
     }
 }
@@ -41,16 +48,16 @@ fn get_tuple_elem<S : AsRef<str>>(value: S, idx: usize, len: usize) -> String {
 
 /// `get_tuple_elem('x', 1, 3)` ~> `'x.1.2'`
 fn set_tuple_elem<S : AsRef<str>>(tuple: S, value: S, idx: usize, len: usize) -> String {
-    format!("({})", (0..len).into_iter().map(|i| if idx == i {value.as_ref().to_string()} else {
+    mk_tuple((0..len).into_iter().map(|i| if idx == i {value.as_ref().to_string()} else {
         get_tuple_elem(tuple.as_ref(), i, len)
-    }).join(", "))
+    }))
 }
 
 // TODO: instead implement pattern let in Lean
 fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
     match *pat {
         [ref x] => format!("let' {} ← {};\n{}", x, val, cont),
-        _ => format!("match {} with ({}) :=\n{}end\n", val, pat.into_iter().join(", "), cont),
+        _ => format!("match {} with {} :=\n{}end\n", val, mk_tuple(pat), cont),
     }
 }
 
@@ -191,7 +198,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn local_name(&self, local: Local) -> String {
         let opt_name = self.mir.local_decls[local].name;
         match self.mir.local_kind(local) {
-            LocalKind::Var => self.mk_lean_name(&*opt_name.unwrap().as_str()),
+            LocalKind::Var => self.mk_lean_name(format!("{}ᵥ", opt_name.unwrap())),
             LocalKind::Temp => format!("t{}", local.index()),
             LocalKind::Arg => match opt_name {
                 Some(name) => format!("{}ₐ", name),
@@ -273,15 +280,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         lv.ty(self.mir, self.tcx).to_ty(self.tcx)
     }
 
-    fn update_struct(&self, adt_def: &ty::AdtDef<'tcx>, field: Field, base: &str, val: &str) -> String {
-        let field_name = adt_def.struct_variant().fields[field.index()].name;
+    fn update_struct(&self, ty: ty::Ty<'tcx>, field: Field, base: &str, val: &str) -> TransResult {
+        let adt_def = ty.ty_adt_def().unwrap();
+        let field_name = self.mk_lean_name(&*adt_def.struct_variant().fields[field.index()].name.as_str());
         let rest = if adt_def.struct_variant().fields.len() > 1 {
             format!(", {}", base)
         } else { "".to_string() };
-        format!("⦃ {}, {} := {}{} ⦄",
-                self.name_def_id(adt_def.did),
-                field_name, val,
-                rest)
+        Ok(format!("⦃ {}, {} := {}{} ⦄",
+                   self.transpile_ty(ty)?,
+                   field_name, val,
+                   rest))
     }
 
     fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
@@ -307,9 +315,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         }
                     }
                     ProjectionElem::Field(field, _) => {
-                        match unwrap_refs(self.lvalue_ty(base)).sty {
-                            ty::TypeVariants::TyAdt(ref adt_def, _) =>
-                                self.set_lvalue(base, &self.update_struct(adt_def, field, &sbase, val)),
+                        let ty = unwrap_refs(self.lvalue_ty(base));
+                        match ty.sty {
+                            ty::TypeVariants::TyAdt(_, _) =>
+                                self.set_lvalue(base, &self.update_struct(ty, field, &sbase, val)?),
                             ty::TypeVariants::TyClosure(def_id, ref substs) => {
                                 let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
                                 self.set_lvalue(base, &format!(
@@ -476,7 +485,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     MaybeValue::total("⋆")
                 } else {
                     MaybeValue::and_then_multi(0, ops.iter().map(|op| self.get_operand(op)).try()?, |ops| {
-                        MaybeValue::total(format!("({})", ops.join(", ")))
+                        MaybeValue::total(mk_tuple(ops))
                     })
                 })
             }
@@ -547,9 +556,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                             ty::TypeVariants::TyAdt(ref adt_def, _) => match adt_def.adt_kind() {
                                 ty::AdtKind::Struct => {
                                     let field_name = adt_def.struct_variant().fields[field.index()].name;
-                                    lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {ty}) i, return {setter})",
-                                                        ty=self.name_def_id(adt_def.did), field=field_name,
-                                                        setter=self.update_struct(adt_def, field, "o", "i")))
+                                    lenses.push(format!("lens.mk (return ∘ {ty}.{field}) (λ (o : {applied_ty}) i, return {setter})",
+                                                        ty=self.name_def_id(adt_def.did), applied_ty=self.transpile_ty(ty)?, field=field_name,
+                                                        setter=self.update_struct(ty, field, "o", "i")?))
                                 },
                                 _ => throw!("unimplemented: lens on field of {:?}", adt_def.adt_kind()),
                             },
@@ -680,6 +689,15 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn get_call_target(&self, func: &Operand<'tcx>) -> TransResult {
         match *func {
             Operand::Constant(Constant { literal: Literal::Item { mut def_id, substs, .. }, .. }) => {
+                if NUM_INTRINSICS.is_match(&self.name_def_id(def_id)) {
+                    let mut name = self.name_def_id(def_id);
+                    let ty = substs[0].as_type().unwrap();
+                    if ty.is_signed() {
+                        name += "_signed";
+                    }
+                    return Ok(format!("{} {}.bits", name, ty))
+                }
+
                 for ty in substs.types() {
                     if krate::try_unwrap_mut_ref(ty).is_some() {
                         throw!("unimplemented: instantiating type parameter of {} with {:?}",
@@ -739,18 +757,23 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let (defs, _) = Component::defs_uses(comp.blocks.iter().filter(|bb| !l_comp.blocks.contains(bb)), self);
             let (l_defs, l_uses) = Component::defs_uses(l_comp.blocks.iter(), self);
             // vars that are used by l, but not (re)defined ~> parameters
-            let nonlocal_uses = self.mir.local_decls.indices().map(|v| self.local_name(v))
-                .filter(|v| l_uses.contains(v) && !l_defs.contains(v)).collect_vec();
+            let nonlocal_uses = self.mir.local_decls.indices().try_filter_map(|v| {
+                Ok(if l_uses.contains(&v) && !l_defs.contains(&v) {
+                    if krate::try_unwrap_mut_ref(self.lvalue_ty(&Lvalue::Local(v))).is_some() {
+                        throw!("unimplemented: &mut loop parameter")
+                    }
+                    Some(self.local_name(v))
+                } else {None})
+            })?.collect_vec();
             // vars that are redefined by l ~> loop state
             let (state_var_tys, state_vars): (Vec<_>, Vec<_>) = self.mir.local_decls.indices().try_filter_map(|v| -> TransResult<_> {
-                let name = self.local_name(v);
-                Ok(if defs.contains(&name) && l_defs.contains(&name) {
+                Ok(if defs.contains(&v) && l_defs.contains(&v) {
                     let ty = self.transpile_ty(self.lvalue_ty(&Lvalue::Local(v)))?;
-                    Some((ty, name))
+                    Some((ty, self.local_name(v)))
                 } else { None })
             })?.unzip();
-            let state_ty = state_var_tys.join(" × ");
-            l_comp.state_val = format!("({})", state_vars.iter().join(", "));
+            let state_ty = item::mk_tuple_ty(state_var_tys);
+            l_comp.state_val = mk_tuple(&state_vars);
             let name = format!("{}.loop_{}", self.name(), bb.index());
             let app = (name, nonlocal_uses).join(" ");
             let ret_ty = format!("sem (sum ({}) {})", state_ty, self.ret_ty()?);
@@ -817,7 +840,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 Switch { ref discr, ref adt_def, ref targets } => {
                     let arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| -> TransResult<_> {
                         // binding names used by `get_lvalue`
-                        let vars = (0..var.fields.len()).into_iter().map(|i| format!("discr_{}", i));
+                        let mut vars = (0..var.fields.len()).into_iter().map(|i| format!("discr_{}", i)).collect_vec();
+                        if var.ctor_kind == CtorKind::Fictive {
+                            vars = vec![(self.name_def_id(var.did) + ".struct.mk", vars).join(" ")]
+                        }
                         Ok(format!("| {} :=\n{}", (self.name_def_id(var.did), vars).join(" "), rec!(target)?))
                     }).try()?.join(" ");
                     self.get_lvalue(discr)?.map(0, |discr| {
@@ -880,9 +906,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     }
 
     pub fn transpile_fn(mut self, mut name: String) -> TransResult {
-        let params = self.mir.args_iter().map(|arg| {
-            Ok(format!("({} : {})", self.local_name(arg), self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty))?))
-        }).try()?;
+        let param_names = self.mir.args_iter().map(|arg| self.local_name(arg)).collect_vec();
+        let param_tys = self.mir.args_iter().map(|arg| {
+            if self.is_closure() && arg.index() > self.mir.arg_count && krate::try_unwrap_mut_ref(&self.mir.local_decls[arg].ty).is_some() {
+                throw!("unimplemented: closure taking &mut")
+            }
+            self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty))
+        }).try()?.collect_vec();
+        let params = param_names.iter().zip(&param_tys).map(|(name, ty)| {
+            format!("({} : {})", name, ty)
+        }).collect_vec();
 
         let promoted = self.mir.promoted.iter_enumerated().map(|(idx, mir)| {
             let body = FnTranspiler { mir: mir, ..self.clone() }.transpile_mir()?;
@@ -891,15 +924,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
         let body = (promoted, self.transpile_mir()?).join("\n");
 
-        // for closures, lookup generics in surrounding fn
-        let mut fn_def_id = self.def_id;
-        while let hir::map::NodeExpr(&hir::Expr { node: hir::ExprClosure(..), .. }) = self.tcx.map.get(self.tcx.map.as_local_node_id(fn_def_id).unwrap()) {
-            fn_def_id = self.tcx.parent_def_id(fn_def_id).unwrap();
-        }
-
-        let ty_params = self.transpile_ty_params(fn_def_id)?;
+        let ty_params = self.transpile_ty_params(self.def_id)?;
         let includes = ty_params.iter().filter_map(|p| match *p {
-            LeanTyParam::TraitRef(ref name, _, _) => Some(name),
+            LeanTyParam::TraitRef(ref name, _, _) => Some(name.to_string()),
             _ => None,
         }).collect_vec();
         let (closure_def, closure_impl) = if self.is_closure() {
@@ -911,12 +938,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let ty_params = (0..upvar_tys.len()).map(|i| format!("(U{} : Type₁)", i)).collect_vec();
             let upvar_vars = (0..upvar_tys.len()).map(|i| format!("U{}", i)).collect_vec();
             let closure_def = format!("\nstructure {} := (val : {})\n\n", (&name, &ty_params).join(" "),
-                                      upvar_vars.join(" × "));
+                                      item::mk_tuple_ty(upvar_vars));
             let closure_kind = self.tcx.closure_kind(self.def_id);
+            let closure_params = param_names.iter().cloned().skip(1).collect_vec();
             let closure_impl = format!("\ndefinition {clo}.inst [instance] : {fn_type} ({}) {} {} :=
-{fn_type}.mk {clo}.fn\n\n",
+{fn_type}.mk (λ self args, {})\n\n",
                                        (&name, &upvar_tys).join(" "),
-                                       upvar_tys.iter().join(" × "), self.transpile_ty(self.mir.return_ty)?,
+                                       item::mk_tuple_ty(param_tys.iter().cloned().skip(1)),
+                                       self.transpile_ty(self.mir.return_ty)?,
+                                       detuplize("args", &closure_params,
+                                                 &format!("  {}.fn {}\n", name, ("self", &closure_params).join(" "))),
                                        clo=name,
                                        fn_type=self.name_def_id(closure_kind.trait_did(self.tcx)));
             (closure_def, closure_impl)
@@ -936,29 +967,24 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     (name, ty_params.iter().map(|p| p.to_string()).chain(params)).join(" "),
                     self.ret_ty()?, body)
         } else {
-            fn format_params<It: IntoIterator<Item=String>>(params: It) -> String {
+            fn format_params<It: IntoIterator<Item=String>>(prefix: &str, params: It) -> String {
                 let params = params.into_iter().collect_vec();
                 if params.is_empty() {"".to_string()} else {
-                    format!("parameters {}\n", params.iter().join(" "))
+                    format!("{} {}\n", prefix, params.iter().join(" "))
                 }
             }
             format!("section
-{}{}{}section
+{}{}{}{}
+
+definition {} : sem {} :=
 {}
 
-{}
-
-definition {} : sem {} :=\n{}
-end
 {}end",
-                    format_params(ty_params.iter().map(|p| p.to_string())),
+                    format_params("parameters", ty_params.iter().map(|p| p.to_string())),
                     closure_def,
-                    if includes.is_empty() {"".to_string()} else {
-                        format!("include {}\n", includes.iter().join(" "))
-                    },
-                    format_params(params),
+                    format_params("include", includes),
                     self.prelude.iter().join("\n\n"),
-                    name, self.ret_ty()?, body, closure_impl)
+                    (name, params).join(" "), self.ret_ty()?, body, closure_impl)
         })
     }
 }

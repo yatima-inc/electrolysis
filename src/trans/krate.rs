@@ -22,7 +22,7 @@ lazy_static! {
 pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
     where It : IntoIterator<Item=&'a S>, S : AsRef<str> + 'a {
     parts.into_iter().map(|part| {
-        let part = part.as_ref().replace("::", ".")
+        let part = part.as_ref().replace("::", ".").replace("«", "").replace("»", "")
             // Lean identifiers starting with _ are reserved
             .trim_left_matches("_").to_string();
         match part.as_ref() {
@@ -56,6 +56,7 @@ pub fn name_def_id(tcx: TyCtxt, def_id: DefId) -> String {
 
 pub struct Config<'a> {
     pub ignored: Regex, // cache at least this one
+    fail: Regex,
     pub config: &'a toml::Value,
 }
 
@@ -63,6 +64,10 @@ impl<'a> Config<'a> {
     fn new(config: &'a toml::Value) -> Config {
         Config {
             ignored: match config.lookup("ignore") {
+                Some(ignored) => Regex::new(&format!("^({})$", ::toml_value_as_str_array(ignored).into_iter().join("|"))).unwrap(),
+                None => Regex::new("^NOPE$").unwrap(),
+            },
+            fail: match config.lookup("fail") {
                 Some(ignored) => Regex::new(&format!("^({})$", ::toml_value_as_str_array(ignored).into_iter().join("|"))).unwrap(),
                 None => Regex::new("^NOPE$").unwrap(),
             },
@@ -121,8 +126,8 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
         }
     }
 
-    pub fn mk_lean_name<S : AsRef<str>>(&self, s: S) -> String {
-        mk_lean_name_from_parts(&[s])
+    pub fn mk_lean_name<S : ToString>(&self, s: S) -> String {
+        mk_lean_name_from_parts(&[s.to_string()])
     }
 
     pub fn destruct(self) -> (HashMap<DefId, Result<Option<String>, String>>, Deps) {
@@ -155,6 +160,11 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
 
         if self.config.ignored.is_match(&name) {
             self.trans_results.insert(def_id, Ok(None));
+            return
+        }
+
+        if self.config.fail.is_match(&name) {
+            self.trans_results.insert(def_id, Err("unimplemented: excluded in config".to_string()));
             return
         }
 

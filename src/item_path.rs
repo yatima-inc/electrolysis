@@ -40,7 +40,14 @@ pub fn push_item_path(tcx: TyCtxt, buffer: &mut Vec<String>, def_id: DefId)
                 }
                 _ => {
                     push_item_path(tcx, buffer, parent_def_id);
-                    buffer.push(data.as_interned_str().to_string())
+                    let data = data.as_interned_str().to_string();
+                    if !data.is_empty() {
+                        buffer.push(data);
+                        let dis = key.disambiguated_data.disambiguator;
+                        if dis != 0 {
+                            buffer.push(dis.to_string())
+                        }
+                    }
                 }
             }
         }

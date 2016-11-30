@@ -16,6 +16,14 @@ use util::*;
 use trans::TransResult;
 use trans::krate::{self, CrateTranspiler};
 
+pub fn mk_tuple_ty<It: IntoIterator<Item=String>>(it: It) -> String {
+    match it.into_iter().collect_vec()[..] {
+        [] => "unit".to_string(),
+        [ref x] => x.clone(),
+        ref xs => format!("({})", xs.into_iter().join(" × "))
+    }
+}
+
 pub enum TraitImplLookup<'tcx> {
     Static { impl_def_id: DefId, params: Vec<String>, substs: &'tcx Substs<'tcx> },
     Dynamic { param: String },
@@ -263,10 +271,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
-            ty::TypeVariants::TyTuple(ref tys) => match tys[..] {
-                [] => "unit".to_string(),
-                _ => format!("({})", try_iter!(tys.iter().map(|ty| self.transpile_ty(ty))).join(" × ")),
-            },
+            ty::TypeVariants::TyTuple(ref tys) => mk_tuple_ty(
+                tys.iter().map(|ty| self.transpile_ty(ty)).try()?),
             // `Fn(&mut T) -> R` ~> `'T -> sem (R × T)'`
             ty::TypeVariants::TyFnDef(_, _, ref data) => {
                 let sig = data.sig.skip_binder();
@@ -292,13 +298,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 format!("(alloc.boxed.Box {})", self.transpile_ty(ty)?)
             }
             ty::TypeVariants::TyClosure(def_id, ref substs) => {
-                let generics = self.tcx.item_generics(def_id);
-                let upvar_tys = substs.substs[..generics.own_count()].iter().try_filter_map(|k| -> TransResult<_> {
-                    match k.as_type() {
-                        Some(ty) => Ok(Some(self.transpile_ty(ty)?)),
-                        None => Ok(None),
-                    }
-                })?;
+                let upvar_tys = substs.upvar_tys(def_id, self.tcx).map(|ty| self.transpile_ty(ty)).try()?;
                 format!("({})", (&self.name_def_id(def_id), upvar_tys).join(" "))
             }
             ty::TypeVariants::TyNever => "empty".to_string(),
@@ -336,7 +336,11 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         self.tcx.associated_items(trait_def_id).next().is_none() &&
         self.trait_predicates(trait_def_id).all(|trait_pred| {
             trait_pred.def_id() == trait_def_id || self.is_marker_trait(trait_pred.def_id())
-        })
+        }) && {
+            let name = self.name_def_id(trait_def_id);
+            // marker traits that influence static semantics
+            name != "core.marker.Unsize" && name != "core.ops.CoerceUnsized"
+        }
     }
 
     pub fn trait_predicates_without_markers(&self, def_id: DefId) -> ::std::vec::IntoIter<ty::TraitPredicate<'tcx>> {
@@ -388,7 +392,11 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 if self.all_assoc_tys(trait_ref)?.is_empty() {
                     format!("(_ : {})", t)
                 } else {
-                    self.mk_lean_name(t)
+                    let param = self.mk_lean_name(t);
+                    if !self.transpile_ty_params(self.def_id)?.iter().any(|p| p.name() == param) {
+                        throw!("unimplemented: dynamic supertrait call with associated types")
+                    }
+                    param
                 }
             }},
             Vtable::VtableClosure(_) => {
@@ -470,7 +478,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             }
         })}).try()?;
         // if no variants have data attached, add a function to extract the discriminant
-        let discr = if adt_def.variants.iter().all(|variant| variant.ctor_kind == CtorKind::Const) {
+        let discr = if !adt_def.variants.is_empty() && adt_def.variants.iter().all(|variant| variant.ctor_kind == CtorKind::Const) {
             let discrs = adt_def.variants.iter().map(|variant| {
                 format!("| {}.{} := {}", name, variant.name,
                         variant.disr_val.to_u64_unchecked() as i64)
@@ -517,7 +525,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                         format!("Π {}, ", ty_params.iter().map(LeanTyParam::to_string).join(" "))
                     };
                     let ty = self.transpile_ty(self.tcx.item_type(item.def_id))?;
-                    Some(format!("({} : {}{})", item.name, pi, ty))
+                    Some(format!("({} : {}{})", self.mk_lean_name(item.name), pi, ty))
                 }
             }
             ty::AssociatedKind::Const =>
@@ -571,7 +579,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 } else if self.tcx.provided_trait_methods(trait_ref.def_id).iter().any(|m| m.name == item.name) {
                     throw!("unimplemented: overriding default method {:?}", self.name_def_id(item.def_id))
                 } else {
-                    Some(format!("{} := @{}", item.name, (self.name_def_id(item.def_id), ty_params.iter().map(|p| p.name())).join(" ")))
+                    Some(format!("{} := @{}", self.mk_lean_name(item.name), (self.name_def_id(item.def_id), ty_params.iter().map(|p| p.name())).join(" ")))
                 }
             }
             ty::AssociatedKind::Const =>

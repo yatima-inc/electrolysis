@@ -213,6 +213,10 @@ impl<'a, 'tcx> intravisit::Visitor<'a> for IdCollector<'a, 'tcx> {
         self.insert(trait_item.id);
         intravisit::walk_trait_item(self, trait_item);
     }
+
+    fn visit_foreign_item(&mut self, i: &'a hir::ForeignItem) {
+        self.insert(i.id)
+    }
 }
 
 fn toml_value_as_str_array(val: &::toml::Value) -> Vec<&str> {
@@ -289,22 +293,22 @@ open [notation] unit
 
                 // don't even bother writing out code that will fail because of missing dependencies
                 let failed_deps = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).filter(|idx| failed.contains(idx)).collect_vec();
-                if failed_deps.is_empty() {
-                    match trans_results.get(&def_id) {
-                        Some(&Ok(Some(ref trans))) => {
+                match trans_results.get(&def_id) {
+                    Some(&Ok(Some(ref trans))) => {
+                        if failed_deps.is_empty() {
                             try!(write!(f, "{}\n\n", trans));
-                        }
-                        Some(&Err(ref err)) => {
+                        } else {
                             failed.insert(idx);
-                            try!(write!(f, "/- {}: {} -/\n\n", name, err.replace("/-", "/ -")))
+                            try!(write!(f, "/- {}: failed dependencies {} -/\n\n", name, failed_deps.into_iter().flat_map(|idx| &condensed[idx]).map(|&def_id| {
+                                name_def_id(tcx, def_id)
+                            }).join(", ")));
                         }
-                        _ => {}
                     }
-                } else {
-                    failed.insert(idx);
-                    try!(write!(f, "/- {}: failed dependencies {} -/\n\n", name, failed_deps.into_iter().flat_map(|idx| &condensed[idx]).map(|&def_id| {
-                        name_def_id(tcx, def_id)
-                    }).join(", ")));
+                    Some(&Err(ref err)) => {
+                        failed.insert(idx);
+                        try!(write!(f, "/- {}: {} -/\n\n", name, err.replace("/-", "/ -")))
+                    }
+                    _ => {}
                 }
             }
 
