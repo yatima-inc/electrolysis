@@ -302,7 +302,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         })
     }
 
-    fn set_lvalue(&self, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
+    fn set_lvalue(&self, depth: u32, lv: &Lvalue<'tcx>, val: &str) -> TransResult {
         if let Some(name) = self.lvalue_name(lv) {
             return Ok(if name == val { // no-op
                 "".to_string()
@@ -312,7 +312,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         }
         match *lv {
             Lvalue::Projection(box Projection { ref base, ref elem }) =>
-                self.get_lvalue(base)?.try_map(0, |sbase| match *elem {
+                self.get_lvalue(base)?.try_map(depth, |sbase| match *elem {
                     ProjectionElem::Deref => {
                         if let Some(ref src) = self.deref_mut(base) {
                             Ok(self.get_lvalue(src)?.map(1, |src| {
@@ -321,17 +321,17 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                         src=src, lens=sbase, val=val)
                             }))
                         } else {
-                            self.set_lvalue(base, val)
+                            self.set_lvalue(depth + 1, base, val)
                         }
                     }
                     ProjectionElem::Field(field, _) => {
                         let ty = unwrap_refs(self.lvalue_ty(base));
                         match ty.sty {
                             ty::TypeVariants::TyAdt(_, _) =>
-                                self.set_lvalue(base, &self.update_struct(ty, field, &sbase, val)?),
+                                self.set_lvalue(depth + 1, base, &self.update_struct(ty, field, &sbase, val)?),
                             ty::TypeVariants::TyClosure(def_id, ref substs) => {
                                 let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
-                                self.set_lvalue(base, &format!(
+                                self.set_lvalue(depth + 1, base, &format!(
                                     "{}.mk {}", self.name_def_id(def_id),
                                     set_tuple_elem(sbase, val.to_string(), field.index(), substs.upvar_tys(def_id, self.tcx).count())))
                             }
@@ -341,7 +341,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     ProjectionElem::Index(ref index) => {
                         self.get_operand(index)?.try_map(1, |index| {
                             MaybeValue::partial(format!("sem.lift_opt (list.update {} {} {})", sbase, index, val)).try_map(2, |new| {
-                                self.set_lvalue(base, &new)
+                                self.set_lvalue(depth + 1, base, &new)
                             })
                         })
                     }
@@ -608,7 +608,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             format!("@lens.id {}", self.transpile_ty(krate::try_unwrap_mut_ref(self.lvalue_ty(dest)).unwrap())?)
         }
         else { format!("({})", lenses.into_iter().join(" ∘ₗ ")) };
-        self.set_lvalue(dest, &val)
+        self.set_lvalue(0, dest, &val)
     }
 
     fn transpile_statement(&mut self, kind: &StatementKind<'tcx>) -> TransResult {
@@ -626,7 +626,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     Rvalue::Use(Operand::Consume(Lvalue::Local(source)))
                         if krate::try_unwrap_mut_ref(self.mir.local_decls[source].ty).is_some() =>
                         self.set_mut_ref(lv, vec![], &Lvalue::Local(source)),
-                    _ => self.get_rvalue(rv)?.try_map(0, |rv| self.set_lvalue(lv, &rv)),
+                    _ => self.get_rvalue(rv)?.try_map(0, |rv| self.set_lvalue(1, lv, &rv)),
                 }
             }
             StatementKind::SetDiscriminant { .. } =>
@@ -827,13 +827,13 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     (tmp.clone(), Some(self.set_mut_ref(lv, vec![tmp], source.deref())?))
                                 } else {
                                     // write back through &mut
-                                    (tmp.clone(), Some(self.set_lvalue(&lv.clone().deref(), &tmp)?))
+                                    (tmp.clone(), Some(self.set_lvalue(1, &lv.clone().deref(), &tmp)?))
                                 }
                             } else {
                                 if let Some(name) = self.lvalue_name(lv) {
                                     (name, None)
                                 } else {
-                                    (tmp.clone(), Some(self.set_lvalue(lv, &tmp)?))
+                                    (tmp.clone(), Some(self.set_lvalue(1, lv, &tmp)?))
                                 }
                             })
                         }).try()?.unzip();
@@ -917,7 +917,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     pub fn transpile_fn(mut self, mut name: String) -> TransResult {
         let param_names = self.mir.args_iter().map(|arg| self.local_name(arg)).collect_vec();
         let param_tys = self.mir.args_iter().map(|arg| {
-            if self.is_closure() && arg.index() > self.mir.arg_count && krate::try_unwrap_mut_ref(&self.mir.local_decls[arg].ty).is_some() {
+            if self.is_closure() && arg.index() > 0 && krate::try_unwrap_mut_ref(&self.mir.local_decls[arg].ty).is_some() {
                 throw!("unimplemented: closure taking &mut")
             }
             self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty))
@@ -947,10 +947,10 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             let closure_kind = self.tcx.closure_kind(self.def_id);
             let closure_params = param_names.iter().cloned().skip(1).collect_vec();
             let closure_impl = format!("\ndefinition {clo}.inst [instance] : {fn_type} ({}) {} {} :=
-{fn_type}.mk (λ self args, {})\n\n",
+{fn_type}.mk_simple (λ self args, {})\n\n",
                                        (&name, &upvar_tys).join(" "),
                                        item::mk_tuple_ty(param_tys.iter().cloned().skip(1)),
-                                       self.transpile_ty(self.mir.return_ty)?,
+                                       self.ret_ty()?,
                                        detuplize("args", &closure_params,
                                                  &format!("  {}.fn {}\n", name, ("self", &closure_params).join(" "))),
                                        clo=name,
@@ -987,6 +987,7 @@ definition {} : sem {} :=
 {}end",
                     format_params("parameters", ty_params.iter().map(|p| p.to_string())) +
                     &closure_def +
+                    &format_params("include", ty_params.iter().map(|p| p.name().to_string())) +
                     &self.prelude.iter().join("\n\n"),
                     (name, params).join(" "), self.ret_ty()?, body, closure_impl)
         })

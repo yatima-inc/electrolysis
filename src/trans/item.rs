@@ -361,7 +361,6 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         }
         for ty_param in self.transpile_ty_params(self.def_id)? {
             if let LeanTyParam::TraitRef(_, _, mut trait_ref) = ty_param {
-                trait_ref.substs = self.tcx.erase_regions(&trait_ref.substs);
                 if rec(self.tcx, trait_ref, target) {
                     return Ok(self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref)?))
                 }
@@ -525,12 +524,12 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         })
             .unique(); // HACK: why?
         let (supertraits, ty_params): (Vec<_>, Vec<_>) = ty_params.partition_map(|p| match p {
-            LeanTyParam::TraitRef(_, ty, _) => Either::Left(ty),
+            LeanTyParam::TraitRef(_, ty, trait_ref) => Either::Left((ty, trait_ref)),
             // make both explicit
             LeanTyParam::RustTyParam(name) | LeanTyParam::AssocTy(name) => Either::Right(format!("({} : Type₁)", name)),
         });
         let extends = if supertraits.is_empty() { "".to_owned() } else {
-            format!(" extends {}", supertraits.into_iter().join(", "))
+            format!(" extends {}", supertraits.iter().map(|s| s.0.clone()).join(", "))
         };
 
         let only_path = format!("traits.\"{}\".only", name);
@@ -554,16 +553,20 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::AssociatedKind::Const =>
                 throw!("unimplemented: const trait items"),
         }))?.collect_vec();
-        Ok(format!("structure {}{}{}",
-                   (self.name_def_id(self.def_id), ty_params).join(" "),
+        Ok(format!("structure {}{}{}{}",
+                   (self.name_def_id(self.def_id) + " [class]", ty_params).join(" "),
                    extends,
                    if items.is_empty() { " := mk".to_string() }
-                   else { format!(" :=\n{}", items.join("\n")) }))
+                   else { format!(" :=\n{}", items.join("\n")) },
+                   if supertraits.is_empty() { "".to_string() } else {
+                       format!("\n\nattribute [coercion] {}", supertraits.iter().map(|s| {
+                           format!("{}.to_{}", name, self.tcx.item_name(s.1.def_id))
+                       }).join(" "))
+                   }))
     }
 
     fn transpile_trait_impl(&self) -> TransResult {
         let mut trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
-        trait_ref.substs = self.tcx.erase_regions(&trait_ref.substs);
 
         let ty_params = self.transpile_ty_params(self.def_id)?;
         let supertrait_impls = self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
@@ -582,9 +585,6 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 if only.iter().any(|only| !only.contains(&*item.name.as_str())) {
                     None // method ignored in config
                 } else {
-                    if self.tcx.lookup_trait_def(trait_ref.def_id).ancestors(self.def_id).defs(self.tcx, item.name, ty::AssociatedKind::Method).count() > 2 {
-                    throw!("unimplemented: overriding default method {:?}", self.name_def_id(item.def_id))
-                    }
                     Some(format!("{} := @{}", self.mk_lean_name(item.name), (self.name_def_id(item.def_id), ty_params.iter().map(|p| p.name())).join(" ")))
                 }
             }
@@ -595,7 +595,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let mut bound_assoc_tys = HashMap::new();
         self.free_assoc_tys(trait_ref, &mut bound_assoc_tys)?;
         Ok(format!("definition {} := ⦃\n  {}\n⦄",
-                   (self.name(), ty_params.iter().map(LeanTyParam::to_string)).join(" "),
+                   (self.name() + " [instance]", ty_params.iter().map(LeanTyParam::to_string)).join(" "),
                    (self.transpile_trait_ref(trait_ref, &mut bound_assoc_tys)?, supertrait_impls.into_iter().chain(items)).join(",\n  ")))
     }
 
@@ -654,9 +654,21 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             },
             Node::NodeExpr(_) => // top-level expr? closure!
                 self.transpile_fn(name)?,
-            Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(_, Some(_)), .. })
-            | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Method(..), .. }) =>
+            Node::NodeTraitItem(&hir::TraitItem { node: hir::TraitItem_::MethodTraitItem(_, Some(_)), .. }) =>
                 self.transpile_fn(name)?,
+            Node::NodeImplItem(item@&hir::ImplItem { node: hir::ImplItemKind::Method(..), .. }) => {
+                let impl_def_id = self.tcx.impl_of_method(self.def_id).unwrap();
+                if let Some(trait_def_id) = self.tcx.trait_id_of_impl(impl_def_id) {
+                    if self.tcx.lookup_trait_def(trait_def_id)
+                        .ancestors(impl_def_id)
+                        .defs(self.tcx, item.name, ty::AssociatedKind::Method)
+                        .filter(|def| def.item.defaultness.has_value())
+                        .count() > 1 {
+                        throw!("unimplemented: overriding default method {:?}", self.name_def_id(self.def_id))
+                    }
+                }
+                self.transpile_fn(name)?
+            }
             Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_)
             | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Type(..), .. }) =>
                 return Ok(None),

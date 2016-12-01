@@ -26,7 +26,7 @@ return (ret)
 let' t4 ← promoted_0;
 let' t3 ← t4;
 let' t2 ← t3;
-dostep «$tmp» ← @test.foo i32 (@core.«i32 as core.default.Default» ) t2;
+dostep «$tmp» ← @test.foo i32 (@core.«i32 as core.default.Default») t2;
 let' t1 ← «$tmp»;
 let' ret ← ⋆;
 return (⋆)
