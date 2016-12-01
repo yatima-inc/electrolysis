@@ -11,12 +11,12 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-structure test.Num [class] (Self : Type₁)  :=
+structure test.Num [class] (Self : Type₁) :=
 (from_i32 : i32 → sem (Self))
 
 definition test.«i64 as test.Num».from_i32 (nₐ : i32) : sem (i64) :=
-let' n ← nₐ;
-let' t3 ← n;
+let' «n$2» ← nₐ;
+let' t3 ← «n$2»;
 do «$tmp0» ← (signed_to_signed i64.bits t3);
 let' ret ← «$tmp0»;
 return (ret)
@@ -29,7 +29,7 @@ definition test.«i64 as test.Num» [instance] := ⦃
 
 definition test.main : sem (unit) :=
 dostep «$tmp» ← @test.«i64 as test.Num».from_i32 (42 : int);
-let' x ← «$tmp»;
+let' «x$1» ← «$tmp»;
 let' ret ← ⋆;
 return (⋆)
 

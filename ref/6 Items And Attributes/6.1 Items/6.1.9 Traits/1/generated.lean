@@ -14,27 +14,27 @@ open [notation] unit
 structure test.Foo := mk {} ::
 
 definition test.«test.Foo as test.Shape».area (selfₐ : (test.Foo)) : sem (i64) :=
-let' self ← selfₐ;
+let' «self$2» ← selfₐ;
 let' ret ← (1 : int);
 return (ret)
 
 
 definition test.«test.Foo as test.Circle».radius (selfₐ : (test.Foo)) : sem (i64) :=
-let' self ← selfₐ;
+let' «self$2» ← selfₐ;
 let' ret ← (-1 : int);
 return (ret)
 
 
-structure test.Shape [class] (Self : Type₁)  :=
+structure test.Shape [class] (Self : Type₁) :=
 (area : Self → sem (i64))
-
-structure test.Circle [class] (Self : Type₁)  extends test.Shape Self :=
-(radius : Self → sem (i64))
 
 definition test.«test.Foo as test.Shape» [instance] := ⦃
   test.Shape (test.Foo),
   area := @test.«test.Foo as test.Shape».area
 ⦄
+
+structure test.Circle [class] (Self : Type₁) extends test.Shape Self :=
+(radius : Self → sem (i64))
 
 definition test.«test.Foo as test.Circle» [instance] := ⦃
   test.Circle (test.Foo),
@@ -43,8 +43,8 @@ definition test.«test.Foo as test.Circle» [instance] := ⦃
 ⦄
 
 definition test.main : sem (unit) :=
-let' c ← test.Foo.mk;
-let' t3 ← c;
+let' «c$1» ← test.Foo.mk;
+let' t3 ← «c$1»;
 dostep «$tmp» ← @test.«test.Foo as test.Circle».radius t3;
 let' t2 ← «$tmp»;
 let' ret ← ⋆;

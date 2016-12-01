@@ -11,6 +11,16 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
+definition test.foo : sem (unit) :=
+let' ret ← ⋆;
+return (⋆)
+
+
+definition test.not_foo : sem (unit) :=
+let' ret ← ⋆;
+return (⋆)
+
+
 definition test.not_test : sem (unit) :=
 let' ret ← ⋆;
 return (⋆)

@@ -14,11 +14,11 @@ open [notation] unit
 open collections
 
 definition collections.«[T]».get {T : Type₁} (selfₐ : (slice T)) (indexₐ : usize) : sem ((core.option.Option T)) :=
-let' self ← selfₐ;
-let' index ← indexₐ;
-let' t5 ← self;
-let' t6 ← index;
-dostep «$tmp» ← @core.«[T] as core.slice.SliceExt».get _ t5 t6;
+let' «self$3» ← selfₐ;
+let' «index$4» ← indexₐ;
+let' t5 ← «self$3»;
+let' t6 ← «index$4»;
+dostep «$tmp» ← @core.«[T] as core.slice.SliceExt».get T t5 t6;
 let' ret ← «$tmp»;
 return (ret)
 

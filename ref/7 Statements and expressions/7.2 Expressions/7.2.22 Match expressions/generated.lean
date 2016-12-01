@@ -12,8 +12,8 @@ open [notation] prod.ops
 open [notation] unit
 
 definition test.f1 (xₐ : i32) : sem (string) :=
-let' x ← xₐ;
-match x with
+let' «x$2» ← xₐ;
+match «x$2» with
 | 1 :=
 let' ret ← "one";
 return (ret)
@@ -37,12 +37,12 @@ end
 
 
 definition test.f2 (xₐ : i32) : sem (string) :=
-let' x ← xₐ;
-let' t4 ← (1 : int) ≤ᵇ x;
+let' «x$2» ← xₐ;
+let' t4 ← (1 : int) ≤ᵇ «x$2»;
 if t4 = bool.tt then
-let' t5 ← x ≤ᵇ (5 : int);
+let' t5 ← «x$2» ≤ᵇ (5 : int);
 if t5 = bool.tt then
-let' e ← x;
+let' «e$3» ← «x$2»;
 let' ret ← "got a range element";
 return (ret)
 else
@@ -54,30 +54,30 @@ return (ret)
 
 
 definition test.f3 (xₐ : i32) : sem (unit) :=
-let' x ← xₐ;
-match x with
+let' «x$2» ← xₐ;
+match «x$2» with
 | 0 :=
-let' y ← "zero";
-match x with
+let' «y$3» ← "zero";
+match «x$2» with
 | 0 :=
-let' z ← "zero";
+let' «z$4» ← "zero";
 let' ret ← ⋆;
 return (⋆)
 | _ :=
-let' z ← "some";
+let' «z$4» ← "some";
 let' ret ← ⋆;
 return (⋆)
 
 end
 | _ :=
-let' y ← "some";
-match x with
+let' «y$3» ← "some";
+match «x$2» with
 | 0 :=
-let' z ← "zero";
+let' «z$4» ← "zero";
 let' ret ← ⋆;
 return (⋆)
 | _ :=
-let' z ← "some";
+let' «z$4» ← "some";
 let' ret ← ⋆;
 return (⋆)
 
@@ -87,58 +87,68 @@ end
 
 
 definition test.f4 (xₐ : i32) : sem (unit) :=
-let' x ← xₐ;
-match x with
+let' «x$2» ← xₐ;
+match «x$2» with
 | 0 :=
-let' message ← "not many";
+let' «message$3» ← "not many";
 let' ret ← ⋆;
 return (⋆)
 | 1 :=
-let' message ← "not many";
+let' «message$3» ← "not many";
 let' ret ← ⋆;
 return (⋆)
 | _ :=
-let' t4 ← (2 : int) ≤ᵇ x;
+let' t4 ← (2 : int) ≤ᵇ «x$2»;
 if t4 = bool.tt then
-let' t5 ← x ≤ᵇ (9 : int);
+let' t5 ← «x$2» ≤ᵇ (9 : int);
 if t5 = bool.tt then
-let' message ← "a few";
+let' «message$3» ← "a few";
 let' ret ← ⋆;
 return (⋆)
 else
-let' message ← "lots";
+let' «message$3» ← "lots";
 let' ret ← ⋆;
 return (⋆)
 else
-let' message ← "lots";
+let' «message$3» ← "lots";
 let' ret ← ⋆;
 return (⋆)
 
 end
 
 
-definition test.f5.FILE_LINE : sem (string × u32) :=
+definition test.f5.«$_FILE_LINE» : sem (string × u32) :=
 let' ret ← ("ref/7 Statements and expressions/7.2 Expressions/7.2.22 Match expressions/lib.rs", (36 : nat));
 return (ret)
 
 
 definition test.f5 (xₐ : (core.option.Option i32)) : sem ((core.option.Option i32)) :=
-let' x ← xₐ;
-match x with
+let' «x$2» ← xₐ;
+match «x$2» with
 | core.option.Option.None :=
-let' t10 ← test.f5.FILE_LINE;
+let' t10 ← test.f5.«$_FILE_LINE»;
 let' t9 ← t10;
 mzero
- | core.option.Option.Some discr_0 :=
-let' x ← discr_0;
-let' t6 ← x;
+ | core.option.Option.Some «» :=
+do «$tmp0» ← match «x$2» with
+| core.option.Option.None :=
+mzero | core.option.Option.Some «$0» :=
+return «$0»end
+;
+let' «x$3» ← «$tmp0»;
+let' t6 ← «x$3»;
 let' t5 ← t6 <ᵇ (10 : int);
 if t5 = bool.tt then
-let' t7 ← x;
+let' t7 ← «x$3»;
 let' ret ← core.option.Option.Some t7;
 return (ret)
 else
-let' x ← discr_0;
+do «$tmp0» ← match «x$2» with
+| core.option.Option.None :=
+mzero | core.option.Option.Some «$0» :=
+return «$0»end
+;
+let' «x$4» ← «$tmp0»;
 let' ret ← core.option.Option.None;
 return (ret)
 end

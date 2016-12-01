@@ -29,7 +29,7 @@ structure test.main.game.User := mk {} ::
 structure test.main.Cookie := mk {} ::
 
 definition test.main.some_fn {T : Type₁} (tₐ : T) : sem (unit) :=
-let' t ← tₐ;
+let' «t$2» ← tₐ;
 let' ret ← ⋆;
 return (⋆)
 
@@ -40,9 +40,9 @@ let' t2 ← test.main.NothingInMe.mk;
 let' t3 ← test.main.TuplePoint.mk (10 : int) (20 : int);
 let' t6 ← "Joe";
 let' t5 ← t6;
-let' u ← test.main.game.User.mk t5 (35 : nat) (100000 : nat);
+let' «u$4» ← test.main.game.User.mk t5 (35 : nat) (100000 : nat);
 let' t8 ← test.main.Cookie.mk;
-dostep «$tmp» ← @test.main.some_fn _ t8;
+dostep «$tmp» ← @test.main.some_fn (test.main.Cookie) t8;
 let' t7 ← «$tmp»;
 let' ret ← ⋆;
 return (⋆)

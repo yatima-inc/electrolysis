@@ -23,9 +23,9 @@ inductive test.Animal :=
 
 definition test.main : sem (unit) :=
 let' t2 ← test.Name.mk;
-let' a ← test.Animal.Dog t2 (37 : nat);
+let' «a$1» ← test.Animal.Dog t2 (37 : nat);
 let' t3 ← test.Name.mk;
-let' a ← test.Animal.Cat (test.Animal.Cat.struct.mk t3 (2 : nat));
+let' «a$1» ← test.Animal.Cat (test.Animal.Cat.struct.mk t3 (2 : nat));
 let' ret ← ⋆;
 return (⋆)
 

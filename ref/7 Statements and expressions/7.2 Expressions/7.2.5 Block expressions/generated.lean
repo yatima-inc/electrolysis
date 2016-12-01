@@ -12,8 +12,8 @@ open [notation] prod.ops
 open [notation] unit
 
 definition test.foo : sem (i32) :=
-let' x ← (5 : int);
-let' t2 ← x;
+let' «x$1» ← (5 : int);
+let' t2 ← «x$1»;
 let' ret ← t2;
 return (ret)
 

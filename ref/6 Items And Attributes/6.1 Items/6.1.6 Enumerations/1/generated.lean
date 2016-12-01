@@ -21,8 +21,8 @@ definition test.Animal.discr (self : test.Animal) : isize := match self with
 end
 
 definition test.main : sem (unit) :=
-let' a ← test.Animal.Dog;
-let' a ← test.Animal.Cat;
+let' «a$1» ← test.Animal.Dog;
+let' «a$1» ← test.Animal.Cat;
 let' ret ← ⋆;
 return (⋆)
 

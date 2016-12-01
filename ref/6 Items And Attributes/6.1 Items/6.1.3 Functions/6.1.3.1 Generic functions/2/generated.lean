@@ -12,7 +12,7 @@ open [notation] prod.ops
 open [notation] unit
 
 definition test.foo {T : Type₁} [«core.default.Default T» : core.default.Default T] (xₐ : (slice T)) : sem (unit) :=
-let' x ← xₐ;
+let' «x$2» ← xₐ;
 let' ret ← ⋆;
 return (⋆)
 
@@ -26,7 +26,7 @@ return (ret)
 let' t4 ← promoted_0;
 let' t3 ← t4;
 let' t2 ← t3;
-dostep «$tmp» ← @test.foo _ (@core.«i32 as core.default.Default» ) t2;
+dostep «$tmp» ← @test.foo i32 (@core.«i32 as core.default.Default» ) t2;
 let' t1 ← «$tmp»;
 let' ret ← ⋆;
 return (⋆)

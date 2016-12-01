@@ -22,15 +22,15 @@ return (ret)
 
 
 definition test.bar : sem (string) :=
-let' n ← (10 : nat);
+let' «n$1» ← (10 : nat);
 let' t4 ← ["a", "b"];
-let' t5 ← n;
+let' t5 ← «n$1»;
 let' t6 ← list.length t4;
 let' t7 ← t5 <ᵇ t6;
 do «$tmp0» ← core.«[T] as core.slice.SliceExt».get_unchecked t4 t5;
 let' t3 ← «$tmp0»;
-let' y ← t3;
-let' ret ← y;
+let' «y$2» ← t3;
+let' ret ← «y$2»;
 return (ret)
 
 

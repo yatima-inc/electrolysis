@@ -15,10 +15,10 @@ inductive test.Point :=
 mk {} : i32 → i32 → test.Point
 
 definition test.main : sem (unit) :=
-let' p ← test.Point.mk (10 : int) (11 : int);
-let' x ← match p with test.Point.mk x0 x1 := x0 end;
-let' t4 ← x;
-let' px ← t4;
+let' «p$1» ← test.Point.mk (10 : int) (11 : int);
+let' «x$3» ← match «p$1» with test.Point.mk x0 x1 := x0 end;
+let' t4 ← «x$3»;
+let' «px$2» ← t4;
 let' ret ← ⋆;
 return (⋆)
 

@@ -22,9 +22,11 @@ lazy_static! {
 pub fn mk_lean_name_from_parts<'a, It, S>(parts: It) -> String
     where It : IntoIterator<Item=&'a S>, S : AsRef<str> + 'a {
     parts.into_iter().map(|part| {
-        let part = part.as_ref().replace("::", ".").replace("«", "").replace("»", "")
-            // Lean identifiers starting with _ are reserved
-            .trim_left_matches("_").to_string();
+        let mut part = part.as_ref().replace("::", ".").replace("«", "").replace("»", "");
+        // Lean identifiers starting with _ are reserved
+        if part.starts_with("_") {
+            part.insert(0, '$')
+        }
         match part.as_ref() {
             "{{constructor}}" => "mk".to_string(),
             "at" | "by" | "end" | "from" | "private" => format!("«{}»", part),
@@ -174,6 +176,13 @@ impl<'a, 'tcx> CrateTranspiler<'a, 'tcx> {
         let res = res.unwrap_or_else(|| {
             ItemTranspiler { sup: self, def_id: def_id }.transpile_def_id()
         });
+        if let Err(ref msg) = res {
+            if self.config.config.lookup("targets").is_some() {
+                panic!("{}", msg)
+            } else {
+                println!("{}", msg);
+            }
+        }
         self.trans_results.insert(def_id, res);
         println!("{} / {}", self.trans_results.iter().filter(|r| r.1.is_ok()).count(),
                  self.trans_results.iter().filter(|r| r.1.is_err()).count());

@@ -21,7 +21,7 @@ end
 definition test.main : sem (unit) :=
 let' t2 ← test.Foo.Bar;
 do «$tmp0» ← (signed_to_unsigned u32.bits (test.Foo.discr t2));
-let' x ← «$tmp0»;
+let' «x$1» ← «$tmp0»;
 let' ret ← ⋆;
 return (⋆)
 

@@ -12,12 +12,12 @@ open [notation] prod.ops
 open [notation] unit
 
 definition test.foo (xsₐ : (slice i32)) : sem ((lens (slice i32) i32) × (slice i32)) :=
-let' xs ← @lens.id (slice i32);
-do «$tmp0» ← do «$tmp0» ← lens.get xs xsₐ;
+let' «xs$2» ← @lens.id (slice i32);
+do «$tmp0» ← do «$tmp0» ← lens.get «xs$2» xsₐ;
 return (list.length «$tmp0»);
 let' t5 ← «$tmp0»;
 let' t6 ← (0 : nat) <ᵇ t5;
-let' t4 ← (lens.index _ (0 : nat) ∘ₗ xs);
+let' t4 ← (lens.index _ (0 : nat) ∘ₗ «xs$2»);
 do «$tmp» ← lens.get t4 xsₐ;
 let' t3 ← (t4);
 do «$tmp» ← lens.get t3 xsₐ;

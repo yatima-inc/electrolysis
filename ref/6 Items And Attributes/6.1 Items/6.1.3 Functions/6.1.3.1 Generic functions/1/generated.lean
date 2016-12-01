@@ -12,8 +12,8 @@ open [notation] prod.ops
 open [notation] unit
 
 definition test.foo {A : Type₁} {B : Type₁} (xₐ : A) (yₐ : B) : sem (unit) :=
-let' x ← xₐ;
-let' y ← yₐ;
+let' «x$3» ← xₐ;
+let' «y$4» ← yₐ;
 let' ret ← ⋆;
 return (⋆)
 

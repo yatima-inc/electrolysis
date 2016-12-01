@@ -198,11 +198,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     fn local_name(&self, local: Local) -> String {
         let opt_name = self.mir.local_decls[local].name;
         match self.mir.local_kind(local) {
-            LocalKind::Var => self.mk_lean_name(format!("{}ᵥ", opt_name.unwrap())),
+            LocalKind::Var => self.mk_lean_name(format!("{}${}", opt_name.unwrap(), local.index())),
             LocalKind::Temp => format!("t{}", local.index()),
             LocalKind::Arg => match opt_name {
                 Some(name) => format!("{}ₐ", name),
-                None => format!("a{}", local.index()),
+                None => format!("«$a{}»", local.index()),
             },
             LocalKind::ReturnPointer => "ret".to_string(),
         }
@@ -236,13 +236,23 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     self.get_lvalue(base)
                 }
             }
-            // glorious HACK: downcasting to an enum item should only happen directly after
-            // a `match`, so just use the variable introduced in the `match`
             Lvalue::Projection(box Projection {
                 elem: ProjectionElem::Field(ref field, _),
-                base: Lvalue::Projection(box Projection { elem: ProjectionElem::Downcast(..), .. }),
-            }) =>
-                Ok(MaybeValue::total(format!("discr_{}", field.index()))),
+                base: Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Downcast(ref adt_def, variant) }),
+            }) => {
+                let arms = adt_def.variants.iter().enumerate().map(|(i, var)| {
+                    let mut vars = (0..var.fields.len()).into_iter().map(|i| format!("«${}»", i)).collect_vec();
+                    if var.ctor_kind == CtorKind::Fictive {
+                        vars = vec![format!("({})", (self.name_def_id(var.did) + ".struct.mk", vars).join(" "))]
+                    }
+                    format!("| {} := {}\n", (self.name_def_id(var.did), vars).join(" "), if i == variant {
+                        format!("return «${}»", field.index())
+                    } else {"mzero".to_string()})
+                }).join(" ");
+                Ok(self.get_lvalue(base)?.and_then(0, |base| {
+                    MaybeValue::partial(format!("match {} with\n{}end\n", base, arms))
+                }))
+            }
             Lvalue::Projection(box Projection { ref base, elem: ProjectionElem::Index(ref idx) }) =>
                 self.get_lvalue(base)?.try_and_then(0, |base| Ok(self.get_operand(idx)?.and_then(1, |idx| {
                     MaybeValue::partial(format!("core.«[T] as core.slice.SliceExt».get_unchecked {} {}", base, idx))
@@ -724,9 +734,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         None => {}
                     };
 
-                    let ty_params = self.transpile_ty_params_with_substs(def_id, substs, false)?.into_iter().map(|p| Ok(match p {
-                        LeanTyParam::RustTyParam(name) => name,
-                        LeanTyParam::AssocTy(_, ty) => self.transpile_associated_type(ty)?.0,
+                    let ty_params = self.transpile_ty_params_with_substs(def_id, self.def_id, substs, false)?.into_iter().map(|p| Ok(match p {
+                        LeanTyParam::RustTyParam(name) | LeanTyParam::AssocTy(name) => name,
                         LeanTyParam::TraitRef(_, _, trait_ref) =>
                             self.infer_trait_impl(trait_ref, &infcx)?.to_string(self)?,
                     })).try()?;
@@ -839,11 +848,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     "mzero\n".to_string(),
                 Switch { ref discr, ref adt_def, ref targets } => {
                     let arms = adt_def.variants.iter().zip(targets).map(|(var, &target)| -> TransResult<_> {
-                        // binding names used by `get_lvalue`
-                        let mut vars = (0..var.fields.len()).into_iter().map(|i| format!("discr_{}", i)).collect_vec();
-                        if var.ctor_kind == CtorKind::Fictive {
-                            vars = vec![format!("({})", (self.name_def_id(var.did) + ".struct.mk", vars).join(" "))]
-                        }
+                        let vars = if var.ctor_kind == CtorKind::Fictive {
+                            vec!["«»"]
+                        } else {
+                            vec!["«»"; var.fields.len()]
+                        };
                         Ok(format!("| {} :=\n{}", (self.name_def_id(var.did), vars).join(" "), rec!(target)?))
                     }).try()?.join(" ");
                     self.get_lvalue(discr)?.map(0, |discr| {
@@ -978,7 +987,6 @@ definition {} : sem {} :=
 {}end",
                     format_params("parameters", ty_params.iter().map(|p| p.to_string())) +
                     &closure_def +
-                    &format_params("include", ty_params.iter().map(|p| p.name().to_string())) +
                     &self.prelude.iter().join("\n\n"),
                     (name, params).join(" "), self.ret_ty()?, body, closure_impl)
         })
