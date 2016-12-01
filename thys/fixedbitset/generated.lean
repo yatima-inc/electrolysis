@@ -54,7 +54,7 @@ do «$tmp0» ← sem.map (λx, (x, tt)) (checked.add usize.bits «blocks$3» t7)
 let' t10 ← «$tmp0»;
 let' «blocks$3» ← t10.1;
 let' t12 ← «blocks$3»;
-dostep «$tmp» ← @collections.vec.from_elem u32 (@core.«u32 as core.clone.Clone» ) (0 : nat) t12;
+dostep «$tmp» ← @collections.vec.from_elem u32 (@core.«u32 as core.clone.Clone») (0 : nat) t12;
 let' t11 ← «$tmp»;
 let' t14 ← «bits$2»;
 let' ret ← fixedbitset.FixedBitSet.mk t11 t14;
@@ -83,9 +83,9 @@ let' ret ← ff;
 return (ret)
  | core.option.Option.Some «» :=
 do «$tmp0» ← match t9 with
-| core.option.Option.None :=
-mzero | core.option.Option.Some «$0» :=
-return «$0»end
+| core.option.Option.None := mzero
+ | core.option.Option.Some «$0» := return «$0»
+end
 ;
 let' «b$14» ← «$tmp0»;
 let' t16 ← «b$14»;
