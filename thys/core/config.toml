@@ -19,6 +19,8 @@ ignore = [
   'core.intrinsics.(.*_with_overflow|overflowing_.*)',
   "core.mem.swap",
   'core.«\[T\] as core.slice.SliceExt».len',
+  'core.[iu]size.(min_value|overflowing_sh.)',
+  'core.num.wrapping.shift_max.platform.[iu]size',
   # introduces looping identity class instances
   'core.«\(A,\) as.*',
 ]
@@ -37,6 +39,8 @@ fail = [
   'core.str.pattern.TwoWaySearcher.(reverse_)?maximal_suffix',
   'core.«core.hash.sip.Sip..Rounds as core.hash.sip.Sip».[cd]_rounds',
   'core.num.diy_float.Fp.normalize',
+  # broken recursion detection -- would fail anyway
+  'core.ops.Carrier'
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline

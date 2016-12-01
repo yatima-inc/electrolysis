@@ -2,7 +2,7 @@
 name = "electrolysis"
 version = "0.1.0"
 dependencies = [
- "itertools 0.4.17 (registry+https://github.com/rust-lang/crates.io-index)",
+ "itertools 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "petgraph 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.73 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -18,14 +18,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "fixedbitset"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "itertools"
-version = "0.4.17"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "either 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "kernel32-sys"
@@ -126,8 +134,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
 "checksum aho-corasick 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "2b3fb52b09c1710b961acb35390d514be82e4ac96a9969a8e38565a29b878dc9"
+"checksum either 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "3d2b503c86dad62aaf414ecf2b8c527439abedb3f8d812537f0b12bfd6f32a91"
 "checksum fixedbitset 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "909f25e72c7e0adb4891b20d416d5481ea485153c0552ffc64effcd0edce58b4"
-"checksum itertools 0.4.17 (registry+https://github.com/rust-lang/crates.io-index)" = "7ddb83e0e9730d830afba4e6839077948b4efa22075f7cd80a3867ec286c610f"
+"checksum itertools 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)" = "4e80479061d4444bfb160054b66fa92cf45e5a6490aadec415ea214004198194"
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
 "checksum lazy_static 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "49247ec2a285bb3dcb23cbd9c35193c025e7251bfce77c1d5da97e6362dffe7f"
 "checksum libc 0.2.15 (registry+https://github.com/rust-lang/crates.io-index)" = "23e3757828fa702a20072c37ff47938e9dd331b92fac6e223d26d4b7a55f7ee2"

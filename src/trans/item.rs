@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::iter;
 use std::ops::Deref;
 
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use syntax::ast::{self, NodeId};
 use rustc::hir;
@@ -43,7 +43,7 @@ impl<'tcx> TraitImplLookup<'tcx> {
 
 pub enum LeanTyParam<'tcx> {
     RustTyParam(String),
-    AssocTy(String),
+    AssocTy(String, ty::ProjectionTy<'tcx>),
     TraitRef(String, String, ty::TraitRef<'tcx>),
 }
 
@@ -51,7 +51,7 @@ impl<'tcx> LeanTyParam<'tcx> {
     pub fn to_string(&self) -> String {
         match *self {
             LeanTyParam::RustTyParam(ref name) => format!("{{{} : Type₁}}", name),
-            LeanTyParam::AssocTy(ref name) => format!("({} : Type₁)", name),
+            LeanTyParam::AssocTy(ref name, _) => format!("({} : Type₁)", name),
             LeanTyParam::TraitRef(ref name, ref ty, _) => format!("[{} : {}]", name, ty),
         }
     }
@@ -59,11 +59,13 @@ impl<'tcx> LeanTyParam<'tcx> {
     pub fn name(&self) -> &str {
         match *self {
             LeanTyParam::RustTyParam(ref name) => name,
-            LeanTyParam::AssocTy(ref name) => name,
+            LeanTyParam::AssocTy(ref name, _) => name,
             LeanTyParam::TraitRef(ref name, _, _) => name,
         }
     }
 }
+
+type AssocTyRef<'tcx> = (ty::TraitRef<'tcx>, ast::Name);
 
 pub struct ItemTranspiler<'a, 'tcx: 'a> {
     pub sup: &'a CrateTranspiler<'a, 'tcx>,
@@ -101,69 +103,52 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         }).collect()
     }
 
-    fn transpile_associated_type(&self, trait_ref: ty::TraitRef, name: &ast::Name) -> String {
-        krate::mk_lean_name_from_parts(iter::once(&format!("{:?}.{}", trait_ref, name)))
+    pub fn transpile_associated_type(&self, assoc_ty: ty::ProjectionTy<'tcx>) -> TransResult<(String, bool)> {
+        let ty = self.tcx.mk_projection(assoc_ty.trait_ref, assoc_ty.item_name);
+        let normalized = self.normalize_ty(ty);
+        Ok((self.transpile_ty(normalized)?, normalized != ty))
     }
 
-    /// `Item = u32` ~> `{'Item': 'u32'}`
-    pub fn get_assoc_ty_substs(&self, def_id: DefId, substs: &Substs<'tcx>) -> TransResult<HashMap<String, String>> {
-        Ok(self.tcx.item_predicates(def_id).predicates.into_iter().try_filter_map(|trait_pred| -> TransResult<_> { Ok(match trait_pred {
-            ty::Predicate::Projection(ty::Binder(proj_pred)) => {
-                let assoc_ty = self.transpile_associated_type(proj_pred.projection_ty.trait_ref.subst(self.tcx, substs), &proj_pred.projection_ty.item_name);
-                Some((assoc_ty, self.transpile_ty(&proj_pred.ty)?))
+    // unconstrained associated types from transitive dependencies
+    fn free_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>, mut bound_assoc_tys: HashSet<ty::ProjectionTy<'tcx>>) -> TransResult<Vec<ty::ProjectionTy<'tcx>>> {
+        for pred in &self.tcx.item_predicates(trait_ref.def_id).predicates {
+            if let &ty::Predicate::Projection(ty::Binder(ref proj_pred)) = pred {
+                bound_assoc_tys.insert(proj_pred.projection_ty.subst(self.tcx, trait_ref.substs));
             }
-            _ => None,
-        })})?.collect())
-    }
-
-    fn trait_ancestors(&self, trait_ref: ty::TraitRef<'tcx>) -> Vec<ty::TraitRef<'tcx>> {
-        iter::once(trait_ref).chain(self.trait_predicates_without_markers(trait_ref.def_id).flat_map(|trait_pred| {
-            if trait_pred.def_id() != trait_ref.def_id {
-                self.trait_ancestors(trait_pred.trait_ref.subst(self.tcx, trait_ref.substs))
-            } else { vec![] }
-        })).collect_vec()
-    }
-
-    // includes associates types from trait ancestors
-    fn all_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult<Vec<String>> {
-        let assoc_substs = self.get_assoc_ty_substs(trait_ref.def_id, trait_ref.substs)?;
-        Ok(self.trait_ancestors(trait_ref).into_iter().flat_map(|trait_ref| {
-            self.tcx.associated_items(trait_ref.def_id).filter_map(|item| match item.kind {
-                ty::AssociatedKind::Type
-                    if !assoc_substs.contains_key(&self.transpile_associated_type(trait_ref, &item.name)) =>
-                    Some(self.transpile_associated_type(trait_ref, &item.name)),
+        }
+        Ok(self.tcx.associated_items(trait_ref.def_id).filter_map(|item| {
+            let assoc_ty = ty::ProjectionTy { trait_ref, item_name: item.name };
+            match item.kind {
+                ty::AssociatedKind::Type if !bound_assoc_tys.contains(&assoc_ty) =>
+                    Some(assoc_ty),
                 _ => None,
-            }).collect_vec()
-        }).collect_vec())
+            }
+        }).chain(self.trait_predicates(trait_ref.def_id).try_flat_map(|trait_pred| {
+            if trait_pred.def_id() != trait_ref.def_id {
+                self.free_assoc_tys(trait_pred.trait_ref.subst(self.tcx, trait_ref.substs), bound_assoc_tys.clone())
+            } else { Ok(vec![]) }
+        })?).collect_vec())
     }
 
-    /// `Iterator, {}` ~> `(['Item'], ['Item'])`
-    /// `Iterator, {'Item': 'u32'}` ~> `(['u32'], [])`
-    pub fn transpile_trait_ref_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>, assoc_ty_substs: &HashMap<String, String>) -> TransResult<(Vec<String>, Vec<String>)> {
-        let mut free_assoc_tys = vec![];
-        let assoc_tys = self.all_assoc_tys(trait_ref)?.into_iter().flat_map(|assoc_ty| {
-            Some(match assoc_ty_substs.get(&assoc_ty) {
-                Some(assoc_ty) => assoc_ty.to_owned(),
-                _ => {
-                    free_assoc_tys.push(assoc_ty.clone());
-                    assoc_ty
-                }
-            })
-        }).collect();
-
-        Ok((assoc_tys, free_assoc_tys))
-    }
-
-    /// `Add<T, RHS=S>` ~> `'Add T'`
+    /// `A: Add<T, Output=S>` ~> `'Add A T'`
     pub fn transpile_trait_ref_no_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult {
         Ok((&self.name_def_id(trait_ref.def_id), self.transpile_trait_ref_args(trait_ref)?).join(" "))
     }
 
-    /// `Add<T>` ~> `'Add T RHS'`
-    /// `Add<T, RHS=S>` ~> `'Add T S'`
-    pub fn transpile_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>, assoc_ty_substs: &HashMap<String, String>) -> TransResult {
-        let associated_types = self.transpile_trait_ref_assoc_tys(trait_ref, assoc_ty_substs)?.0;
-        Ok((self.transpile_trait_ref_no_assoc_tys(trait_ref)?, associated_types).join(" "))
+    /// Returns translation + free assoc tys in the current env
+    ///
+    /// `A: Add<T, Output=S>` ~> `('Add A T S', [])`
+    /// `A: Add<T>` ~> `('Add A T «<A as Add<T>>.Output»'), ['«<A as Add<T>>.Output»']`
+    pub fn transpile_trait_ref(&self, trait_ref: ty::TraitRef<'tcx>) -> TransResult<(String, Vec<String>)> {
+        let mut free_assoc_tys = vec![];
+        let assoc_tys = self.free_assoc_tys(trait_ref, HashSet::new())?.into_iter().map(|assoc_ty| {
+            let (trans, normalized) = self.transpile_associated_type(assoc_ty)?;
+            if !normalized {
+                free_assoc_tys.push(trans.clone());
+            }
+            Ok(trans)
+        }).try()?;
+        Ok(((self.transpile_trait_ref_no_assoc_tys(trait_ref)?, assoc_tys).join(" "), free_assoc_tys))
     }
 
     pub fn free_substs_for_item(&self, def_id: DefId) -> &'tcx Substs<'tcx> {
@@ -171,7 +156,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     /// `T : Iterator` ~> `[(T : Type), (Item : Type), [Iterator : Iterator T Item]]`
-    pub fn transpile_ty_params_with_substs(&self, def_id: DefId, substs: &Substs<'tcx>, is_trait: bool) -> TransResult<Vec<LeanTyParam<'tcx>>> {
+    pub fn transpile_ty_params_with_substs(&self, def_id: DefId, substs: &Substs<'tcx>, only_self_bound: bool) -> TransResult<Vec<LeanTyParam<'tcx>>> {
         if self.tcx.def_key(def_id).disambiguated_data.data == hir::map::definitions::DefPathData::ClosureExpr {
             // closure shares params with outer scope
             return self.transpile_ty_params(self.tcx.parent_def_id(def_id).unwrap())
@@ -186,10 +171,11 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             parent_params = self.transpile_ty_params_with_substs(impl_def_id, substs, false)?
         };
 
-        let ty_params = self.tcx.item_generics(def_id).types.iter().map(|p| LeanTyParam::RustTyParam(p.name.as_str().to_string()));
-        let assoc_ty_substs = self.get_assoc_ty_substs(def_id, substs)?;
+        let ty_params = self.tcx.item_generics(def_id).types.iter().map(|p| {
+            Ok(LeanTyParam::RustTyParam(self.transpile_ty(self.tcx.mk_param_from_def(p).subst(self.tcx, substs))?))
+        }).try()?;
 
-        let predicates = if is_trait {
+        let predicates = if only_self_bound {
             // for trait items, ignore predicates on trait except for the `Self: Trait` predicate
             self.tcx.item_predicates(def_id).predicates.into_iter().filter(|pred| match *pred {
                 ty::Predicate::Trait(ref trait_pred) => trait_pred.def_id() == def_id,
@@ -206,11 +192,17 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             .try_flat_map(|trait_pred| {
                 let trait_ref = trait_pred.trait_ref.subst(self.tcx, substs);
                 self.add_dep(trait_ref.def_id);
-                let free_assoc_tys = self.transpile_trait_ref_assoc_tys(trait_ref, &assoc_ty_substs)?.1;
-                let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| LeanTyParam::AssocTy(ty));
+                let (trans, _free_assoc_tys) = self.transpile_trait_ref(trait_ref)?;
+                // HACK: `transpile_trait_ref` currently returns the free assoc tys in the _current_ env,
+                // which works for everything except `FnTranspiler::get_call_target`. So use the
+                // env-independent assoc tys from `free_assoc_tys` as an over-approximation instead.
+                // let free_assoc_tys = free_assoc_tys.into_iter().map(|ty| LeanTyParam::AssocTy(ty));
+                let free_assoc_tys = self.free_assoc_tys(trait_ref, HashSet::new())?.into_iter().map(|ty| {
+                    LeanTyParam::AssocTy(self.mk_lean_name(format!("{:?}.{}", ty.trait_ref, ty.item_name)), ty)
+                });
                 let trait_param = LeanTyParam::TraitRef(
                     self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref)?),
-                    self.transpile_trait_ref(trait_ref, &assoc_ty_substs)?,
+                    trans,
                     trait_ref);
                 Ok(free_assoc_tys.chain(iter::once(trait_param)))
             })?;
@@ -288,7 +280,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 mutbl: hir::Mutability::MutImmutable, ref ty
             }) => self.transpile_ty(ty)?,
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
-            ty::TypeVariants::TyProjection(ref proj) => self.transpile_associated_type(proj.trait_ref, &proj.item_name),
+            ty::TypeVariants::TyProjection(ref proj) =>
+                self.mk_lean_name(format!("{:?}.{}", proj.trait_ref, proj.item_name)),
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)?),
             ty::TypeVariants::TyStr => "string".to_string(),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
@@ -319,7 +312,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 _ => false,
             })).collect_vec()
         } else {
-            ::itertools::Unfold::new(Some(def_id), |opt_def_id| {
+            ::itertools::unfold(Some(def_id), |opt_def_id| {
                 opt_def_id.map(|def_id| {
                     let g = self.tcx.item_predicates(def_id);
                     *opt_def_id = g.parent;
@@ -390,7 +383,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             },
             Vtable::VtableParam(_) => TraitImplLookup::Dynamic { param: {
                 let t = self.transpile_trait_ref_no_assoc_tys(trait_ref)?;
-                if self.all_assoc_tys(trait_ref)?.is_empty() {
+                if self.free_assoc_tys(trait_ref, HashSet::new())?.is_empty() {
                     format!("(_ : {})", t)
                 } else {
                     let param = self.mk_lean_name(t);
@@ -422,7 +415,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     fn transpile_struct(&self, suffix: &str, variant: ty::VariantDef<'tcx>) -> TransResult {
         if self.transpile_ty_params(self.def_id)?.iter().any(|p| match *p {
-            LeanTyParam::AssocTy(_) => true,
+            LeanTyParam::AssocTy(..) => true,
             _ => false,
         }) {
             throw!("unimplemented: struct with associated type dependency")
@@ -481,7 +474,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         // if no variants have data attached, add a function to extract the discriminant
         let discr = if !adt_def.variants.is_empty() && adt_def.variants.iter().all(|variant| variant.ctor_kind == CtorKind::Const) {
             let discrs = adt_def.variants.iter().map(|variant| {
-                format!("| {} := {}", krate::mk_lean_name_from_parts(&[name, &*variant.name.as_str()]),
+                format!("| {}.{} := {}", name, self.mk_lean_name(variant.name),
                         variant.disr_val.to_u64_unchecked() as i64)
             }).join("\n");
             format!("\n\ndefinition {}.discr {} : isize := match self with\n{}\nend",
@@ -502,12 +495,15 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_trait(&self, name: &str) -> TransResult {
-        let substs = self.free_substs_for_item(self.def_id);
-        let assoc_ty_substs = self.get_assoc_ty_substs(self.def_id, substs)?;
-        let supertraits = try_iter!(self.trait_predicates_without_markers(self.def_id)
-            .filter(|trait_pred| trait_pred.def_id() != self.def_id)
-            .map(|trait_pred| self.transpile_trait_ref(trait_pred.trait_ref, &assoc_ty_substs)))
-            .collect_vec();
+        let ty_params = self.transpile_ty_params(self.def_id)?.into_iter().filter(|p| match *p {
+            LeanTyParam::TraitRef(_, _, ref trait_ref) => trait_ref.def_id != self.def_id,
+            _ => true,
+        });
+        let (supertraits, ty_params): (Vec<_>, Vec<_>) = ty_params.partition_map(|p| match p {
+            LeanTyParam::TraitRef(_, ty, _) => Either::Left(ty),
+            // make both explicit
+            LeanTyParam::RustTyParam(name) | LeanTyParam::AssocTy(name, _) => Either::Right(format!("({} : Type₁)", name)),
+        });
         let extends = if supertraits.is_empty() { "".to_owned() } else {
             format!(" extends {}", supertraits.into_iter().join(", "))
         };
@@ -532,34 +528,16 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::AssociatedKind::Const =>
                 throw!("unimplemented: const trait items"),
         }))?.collect_vec();
-        let trait_ref = self.tcx.lookup_trait_def(self.def_id).trait_ref;
-        Ok(format!("structure {} {}{} {}",
-                   self.as_generic_ty_def(" [class]"),
-                   self.all_assoc_tys(trait_ref)?.into_iter().map(|assoc_ty| {
-                       format!("({} : Type₁)", assoc_ty)
-                   }).join(" "),
+        Ok(format!("structure {}{}{}",
+                   (self.name_def_id(self.def_id) + " [class]", ty_params).join(" "),
                    extends,
                    if items.is_empty() { "".to_string() }
-                   else { format!(":=\n{}", items.join("\n")) }))
-    }
-
-    fn trait_impl_substs(&self, trait_ref: ty::TraitRef) -> TransResult<HashMap<String, String>> {
-        let mut substs = self.get_assoc_ty_substs(self.def_id, self.free_substs_for_item(self.def_id))?;
-
-        // For `type S = T`, extend `assoc_ty_substs` by `{'S': 'T'}`
-        for item in self.tcx.associated_items(self.def_id) {
-            if item.kind == ty::AssociatedKind::Type {
-                let ty = self.normalize_ty(self.tcx.item_type(item.def_id));
-                substs.insert(self.transpile_associated_type(trait_ref, &item.name), self.transpile_ty(ty)?);
-            }
-        }
-        Ok(substs)
+                   else { format!(" :=\n{}", items.join("\n")) }))
     }
 
     fn transpile_trait_impl(&self) -> TransResult {
         let mut trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
         trait_ref.substs = self.tcx.erase_regions(&trait_ref.substs);
-        let assoc_ty_substs = self.trait_impl_substs(trait_ref)?;
 
         let ty_params = self.transpile_ty_params(self.def_id)?;
         let supertrait_impls = self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {
@@ -589,7 +567,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
         Ok(format!("definition {} := ⦃\n  {}\n⦄",
                    (self.name() + " [instance]", ty_params.iter().map(LeanTyParam::to_string)).join(" "),
-                   (self.transpile_trait_ref(trait_ref, &assoc_ty_substs)?, supertrait_impls.into_iter().chain(items)).join(",\n  ")))
+                   (self.transpile_trait_ref(trait_ref)?.0, supertrait_impls.into_iter().chain(items)).join(",\n  ")))
     }
 
     fn transpile_fn(&self, name: String) -> TransResult {

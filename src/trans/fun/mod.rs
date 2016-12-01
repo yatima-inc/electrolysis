@@ -724,9 +724,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         None => {}
                     };
 
-                    let ty_params = self.transpile_ty_params_with_substs(def_id, substs, false)?.iter().map(|p| Ok(match *p {
-                        // TODO: should probably substitute and make explicit
-                        LeanTyParam::RustTyParam(_) | LeanTyParam::AssocTy(_) => "_".to_string(),
+                    let ty_params = self.transpile_ty_params_with_substs(def_id, substs, false)?.into_iter().map(|p| Ok(match p {
+                        LeanTyParam::RustTyParam(name) => name,
+                        LeanTyParam::AssocTy(_, ty) => self.transpile_associated_type(ty)?.0,
                         LeanTyParam::TraitRef(_, _, trait_ref) =>
                             self.infer_trait_impl(trait_ref, &infcx)?.to_string(self)?,
                     })).try()?;
@@ -925,10 +925,6 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         let body = (promoted, self.transpile_mir()?).join("\n");
 
         let ty_params = self.transpile_ty_params(self.def_id)?;
-        let includes = ty_params.iter().filter_map(|p| match *p {
-            LeanTyParam::TraitRef(ref name, _, _) => Some(name.to_string()),
-            _ => None,
-        }).collect_vec();
         let (closure_def, closure_impl) = if self.is_closure() {
             let closure_ty = unwrap_refs(krate::unwrap_mut_ref(&self.mir.local_decls[Local::new(1)].ty));
             let upvar_tys = match closure_ty.sty {
@@ -974,16 +970,16 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 }
             }
             format!("section
-{}{}{}{}
+{}
 
 definition {} : sem {} :=
 {}
 
 {}end",
-                    format_params("parameters", ty_params.iter().map(|p| p.to_string())),
-                    closure_def,
-                    format_params("include", includes),
-                    self.prelude.iter().join("\n\n"),
+                    format_params("parameters", ty_params.iter().map(|p| p.to_string())) +
+                    &closure_def +
+                    &format_params("include", ty_params.iter().map(|p| p.name().to_string())) +
+                    &self.prelude.iter().join("\n\n"),
                     (name, params).join(" "), self.ret_ty()?, body, closure_impl)
         })
     }
