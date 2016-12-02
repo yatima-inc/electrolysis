@@ -33,6 +33,7 @@ fail = [
   # way too big with naive if compilation
   'core.«\(A, B, C, D, E.*',
   'core.«.* as core.iter.range.Step».steps_between',
+  'core.«core.iter.range.StepBy<A, core.ops.Range<A>> as core.iter.iterator.Iterator».next',
   'core.«core.num.flt2dec.decoder.Decoded as core.cmp.PartialEq».*',
   'core.num.dec2flt.parse.eat_digits',
   'core.str.next_code_point(_reverse)?',
@@ -40,7 +41,9 @@ fail = [
   'core.«core.hash.sip.Sip..Rounds as core.hash.sip.Sip».[cd]_rounds',
   'core.num.diy_float.Fp.normalize',
   # broken recursion detection -- would fail anyway
-  'core.ops.Carrier'
+  'core.ops.Carrier',
+  # field/method name clash
+  'core.str.Utf8Error.valid_up_to'
 ]
 
 # unsafe functions that rely on other definitions and thus have to be replaced inline

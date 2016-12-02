@@ -52,7 +52,7 @@ let' «y$4» ← yₐ;
 let' t6 ← «y$4»;
 let' t5 ← test.foo.closure_13.mk t6;
 let' t7 ← «x$3»;
-dostep «$tmp» ← @test.apply i32 i32 (test.foo.closure_13 i32) _ t5 t7;
+dostep «$tmp» ← @test.apply i32 i32 (test.foo.closure_13 i32) (@test.foo.closure_13.inst ) t5 t7;
 let' ret ← «$tmp»;
 return (ret)
 

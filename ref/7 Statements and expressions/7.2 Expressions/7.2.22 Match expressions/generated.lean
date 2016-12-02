@@ -131,9 +131,9 @@ let' t9 ← t10;
 mzero
  | core.option.Option.Some «» :=
 do «$tmp0» ← match «x$2» with
-| core.option.Option.None :=
-mzero | core.option.Option.Some «$0» :=
-return «$0»end
+| core.option.Option.None := mzero
+ | core.option.Option.Some «$0» := return «$0»
+end
 ;
 let' «x$3» ← «$tmp0»;
 let' t6 ← «x$3»;
@@ -144,9 +144,9 @@ let' ret ← core.option.Option.Some t7;
 return (ret)
 else
 do «$tmp0» ← match «x$2» with
-| core.option.Option.None :=
-mzero | core.option.Option.Some «$0» :=
-return «$0»end
+| core.option.Option.None := mzero
+ | core.option.Option.Some «$0» := return «$0»
+end
 ;
 let' «x$4» ← «$tmp0»;
 let' ret ← core.option.Option.None;

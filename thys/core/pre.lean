@@ -318,24 +318,30 @@ namespace core
     structure FnOnce [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
     (call_once : Self → Args → sem Output)
 
-    structure FnMut [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
+    definition FnOnce.mk_simple := @FnOnce.mk
+
+    structure FnMut [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) extends FnOnce Self Args Output :=
     (call_mut : Self → Args → sem (Output × Self))
+    attribute [coercion] FnMut.to_FnOnce
 
-    definition FnMut_to_FnOnce [instance] (Self Args Output : Type₁) [FnMut Self Args Output]
-      : FnOnce Self Args Output :=
-    ⦃FnOnce, call_once := λ self args, sem.map prod.pr1 (FnMut.call_mut _ self args)⦄
+    definition FnMut.mk_simple {Self Args Output : Type₁} (call_mut : Self → Args → sem (Output × Self)) :
+      FnMut Self Args Output :=
+    ⦃FnMut, call_mut := call_mut,
+     call_once := λ self args, sem.map prod.pr1 (call_mut self args)⦄
 
-    structure Fn [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) :=
+    structure Fn [class] (Self : Type₁) (Args : Type₁) (Output : Type₁) extends FnMut Self Args Output :=
     (call : Self → Args → sem Output)
+    attribute [coercion] Fn.to_FnMut
 
-    definition Fn_to_FnMut [instance] (Self Args Output : Type₁) [Fn Self Args Output]
-      : FnMut Self Args Output :=
-    ⦃FnMut, call_mut := λ self args, do x ← Fn.call _ self args;
-      return (x, self)⦄
+    definition Fn.mk_simple {Self Args Output : Type₁} (call : Self → Args → sem Output) :
+      Fn Self Args Output :=
+    ⦃Fn, call := call, call_once := call,
+     call_mut := λ self args, do x ← call self args;
+       return (x, self)⦄
   end ops
 end core
 
-export [class] core.ops
+export [class] [coercion] core.ops
 
 notation `let'` binder ` ← ` x `; ` r:(scoped f, f x) := r
 attribute sem [irreducible]

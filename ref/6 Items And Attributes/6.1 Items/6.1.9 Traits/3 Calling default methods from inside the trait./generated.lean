@@ -34,7 +34,7 @@ definition test.«test.Bar as test.Foo» [instance] := ⦃
 definition test.«test.Bar as test.Foo».bar (selfₐ : (test.Bar)) : sem (unit) :=
 let' «self$2» ← selfₐ;
 let' t3 ← «self$2»;
-dostep «$tmp» ← @test.Foo.baz (test.Bar) (@test.«test.Bar as test.Foo» ) t3;
+dostep «$tmp» ← @test.Foo.baz (test.Bar) (@test.«test.Bar as test.Foo») t3;
 let' ret ← «$tmp»;
 return (⋆)
 
