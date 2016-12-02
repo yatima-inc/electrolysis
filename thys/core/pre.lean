@@ -77,6 +77,8 @@ abbreviation u32 [parsing_only] := nat
 abbreviation u64 [parsing_only] := nat
 abbreviation usize [parsing_only] := nat
 
+abbreviation char32 [parsing_only] := nat
+
 abbreviation i8 [parsing_only] := int
 abbreviation i16 [parsing_only] := int
 abbreviation i32 [parsing_only] := int
@@ -92,6 +94,8 @@ definition u64.bits [reducible] : ℕ := 64
 definition usize.bits : ℕ := 16
 lemma usize.bits_ge_16 : usize.bits ≥ 16 := dec_trivial
 attribute usize.bits [irreducible]
+
+definition char32.bits [reducible] : ℕ := 32
 
 definition i8.bits [reducible] : ℕ := 8
 definition i16.bits [reducible] : ℕ := 16
@@ -240,6 +244,12 @@ check_signed bits x
 definition bool_to_unsigned (bits : ℕ) (x : bool) : sem nat :=
 return (if x = tt then 1 else 0)
 
+definition char_to_unsigned (bits : ℕ) (x : char32) : sem nat :=
+check_unsigned bits x
+
+-- statically checked by rustc by only allowing casts from `u8`
+definition unsigned_to_char (bits : ℕ) (x : nat) : sem char32 :=
+return x
 
 infix `=ᵇ`:50 := λ a b, bool.of_Prop (a = b)
 infix `≠ᵇ`:50 := λ a b, bool.of_Prop (a ≠ b)
@@ -324,7 +334,7 @@ namespace core
     (call_mut : Self → Args → sem (Output × Self))
     attribute [coercion] FnMut.to_FnOnce
 
-    definition FnMut.mk_simple {Self Args Output : Type₁} (call_mut : Self → Args → sem (Output × Self)) :
+    definition FnMut.mk_simple [constructor] {Self Args Output : Type₁} (call_mut : Self → Args → sem (Output × Self)) :
       FnMut Self Args Output :=
     ⦃FnMut, call_mut := call_mut,
      call_once := λ self args, sem.map prod.pr1 (call_mut self args)⦄
@@ -333,7 +343,7 @@ namespace core
     (call : Self → Args → sem Output)
     attribute [coercion] Fn.to_FnMut
 
-    definition Fn.mk_simple {Self Args Output : Type₁} (call : Self → Args → sem Output) :
+    definition Fn.mk_simple [constructor] {Self Args Output : Type₁} (call : Self → Args → sem Output) :
       Fn Self Args Output :=
     ⦃Fn, call := call, call_once := call,
      call_mut := λ self args, do x ← call self args;

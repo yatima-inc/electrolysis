@@ -30,11 +30,7 @@ let' ret ← ⋆;
 return (⋆)
 
 
-definition test.«test.Bar as test.Foo».baz (selfₐ : (test.Bar)) : sem (unit) :=
-let' «self$2» ← selfₐ;
-let' ret ← ⋆;
-return (⋆)
+/- test.«test.Bar as test.Foo».baz: unimplemented: overriding default method "test.«test.Bar as test.Foo».baz" -/
 
-
-/- test.«test.Bar as test.Foo»: unimplemented: overriding default method "test.«test.Bar as test.Foo».baz" -/
+/- test.«test.Bar as test.Foo»: failed dependencies test.«test.Bar as test.Foo».baz -/
 

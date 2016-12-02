@@ -360,6 +360,8 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 ::syntax::attr::IntType::UnsignedInt(_) =>
                     format!("({} : nat)", i.to_u64_unchecked()),
             },
+            ConstVal::Char(c) =>
+                format!("({} : char32)", c as u32),
             ConstVal::Str(ref s) => format!("\"{}\"", s),
             _ => throw!("unimplemented: literal {:?}", val),
         })
@@ -470,10 +472,11 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 let trans_ty = |ty: ty::Ty<'tcx>| match ty.sty {
                     ty::TypeVariants::TyInt(_) => Ok("signed".to_string()),
                     ty::TypeVariants::TyUint(_) => Ok("unsigned".to_string()),
+                    ty::TypeVariants::TyChar => Ok("char".to_string()),
                     _ => self.transpile_ty(ty),
                 };
                 self.get_operand(op)?.try_and_then(0, |operand| Ok(MaybeValue::partial(
-                    if op_ty.is_integral() || op_ty.is_bool() {
+                    if op_ty.is_integral() || op_ty.is_bool() || op_ty.is_char() {
                         format!("({}_to_{} {}.bits {})",
                                 trans_ty(op_ty)?, trans_ty(dest_ty)?, self.transpile_ty(dest_ty)?,
                                 operand)
@@ -869,6 +872,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     ::syntax::attr::IntType::UnsignedInt(_) =>
                                         format!("{}", i.to_u64_unchecked()),
                                 },
+                                ConstVal::Char(c) => format!("{}", c as u32),
                                 _ => unreachable!(),
                             };
                             Ok(format!("| {} :=\n{}", val, rec!(target)?))
@@ -917,7 +921,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
     pub fn transpile_fn(mut self, mut name: String) -> TransResult {
         let param_names = self.mir.args_iter().map(|arg| self.local_name(arg)).collect_vec();
         let param_tys = self.mir.args_iter().map(|arg| {
-            if self.is_closure() && arg.index() > 0 && krate::try_unwrap_mut_ref(&self.mir.local_decls[arg].ty).is_some() {
+            if self.is_closure() && arg.index() > 1 && krate::try_unwrap_mut_ref(&self.mir.local_decls[arg].ty).is_some() {
                 throw!("unimplemented: closure taking &mut")
             }
             self.transpile_ty(krate::unwrap_mut_ref(&self.mir.local_decls[arg].ty))
@@ -950,7 +954,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 {fn_type}.mk_simple (λ self args, {})\n\n",
                                        (&name, &upvar_tys).join(" "),
                                        item::mk_tuple_ty(param_tys.iter().cloned().skip(1)),
-                                       self.ret_ty()?,
+                                       self.transpile_ty(self.mir.return_ty)?,
                                        detuplize("args", &closure_params,
                                                  &format!("  {}.fn {}\n", name, ("self", &closure_params).join(" "))),
                                        clo=name,

@@ -56,7 +56,7 @@ return (ret, «$a1»)
 
 
 definition test.foo.closure_13.inst [instance] : core.ops.FnMut (test.foo.closure_13 i32) i32 i32 :=
-core.ops.FnMut.mk (λ self args, let' xₐ ← args;
+core.ops.FnMut.mk_simple (λ self args, let' xₐ ← args;
   test.foo.closure_13.fn self xₐ
 )
 

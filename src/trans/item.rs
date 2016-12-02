@@ -107,8 +107,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     pub fn transpile_associated_type(&self, assoc_ty: ty::ProjectionTy<'tcx>) -> TransResult<String> {
         let ty = self.tcx.mk_projection(assoc_ty.trait_ref, assoc_ty.item_name);
-        let normalized = self.normalize_ty(ty);
-        self.transpile_ty(normalized)
+        let ty = self.normalize_ty(ty);
+        self.transpile_ty(ty)
     }
 
     // unconstrained associated types from transitive dependencies
@@ -271,6 +271,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyBool => "bool".to_string(),
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
+            ty::TypeVariants::TyChar => "char32".to_string(), // Lean already has an 8-bit `char`
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
             ty::TypeVariants::TyTuple(ref tys) => mk_tuple_ty(
                 tys.iter().map(|ty| self.transpile_ty(ty)).try()?),
@@ -288,8 +289,10 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 mutbl: hir::Mutability::MutImmutable, ref ty
             }) => self.transpile_ty(ty)?,
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
-            ty::TypeVariants::TyProjection(ref proj) =>
-                self.mk_lean_name(format!("{:?}.{}", proj.trait_ref, proj.item_name)),
+            ty::TypeVariants::TyProjection(ref proj) => {
+                let proj = self.tcx.erase_regions(proj);
+                self.mk_lean_name(format!("{:?}.{}", proj.trait_ref, proj.item_name))
+            }
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)?),
             ty::TypeVariants::TyStr => "string".to_string(),
             ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
@@ -351,7 +354,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
 
     fn find_local_trait_impl(&self, target: ty::TraitRef<'tcx>) -> TransResult {
         fn rec<'a, 'tcx>(tcx: ty::TyCtxt<'a, 'tcx, 'tcx>, cur: ty::TraitRef<'tcx>, target: ty::TraitRef<'tcx>) -> bool {
-            cur == target || tcx.item_predicates(cur.def_id).predicates.into_iter().any(|pred| match pred {
+            tcx.erase_regions(&cur) == tcx.erase_regions(&target) || tcx.item_predicates(cur.def_id).predicates.into_iter().any(|pred| match pred {
                 ty::Predicate::Trait(ref trait_pred) if trait_pred.def_id() != cur.def_id => {
                     let new = trait_pred.0.trait_ref.subst(tcx, cur.substs);
                     rec(tcx, new, target)
@@ -360,7 +363,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             })
         }
         for ty_param in self.transpile_ty_params(self.def_id)? {
-            if let LeanTyParam::TraitRef(_, _, mut trait_ref) = ty_param {
+            if let LeanTyParam::TraitRef(_, _, trait_ref) = ty_param {
                 if rec(self.tcx, trait_ref, target) {
                     return Ok(self.mk_lean_name(self.transpile_trait_ref_no_assoc_tys(trait_ref)?))
                 }
@@ -450,7 +453,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             }
             CtorKind::Fn => { // tuple struct
                 let mut fields = try_iter!(variant.fields.iter().map(|f| {
-                    self.transpile_ty(f.unsubst_ty())
+                    self.transpile_ty(self.normalize_ty(f.ty(self.tcx, self.free_substs_for_item(self.def_id))))
                 }));
                 let applied_ty = (self.name(), self.tcx.item_generics(self.def_id).types.iter().map(|p| p.name.as_str().to_string())).join(" ");
                 format!("inductive {} :=\nmk {{}} : {} → {}",
@@ -566,7 +569,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     }
 
     fn transpile_trait_impl(&self) -> TransResult {
-        let mut trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
+        let trait_ref = self.normalize_trait_ref(self.tcx.impl_trait_ref(self.def_id).unwrap());
 
         let ty_params = self.transpile_ty_params(self.def_id)?;
         let supertrait_impls = self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), Reveal::All).enter(|infcx| {

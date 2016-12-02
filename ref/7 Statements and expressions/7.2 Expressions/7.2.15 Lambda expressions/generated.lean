@@ -40,7 +40,7 @@ return (ret)
 
 
 definition test.foo.closure_13.inst [instance] : core.ops.FnOnce (test.foo.closure_13 i32) i32 i32 :=
-core.ops.FnOnce.mk (λ self args, let' xₐ ← args;
+core.ops.FnOnce.mk_simple (λ self args, let' xₐ ← args;
   test.foo.closure_13.fn self xₐ
 )
 
