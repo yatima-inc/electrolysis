@@ -13,8 +13,8 @@ open [notation] prod.ops
 open [notation] unit
 
 structure test.Container [class] (Self : Type₁) («<Self as Container>.E» : Type₁) :=
-(empty : sem (Self))
-(insert : Self → «<Self as Container>.E» → sem (unit × Self))
+(empty : (sem (Self)))
+(insert : (Self → «<Self as Container>.E» → sem (unit × Self)))
 
 definition test.«collections.vec.Vec<T> as test.Container».empty {T : Type₁} : sem ((collections.vec.Vec T)) :=
 dostep «$tmp» ← @collections.vec.«Vec<T>».new T;

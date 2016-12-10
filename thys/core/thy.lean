@@ -329,7 +329,7 @@ section
 end
 
 include His_slice
-private lemma loop_4.spec (Hinvar : loop_4_invar s base) : sem.terminates_with_in
+private lemma loop_4.spec_aux (Hinvar : loop_4_invar s base) : sem.terminates_with_in
   (loop_4_res s)
   (cmp_max_cost + 15)
   (loop_4 (f, base, s)) :=
@@ -490,7 +490,27 @@ end
 
 local infix `≼`:25 := asymptotic.le ([at ∞] : filter ℕ)
 
-theorem loop_loop_4.spec :
+private lemma loop_4.spec :
+  ∃₀ g ∈ 𝓞(id) [at ∞] ∩ Ω(1) [at ∞],
+  ∀ self needle, sorted le self → is_slice self → ∀ s base, loop_4_invar self needle s base → sem.terminates_with_in
+  (loop_4_res self needle s)
+  (g (Ord'.cmp_max_cost needle self))
+  (loop_4 (closure_5642.mk needle, base, s)) :=
+begin
+  existsi λ n, n + 15,
+  split,
+  { have id + (λ n, 15) ∈ 𝓞(id) [at ∞] ∩ Ω(λ n, 15) [at ∞], begin
+      apply ub_add_const,
+      apply and.intro asymptotic.le.refl (ub_of_eventually_le_at_infty 15 (λ y h, h)),
+    end,
+    exact and.intro (and.left this)
+      (calc (λ n, 1) ≼ (λ n, 15) : ub_of_eventually_le_at_infty 0 (take y h, dec_trivial)
+                 ... ≼ id + (λ n, 15) : and.right this)
+  },
+  apply @loop_4.spec_aux
+end
+
+private lemma loop_loop_4.spec_aux :
   ∃₀g ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
   ∀ needle (st : closure_5642 T × usize × slice T), let self := st.2 in
     st.1.1 = closure_5642.mk needle ∧ st.1.2 = 0 ∧ is_slice self ∧ sorted le self → sem.terminates_with_in
@@ -524,15 +544,10 @@ begin
       needle_mem := id
     ⦄,
   },
-  existsi λ n, n + 15,
-  split,
-  { have id + (λ n, 15) ∈ 𝓞(id) [at ∞] ∩ Ω(λ n, 15) [at ∞], begin
-      apply ub_add_const,
-      apply and.intro asymptotic.le.refl (ub_of_eventually_le_at_infty 15 (λ y h, h)),
-    end,
-    exact and.intro (and.left this)
-      (asymptotic.le.trans (ub_of_eventually_le_at_infty 0 (λ y h, dec_trivial)) (and.right this))
-  },
+  cases !loop_4.spec with g hloop_4,
+  cases hloop_4 with hg hloop_4,
+  existsi g,
+  split, exact hg,
   intro needle st,
   cases st with st₁ self,
   cases st₁ with f base,
@@ -544,7 +559,7 @@ begin
   cases inv with Hf' Hinv,
   esimp,
   rewrite [-prod.eta, -prod.eta st₁, ▸*, Hf'],
-  apply sem.terminates_with_in.imp (!loop_4.spec Hsorted Hslice _ _ Hinv),
+  apply sem.terminates_with_in.imp (!hloop_4 Hsorted Hslice s st₁.2 Hinv),
   { intro x, cases x with st' r,
     esimp,
     { intro Hstep, cases Hstep with base' s' Hinvar' Hvar Hs_ne_nil,
@@ -561,6 +576,21 @@ begin
     apply id,
   },
   esimp
+end
+
+private lemma loop_loop_4.spec :
+  ∃₀ f ∈ 𝓞(λp, log₂ p.1 * p.2) [at ∞ × ∞],
+  ∀ self needle, is_slice self → sorted le self → sem.terminates_with_in
+    (binary_search_res self needle)
+    (f (length self, Ord'.cmp_max_cost needle self))
+    (loop loop_4 (closure_5642.mk needle, 0, self)) :=
+begin
+  cases loop_loop_4.spec_aux with g h,
+  existsi g,
+  apply function.swap and.imp_right h,
+  intros,
+  apply a,
+  repeat (split | assumption)
 end
 
 theorem binary_search.spec :
@@ -582,11 +612,8 @@ begin
   { intros,
     rewrite [↑binary_search, ↑binary_search_by, bind_return],
     apply sem.terminates_with_in_incr,
-    apply spec needle,
-    esimp,
-    repeat split,
-    repeat (exact rfl | assumption)
-  }
+    apply spec self needle,
+    repeat (split | assumption) }
 end
 
 end binary_search

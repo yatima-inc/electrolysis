@@ -20,7 +20,7 @@ use syntax::ast;
 
 use self::component::Component;
 use util::*;
-use trans::item::{self, LeanTyParam};
+use trans::item::{self, LeanTyParam, mk_tuple, detuplize};
 use trans::krate;
 use trans::TransResult;
 
@@ -28,15 +28,6 @@ lazy_static! {
     // intrinsics that break parametricity and have to be invoked with bit count and signedness
     static ref NUM_INTRINSICS: Regex =
         Regex::new(r"^core.intrinsics.(overflowing_.*|.*_with_overflow)$").unwrap();
-}
-
-/// `mk_tuple("x", "y")` ~> `"(x, y)"`
-fn mk_tuple<It: IntoIterator<Item=T>, T: ::std::fmt::Display>(it: It) -> String {
-    match it.into_iter().collect_vec()[..] {
-        [] => "⋆".to_string(),
-        [ref x] => x.to_string(),
-        ref xs => format!("({})", xs.into_iter().join(", "))
-    }
 }
 
 /// `get_tuple_elem('x', 1, 3)` ~> `'x.1.2'`
@@ -51,14 +42,6 @@ fn set_tuple_elem<S : AsRef<str>>(tuple: S, value: S, idx: usize, len: usize) ->
     mk_tuple((0..len).into_iter().map(|i| if idx == i {value.as_ref().to_string()} else {
         get_tuple_elem(tuple.as_ref(), i, len)
     }))
-}
-
-// TODO: instead implement pattern let in Lean
-fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
-    match *pat {
-        [ref x] => format!("let' {} ← {};\n{}", x, val, cont),
-        _ => format!("match {} with {} :=\n{}end\n", val, mk_tuple(pat), cont),
-    }
 }
 
 /// `&&T` ~> `T`
@@ -280,9 +263,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         let sbase = format!("({}.val {})", self.name_def_id(def_id), sbase);
                         get_tuple_elem(sbase, field.index(), substs.upvar_tys(def_id, self.tcx).count())
                     }
-                    ref ty => throw!("unimplemented: accessing field of {:?}", ty),
+                    ref ty => throw!("unimplemented: accessing field | of {:?}", ty),
                 }))),
-            _ => throw!("unimplemented: loading {:?}", lv),
+            _ => throw!("unimplemented: loading lvalue | {:?}", lv),
         }
     }
 
@@ -335,7 +318,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                     "{}.mk {}", self.name_def_id(def_id),
                                     set_tuple_elem(sbase, val.to_string(), field.index(), substs.upvar_tys(def_id, self.tcx).count())))
                             }
-                            ref ty => throw!("unimplemented: setting field of {:?}", ty),
+                            ref ty => throw!("unimplemented: setting field | of {:?}", ty),
                         }
                     }
                     ProjectionElem::Index(ref index) => {
@@ -345,9 +328,9 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                             })
                         })
                     }
-                    _ => throw!("unimplemented: setting lvalue {:?}", lv),
+                    _ => throw!("unimplemented: setting lvalue | {:?}", lv),
                 }),
-            _ => throw!("unimplemented: setting lvalue {:?}", lv),
+            _ => throw!("unimplemented: setting lvalue | {:?}", lv),
         }
     }
 
@@ -363,15 +346,15 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
             ConstVal::Char(c) =>
                 format!("({} : char32)", c as u32),
             ConstVal::Str(ref s) => format!("\"{}\"", s),
-            _ => throw!("unimplemented: literal {:?}", val),
+            _ => throw!("unimplemented: literal | {:?}", val),
         })
     }
 
-    fn get_constant(&self, c: &Constant) -> TransResult<MaybeValue> {
+    fn get_constant(&self, c: &Constant<'tcx>) -> TransResult<MaybeValue> {
         Ok(match c.literal {
             Literal::Value { ref value } => MaybeValue::total(self.transpile_constval(value)?),
             Literal::Promoted { index }  => MaybeValue::total(format!("promoted_{}", index.index())),
-            Literal::Item { def_id, .. } => {
+            Literal::Item { def_id, substs } => {
                 use rustc::hir::*;
                 if let hir::map::Node::NodeItem(item) = self.tcx.map.get_if_local(def_id).unwrap() {
                     match item.node {
@@ -380,7 +363,14 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         _ => {}
                     }
                 }
-                MaybeValue::total(self.name_def_id(def_id))
+                self.tcx.infer_ctxt(None, Some(ty::ParameterEnvironment::for_item(self.tcx, self.node_id())), ::rustc::traits::Reveal::All).enter(|infcx| -> TransResult<MaybeValue> {
+                    Ok(MaybeValue::total(
+                        format!("(@{})", (self.name_def_id(def_id), self.transpile_ty_params_with_substs(def_id, def_id, substs, false)?.into_iter().map(|p| match p {
+                            LeanTyParam::TraitRef(_, _, trait_ref) =>
+                                self.infer_trait_impl(trait_ref, &infcx)?.to_string(self),
+                            _ => Ok(p.name().to_string()),
+                        }).try()?).join(" "))))
+                })?
             }
         })
     }
@@ -389,7 +379,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
         match *op {
             Operand::Consume(ref lv) => {
                 if self.deref_mut(lv).is_some() {
-                    throw!("unimplemented: arbitrary move of &mut {:?}", lv)
+                    throw!("unimplemented: arbitrary move of &mut | {:?}", lv)
                 }
                 self.get_lvalue(lv)
             }
@@ -475,18 +465,20 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                     ty::TypeVariants::TyChar => Ok("char".to_string()),
                     _ => self.transpile_ty(ty),
                 };
+                let sop = trans_ty(op_ty)?;
+                let sdest = trans_ty(dest_ty)?;
                 self.get_operand(op)?.try_and_then(0, |operand| Ok(MaybeValue::partial(
                     if op_ty.is_integral() || op_ty.is_bool() || op_ty.is_char() {
                         format!("({}_to_{} {}.bits {})",
-                                trans_ty(op_ty)?, trans_ty(dest_ty)?, self.transpile_ty(dest_ty)?,
+                                sop, sdest, self.transpile_ty(dest_ty)?,
                                 operand)
                     } else if let ty::TypeVariants::TyAdt(..) = op_ty.sty {
                         format!("(signed_to_{} {}.bits ({}.discr {}))",
-                                trans_ty(dest_ty)?, self.transpile_ty(dest_ty)?,
+                                sdest, self.transpile_ty(dest_ty)?,
                                 self.name_def_id(op_ty.ty_to_def_id().unwrap()),
                                 operand)
                     } else {
-                        throw!("unimplemented: cast from {:?} to {:?}", op_ty, dest_ty)
+                        throw!("unimplemented: cast | from {:?} to {:?}", op_ty, dest_ty)
                     })))
             }
             Rvalue::Cast(CastKind::Unsize, ref op, _) => self.get_operand(op),
@@ -546,7 +538,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                 // multiplying `op` is okay because it's known to implement `Copy`
                 MaybeValue::total(format!("list.replicate {} {}", times, op))
             })),
-            _ => throw!("unimplemented: rvalue {:?}", rv),
+            _ => throw!("unimplemented: rvalue | {:?}", rv),
         }
     }
 
@@ -573,18 +565,18 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                                                         ty=self.name_def_id(adt_def.did), applied_ty=self.transpile_ty(ty)?, field=field_name,
                                                         setter=self.update_struct(ty, field, "o", "i")?))
                                 },
-                                _ => throw!("unimplemented: lens on field of {:?}", adt_def.adt_kind()),
+                                _ => throw!("unimplemented: lens on field | of {:?}", adt_def.adt_kind()),
                             },
-                            ref ty => throw!("unimplemented: lens on field of {:?}", ty),
+                            ref ty => throw!("unimplemented: lens on field | of {:?}", ty),
                         }
                     }
                     ProjectionElem::Index(ref index) =>
                         lenses.push(format!("lens.index _ {}", self.get_operand(index)?.to_total())),
-                    _ => throw!("unimplemented: lens on lvalue {:?}", lv),
+                    _ => throw!("unimplemented: lens on lvalue | {:?}", lv),
                 }
                 self.mk_lenses(base, lenses)
             }
-            _ => throw!("unimplemented: lens on lvalue {:?}", lv),
+            _ => throw!("unimplemented: lens on lvalue |{:?}", lv),
         }
     }
 
@@ -626,14 +618,15 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
                         Ok(format!("{}do «$tmp» ← {};\n", set, self.get_lvalue(&lv.clone().deref())?.to_partial()))
                     }
                     // move &mut
-                    Rvalue::Use(Operand::Consume(Lvalue::Local(source)))
+                    Rvalue::Cast(CastKind::Unsize, Operand::Consume(Lvalue::Local(source)), _)
+                    | Rvalue::Use(Operand::Consume(Lvalue::Local(source)))
                         if krate::try_unwrap_mut_ref(self.mir.local_decls[source].ty).is_some() =>
                         self.set_mut_ref(lv, vec![], &Lvalue::Local(source)),
                     _ => self.get_rvalue(rv)?.try_map(0, |rv| self.set_lvalue(1, lv, &rv)),
                 }
             }
             StatementKind::SetDiscriminant { .. } =>
-                throw!("unimplemented: statement kind {:?}", kind),
+                throw!("unimplemented: statement kind |{:?}", kind),
             StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop =>
                 Ok("".to_string()),
         }
@@ -713,7 +706,7 @@ impl<'a, 'tcx> FnTranspiler<'a, 'tcx> {
 
                 for ty in substs.types() {
                     if krate::try_unwrap_mut_ref(ty).is_some() {
-                        throw!("unimplemented: instantiating type parameter of {} with {:?}",
+                        throw!("unimplemented: instantiating type parameter |of {} with {:?}",
                                self.tcx.item_path_str(def_id), ty);
                     }
                 }

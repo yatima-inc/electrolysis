@@ -12,7 +12,7 @@ open [notation] prod.ops
 open [notation] unit
 
 structure test.Foo [class] (Self : Type₁) :=
-(bar : Self → sem (unit))
+(bar : (Self → sem (unit)))
 
 definition test.Foo.baz {Self : Type₁} [«test.Foo Self» : test.Foo Self] (selfₐ : Self) : sem (unit) :=
 let' «self$2» ← selfₐ;
@@ -30,7 +30,7 @@ let' ret ← ⋆;
 return (⋆)
 
 
-/- test.«test.Bar as test.Foo».baz: unimplemented: overriding default method "test.«test.Bar as test.Foo».baz" -/
+/- test.«test.Bar as test.Foo».baz: unimplemented: overriding default method |test.«test.Bar as test.Foo».baz -/
 
-/- test.«test.Bar as test.Foo»: failed dependencies test.«test.Bar as test.Foo».baz -/
+/- test.«test.Bar as test.Foo»: failed dependencies |test.«test.Bar as test.Foo».baz -/
 

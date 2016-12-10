@@ -11,5 +11,5 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-/- test.foo: unimplemented: ty &mut [i32] -/
+/- test.foo: unimplemented: &mut nested in type -/
 

@@ -125,7 +125,7 @@ open('index.html', 'w').write("""<html>
   <h1 class="title">Electrolysis Reference</h1>
   <p>This document shows <a href="https://github.com/Kha/electrolysis">electrolysis</a>'s current coverage of the <a href="https://doc.rust-lang.org/reference.html">Rust Reference</a> by testing the translation of code examples (taken from the Reference or made up on the spot). Some sections have been added on top of the Reference to display details and edge cases.</p>
 
-<p>A ✔ means the translated Lean code type checks, whereas a ✗ marks unimplemented language features or (very rarely) inputs crashing the transpiler or creating invalid output. A few examples also come with example Lean proofs that are also checked automatically and give greater assurance of semantics preservation.</p>
+<p>A ✔ means the translated Lean code type checks, whereas a ✗ marks unimplemented language features. A few examples also come with example Lean proofs that are also checked automatically and give greater assurance of semantics preservation.</p>
 
   <nav id="TOC">{}</nav>
   {}

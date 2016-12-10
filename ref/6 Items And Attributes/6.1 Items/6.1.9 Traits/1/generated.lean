@@ -26,7 +26,7 @@ return (ret)
 
 
 structure test.Shape [class] (Self : Type₁) :=
-(area : Self → sem (i64))
+(area : (Self → sem (i64)))
 
 definition test.«test.Foo as test.Shape» [instance] := ⦃
   test.Shape (test.Foo),
@@ -34,7 +34,7 @@ definition test.«test.Foo as test.Shape» [instance] := ⦃
 ⦄
 
 structure test.Circle [class] (Self : Type₁) extends test.Shape Self :=
-(radius : Self → sem (i64))
+(radius : (Self → sem (i64)))
 
 attribute [coercion] test.Circle.to_Shape
 

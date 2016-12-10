@@ -12,7 +12,7 @@ open [notation] prod.ops
 open [notation] unit
 
 structure test.Num [class] (Self : Type₁) :=
-(from_i32 : i32 → sem (Self))
+(from_i32 : (i32 → sem (Self)))
 
 definition test.«i64 as test.Num».from_i32 (nₐ : i32) : sem (i64) :=
 let' «n$2» ← nₐ;

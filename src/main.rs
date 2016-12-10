@@ -265,9 +265,10 @@ open [notation] unit
     // write out each cyclic set, in dependencies-first order
     let mut failed = HashSet::new();
     for idx in toposort(&condensed) {
+        let self_dep = condensed.neighbors_directed(idx, petgraph::EdgeDirection::Incoming).any(|dep| dep == idx);
         match condensed[idx][..] {
-            // a singleton set, meaning no cyclic dependencies!
-            [def_id] => {
+            // no cyclic dependencies!
+            [def_id] if !self_dep => {
                 let name = name_def_id(tcx, def_id);
 
                 // don't even bother writing out code that will fail because of missing dependencies
@@ -278,7 +279,7 @@ open [notation] unit
                             try!(write!(f, "{}\n\n", trans));
                         } else {
                             failed.insert(idx);
-                            try!(write!(f, "/- {}: failed dependencies {} -/\n\n", name, failed_deps.into_iter().flat_map(|idx| &condensed[idx]).map(|&def_id| {
+                            try!(write!(f, "/- {}: failed dependencies |{} -/\n\n", name, failed_deps.into_iter().flat_map(|idx| &condensed[idx]).map(|&def_id| {
                                 name_def_id(tcx, def_id)
                             }).join(", ")));
                         }

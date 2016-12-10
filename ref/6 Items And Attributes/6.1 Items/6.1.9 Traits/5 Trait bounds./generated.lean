@@ -15,7 +15,7 @@ structure test.Surface := mk {} ::
 
 
 structure test.Shape [class] (Self : Type₁) :=
-(draw : Self → (test.Surface) → sem (unit))
+(draw : (Self → (test.Surface) → sem (unit)))
 
 definition test.draw_twice {T : Type₁} [«test.Shape T» : test.Shape T] (surfaceₐ : (test.Surface)) (shₐ : T) : sem (unit) :=
 let' «surface$3» ← surfaceₐ;

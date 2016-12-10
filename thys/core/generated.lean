@@ -39,7 +39,7 @@ structure core.ops.RangeToInclusive (Idx : Type₁) := mk {} ::
 («end» : Idx)
 
 structure core.clone.Clone [class] (Self : Type₁) :=
-(clone : Self → sem (Self))
+(clone : (Self → sem (Self)))
 
 structure core.marker.Copy [class] (Self : Type₁) extends core.clone.Clone Self := mk
 
@@ -48,7 +48,7 @@ attribute [coercion] core.marker.Copy.to_Clone
 structure core.marker.PhantomData (T : Type₁) := mk {} ::
 
 structure core.ops.BitAnd [class] (Self : Type₁) (RHS : Type₁) («<Self as ops.BitAnd<RHS>>.Output» : Type₁) :=
-(bitand : Self → RHS → sem («<Self as ops.BitAnd<RHS>>.Output»))
+(bitand : (Self → RHS → sem («<Self as ops.BitAnd<RHS>>.Output»)))
 
 definition core.«u32 as core.ops.BitAnd».bitand (selfₐ : u32) (rhsₐ : u32) : sem (u32) :=
 let' «self$3» ← selfₐ;
@@ -89,7 +89,7 @@ definition core.«u32 as core.clone.Clone» [instance] := ⦃
 ⦄
 
 structure core.default.Default [class] (Self : Type₁) :=
-(default : sem (Self))
+(default : (sem (Self)))
 
 definition core.«i32 as core.default.Default».default : sem (i32) :=
 let' ret ← (0 : int);
@@ -102,10 +102,10 @@ definition core.«i32 as core.default.Default» [instance] := ⦃
 ⦄
 
 structure core.iter.iterator.Iterator [class] (Self : Type₁) («<Self as iter.iterator.Iterator>.Item» : Type₁) :=
-(next : Self → sem ((core.option.Option «<Self as iter.iterator.Iterator>.Item») × Self))
+(next : (Self → sem ((core.option.Option «<Self as iter.iterator.Iterator>.Item») × Self)))
 
 structure core.slice.SliceExt [class] (Self : Type₁) («<Self as slice.SliceExt>.Item» : Type₁) :=
-(len : Self → sem (usize))
+(len : (Self → sem (usize)))
 
 definition core.slice.SliceExt.is_empty {Self : Type₁} («<Self as slice.SliceExt>.Item» : Type₁) [«core.slice.SliceExt Self» : core.slice.SliceExt Self «<Self as slice.SliceExt>.Item»] (selfₐ : Self) : sem (bool) :=
 let' «self$2» ← selfₐ;
@@ -144,7 +144,7 @@ return (ret)
 
 
 structure core.cmp.PartialEq [class] (Self : Type₁) (Rhs : Type₁) :=
-(eq : Self → Rhs → sem (bool))
+(eq : (Self → Rhs → sem (bool)))
 
 structure core.cmp.Eq [class] (Self : Type₁) extends core.cmp.PartialEq Self Self := mk
 
@@ -162,12 +162,12 @@ definition core.cmp.Ordering.discr (self : core.cmp.Ordering) : isize := match s
 end
 
 structure core.cmp.PartialOrd [class] (Self : Type₁) (Rhs : Type₁) extends core.cmp.PartialEq Self Rhs :=
-(partial_cmp : Self → Rhs → sem ((core.option.Option (core.cmp.Ordering))))
+(partial_cmp : (Self → Rhs → sem ((core.option.Option (core.cmp.Ordering)))))
 
 attribute [coercion] core.cmp.PartialOrd.to_PartialEq
 
 structure core.cmp.Ord [class] (Self : Type₁) extends core.cmp.Eq Self, core.cmp.PartialOrd Self Self :=
-(cmp : Self → Self → sem ((core.cmp.Ordering)))
+(cmp : (Self → Self → sem ((core.cmp.Ordering))))
 
 attribute [coercion] core.cmp.Ord.to_Eq core.cmp.Ord.to_PartialOrd
 

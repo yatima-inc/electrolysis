@@ -56,6 +56,11 @@ namespace asymptotic
           ... ≤ c₁ * (c₂ * g a) : mul_le_mul_left c₁ (and.right Ha)
           ... = c₁ *  c₂ * g a  : mul.assoc))
 
+    protected lemma le.trans2 [trans] : e ≤ f → le f g → le e g :=
+    take He Hf,
+    obtain c₂ Hc₂, from Hf,
+    exists.intro c₂ (eventually_mono Hc₂ (take a, _root_.le.trans (He a)))
+
     protected lemma lt_of_lt_of_le : lt e f → le f g → lt e g :=
     take He Hf c,
     obtain c₂ Hc₂, from Hf,

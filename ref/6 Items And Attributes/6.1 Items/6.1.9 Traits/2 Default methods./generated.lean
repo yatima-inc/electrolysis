@@ -12,7 +12,7 @@ open [notation] prod.ops
 open [notation] unit
 
 structure test.Foo [class] (Self : Type₁) :=
-(bar : Self → sem (unit))
+(bar : (Self → sem (unit)))
 
 definition test.Foo.baz {Self : Type₁} [«test.Foo Self» : test.Foo Self] (selfₐ : Self) : sem (unit) :=
 let' «self$2» ← selfₐ;

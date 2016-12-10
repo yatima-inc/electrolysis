@@ -19,7 +19,7 @@ let' ret ← ⋆;
 return (⋆)
 
 
-/- test.main: unimplemented: vtable VtableObject(upcast=Binder(<Shape as Shape>), vtable_base=0, nested=[]) -/
+/- test.main: unimplemented: trait object -/
 
 definition test.«i32 as test.Shape» [instance] := ⦃
   test.Shape i32

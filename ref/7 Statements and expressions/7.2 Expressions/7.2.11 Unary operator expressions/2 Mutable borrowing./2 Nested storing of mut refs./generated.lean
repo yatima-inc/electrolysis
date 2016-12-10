@@ -11,5 +11,5 @@ open [class] nat
 open [notation] prod.ops
 open [notation] unit
 
-/- test.foo: unimplemented: arbitrary move of &mut _7 -/
+/- test.foo: unimplemented: arbitrary move of &mut | _7 -/
 

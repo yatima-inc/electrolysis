@@ -10,7 +10,7 @@ use rustc::hir::def::CtorKind;
 use rustc::hir::def_id::DefId;
 use rustc::ty::subst::{Subst, Substs};
 use rustc::traits::*;
-use rustc::ty::{self, Lift, Ty, TypeFoldable};
+use rustc::ty::{self, Lift, Ty};
 
 use util::*;
 use trans::TransResult;
@@ -21,6 +21,22 @@ pub fn mk_tuple_ty<It: IntoIterator<Item=String>>(it: It) -> String {
         [] => "unit".to_string(),
         [ref x] => x.clone(),
         ref xs => format!("({})", xs.into_iter().join(" × "))
+    }
+}
+
+/// `mk_tuple("x", "y")` ~> `"(x, y)"`
+pub fn mk_tuple<It: IntoIterator<Item=T>, T: ::std::fmt::Display>(it: It) -> String {
+    match it.into_iter().collect_vec()[..] {
+        [] => "⋆".to_string(),
+        [ref x] => x.to_string(),
+        ref xs => format!("({})", xs.into_iter().join(", "))
+    }
+}
+
+pub fn detuplize(val: &str, pat: &[String], cont: &str) -> String {
+    match *pat {
+        [ref x] => format!("let' {} ← {};\n{}", x, val, cont),
+        _ => format!("match {} with {} :=\n{}end\n", val, mk_tuple(pat), cont),
     }
 }
 
@@ -115,9 +131,6 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
     fn free_assoc_tys(&self, trait_ref: ty::TraitRef<'tcx>, bound_assoc_tys: &mut HashMap<ty::ProjectionTy<'tcx>, String>) -> TransResult<Vec<ty::ProjectionTy<'tcx>>> {
         for pred in &self.tcx.item_predicates(trait_ref.def_id).predicates {
             if let &ty::Predicate::Projection(ty::Binder(ref proj_pred)) = pred {
-                if proj_pred.has_escaping_regions() {
-                    throw!("unimplemented: higher-ranked projection bound")
-                }
                 bound_assoc_tys.insert(
                     proj_pred.projection_ty.subst(self.tcx, trait_ref.substs),
                     self.transpile_ty(proj_pred.ty.subst(self.tcx, trait_ref.substs))?
@@ -272,14 +285,18 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyUint(ref ty) => ty.to_string(),
             ty::TypeVariants::TyInt(ref ty) => ty.to_string(),
             ty::TypeVariants::TyChar => "char32".to_string(), // Lean already has an 8-bit `char`
+            ty::TypeVariants::TyFloat(_) => throw!("unimplemented: float"),
             //ty::TypeVariants::TyFloat(ref ty) => ty.to_string(),
             ty::TypeVariants::TyTuple(ref tys) => mk_tuple_ty(
                 tys.iter().map(|ty| self.transpile_ty(ty)).try()?),
             // `Fn(&mut T) -> R` ~> `'T -> sem (R × T)'`
-            ty::TypeVariants::TyFnDef(_, _, ref data) => {
+            ty::TypeVariants::TyFnPtr(ref data) | ty::TypeVariants::TyFnDef(_, _, ref data) => {
                 let sig = data.sig.skip_binder();
+                if sig.variadic {
+                    throw!("unsafe: variadic function signature")
+                }
                 let inputs = try_iter!(sig.inputs.iter().map(|ty| self.transpile_ty(krate::unwrap_mut_ref(ty))));
-                inputs.chain(iter::once(format!("sem {}", self.ret_ty(&sig.inputs, sig.output)?))).join(" → ")
+                format!("({})", inputs.chain(iter::once(format!("sem {}", self.ret_ty(&sig.inputs, sig.output)?))).join(" → "))
             },
             ty::TypeVariants::TyAdt(ref adt_def, ref substs) => format!(
                 "({})",
@@ -288,6 +305,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             ty::TypeVariants::TyRef(_, ty::TypeAndMut {
                 mutbl: hir::Mutability::MutImmutable, ref ty
             }) => self.transpile_ty(ty)?,
+            ty::TypeVariants::TyRef(..) => throw!("unimplemented: &mut nested in type"),
             ty::TypeVariants::TyParam(ref param) => param.name.to_string(),
             ty::TypeVariants::TyProjection(ref proj) => {
                 let proj = self.tcx.erase_regions(proj);
@@ -295,7 +313,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             }
             ty::TypeVariants::TySlice(ref ty) => format!("(slice {})", self.transpile_ty(ty)?),
             ty::TypeVariants::TyStr => "string".to_string(),
-            ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait objects"),
+            ty::TypeVariants::TyTrait(_) => throw!("unimplemented: trait object"),
             ty::TypeVariants::TyArray(ref ty, size) =>
                 format!("(array {} {})", self.transpile_ty(ty)?, size),
             ty::TypeVariants::TyBox(ref ty) => {
@@ -307,10 +325,9 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 format!("({})", (&self.name_def_id(def_id), upvar_tys).join(" "))
             }
             ty::TypeVariants::TyNever => "empty".to_string(),
-            _ => match ty.ty_to_def_id() {
-                Some(did) => self.name_def_id(did),
-                None => throw!("unimplemented: ty {:?}", ty),
-            }
+            ty::TypeVariants::TyRawPtr(_) => throw!("unsafe: raw pointer"),
+            ty::TypeVariants::TyAnon(..) | ty::TypeVariants::TyInfer(_) | ty::TypeVariants::TyError =>
+                unreachable!(),
         })
     }
 
@@ -369,7 +386,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 }
             }
         }
-        Err(format!("unimplemented: could not find local instance for {}", self.transpile_trait_ref_no_assoc_tys(target)?))
+        Err(format!("error: could not find local instance |{}", self.transpile_trait_ref_no_assoc_tys(target)?))
     }
 
     // ugh
@@ -385,16 +402,16 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
         let obligation = Obligation::new(ObligationCause::misc(span, ast::DUMMY_NODE_ID), pred);
         let selection = selcx.select(&obligation)
             .map_err(|err| {
-                format!("obligation select: {:?} {:?}", obligation, err)
+                format!("error: obligation select |{:?} {:?}", obligation, err)
             })?
-            .ok_or(format!("empty selection result: {:?}", obligation))?;
+            .ok_or(format!("error: empty selection result |{:?}", obligation))?;
 
         Ok(match selection {
             Vtable::VtableImpl(data) => {
                 let nested_traits = data.nested.iter().try_filter_map(|obl| -> TransResult<_> { Ok(match obl.predicate {
                     ty::Predicate::Trait(ref trait_pred) if !self.is_marker_trait(trait_pred.skip_binder().def_id()) => {
                         let trait_ref = &trait_pred.skip_binder().trait_ref;
-                        let trait_ref = self.tcx.lift(trait_ref).ok_or(format!("failed to lift {:?}", trait_ref))?;
+                        let trait_ref = self.tcx.lift(trait_ref).ok_or(format!("error: failed to lift |{:?}", trait_ref))?;
                         Some(self.infer_trait_impl(trait_ref, infcx)?.to_string(self)?)
                     }
                     _ => None,
@@ -421,7 +438,21 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                                    self.transpile_ty_params(self.def_id)?.into_iter().map(|p| p.name().to_string()).join(" ")),
                 }
             },
-            vtable => throw!("unimplemented: vtable {:?}", vtable),
+            Vtable::VtableFnPointer(data) => {
+                let sig = data.fn_ty.fn_sig().skip_binder();
+                if sig.variadic {
+                    throw!("unsafe: variadic function signature")
+                }
+                let params = (0..sig.inputs.len()).map(|i| format!("a{}", i)).collect_vec();
+                TraitImplLookup::Dynamic {
+                    param: format!("(core.ops.Fn.mk_simple (λ self args, {}))",
+                                   detuplize("args", &params,
+                                             &format!("self {}\n", params.iter().join(" "))))
+                }
+            }
+            Vtable::VtableBuiltin(_) => throw!("unimplemented: builtin trait impl"),
+            Vtable::VtableObject(_) => throw!("unimplemented: trait object"),
+            Vtable::VtableDefaultImpl(_) => unreachable!(),
         })
     }
 
@@ -617,7 +648,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                 Item_::ItemExternCrate(_) | Item_::ItemUse(_) | Item_::ItemMod(_)
                 | Item_::ItemForeignMod(_) => return Ok(None),
                 Item_::ItemStatic(_, hir::Mutability::MutMutable, _) =>
-                    throw!("unimplemented: mutable static {:?}", name),
+                    throw!("unsafe: mutable static |{:?}", name),
                 Item_::ItemStatic(_, hir::Mutability::MutImmutable, _) | Item_::ItemConst(..) =>
                     self.transpile_static()?,
                 Item_::ItemEnum(..) =>
@@ -653,7 +684,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                             self.transpile_ty(self.tcx.item_type(self.def_id))?),
                 Item_::ItemFn(..) =>
                     self.transpile_fn(name)?,
-                Item_::ItemUnion(..) => throw!("unimplemented: {:?}", node),
+                Item_::ItemUnion(..) => throw!("unsafe: union type"),
             },
             Node::NodeExpr(_) => // top-level expr? closure!
                 self.transpile_fn(name)?,
@@ -667,7 +698,7 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
                         .defs(self.tcx, item.name, ty::AssociatedKind::Method)
                         .filter(|def| def.item.defaultness.has_value())
                         .count() > 1 {
-                        throw!("unimplemented: overriding default method {:?}", self.name_def_id(self.def_id))
+                        throw!("unimplemented: overriding default method |{}", self.name_def_id(self.def_id))
                     }
                 }
                 self.transpile_fn(name)?
@@ -675,7 +706,8 @@ impl<'a, 'tcx> ItemTranspiler<'a, 'tcx> {
             Node::NodeTraitItem(_) | Node::NodeVariant(_) | Node::NodeStructCtor(_)
             | Node::NodeImplItem(&hir::ImplItem { node: hir::ImplItemKind::Type(..), .. }) =>
                 return Ok(None),
-            _ => throw!("unimplemented: {:?}", node),
+            Node::NodeForeignItem(_) => throw!("unsafe: foreign function/intrinsic |{}", name),
+            _ => unreachable!(),
         }))
     }
 }
