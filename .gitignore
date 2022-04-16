@@ -1,3 +1,6 @@
+*.olean
+result*
+
 target
 .gdb_history
 TODO
